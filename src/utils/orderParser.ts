@@ -319,11 +319,16 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
     const dText = dostawaSection[1];
     const ilnM = dText.match(/(?:ILN|GLN)[:\s]*(\d{13})/i);
     if (ilnM) {
-      result.recipientIdWew = ilnM[1];
+      result.recipientGln = ilnM[1];
     }
     const idWewM = dText.match(/(?:ID-Wew|Identyfikator wewnętrzny)[:\s]+([0-9\-]+)/i);
     if (idWewM) {
-      result.recipientIdWew = idWewM[1].trim();
+      const cleanM = idWewM[1].trim();
+      if (/^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(cleanM)) {
+        result.recipientIdWew = cleanM;
+      } else if (/^\d{1,13}$/.test(cleanM)) {
+        result.recipientGln = cleanM;
+      }
     }
 
     const nameM = dText.match(/Nazwa[:\s]+([\s\S]+?)(?=(?:Ulica|Adres|Miasto|Kod|Kraj|ILN|GLN))/i);
@@ -356,7 +361,12 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
       const rawRecipient = recipientMatch[1].trim();
       const idWewInRecipient = rawRecipient.match(/(?:ID-Wew|Identyfikator wewnętrzny)[:\s]+([0-9\-]+)/i);
       if (idWewInRecipient) {
-        result.recipientIdWew = idWewInRecipient[1].trim();
+        const cleanM = idWewInRecipient[1].trim();
+        if (/^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(cleanM)) {
+          result.recipientIdWew = cleanM;
+        } else if (/^\d{1,13}$/.test(cleanM)) {
+          result.recipientGln = cleanM;
+        }
       }
 
       const cleanRecipientLine = rawRecipient
@@ -373,10 +383,15 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
   }
 
   // 12. Osobne ID-Wew jeśli nie wyciągnięte wyżej
-  if (!result.recipientIdWew) {
+  if (!result.recipientIdWew && !result.recipientGln) {
     const idWewMatch = cleaned.match(/(?:ID-Wew|Identyfikator wewnętrzny)[:\s]+([0-9\-]+)/i);
     if (idWewMatch) {
-      result.recipientIdWew = idWewMatch[1].trim();
+      const cleanM = idWewMatch[1].trim();
+      if (/^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(cleanM)) {
+        result.recipientIdWew = cleanM;
+      } else if (/^\d{1,13}$/.test(cleanM)) {
+        result.recipientGln = cleanM;
+      }
     }
   }
 
@@ -491,6 +506,9 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
 
     let thirdParty: ThirdPartyEntity | null = profile.thirdParty ? { ...profile.thirdParty } : null;
     if (headerData.recipientName) {
+      const isHeaderIdWewValid = headerData.recipientIdWew && /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(headerData.recipientIdWew);
+      const isHeaderGln = headerData.recipientGln || (headerData.recipientIdWew && /^\d{1,13}$/.test(headerData.recipientIdWew) && !isHeaderIdWewValid ? headerData.recipientIdWew : undefined);
+
       thirdParty = {
         name: headerData.recipientName,
         countryCode: 'PL',
@@ -500,7 +518,8 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
           'Aleja 20-lecia 23, 96-515 Teresin',
         postalCode: headerData.recipientPostalCode || profile.thirdParty?.postalCode || '96-515',
         city: headerData.recipientCity || profile.thirdParty?.city || 'Teresin',
-        idWew: headerData.recipientIdWew || profile.thirdParty?.idWew,
+        idWew: isHeaderIdWewValid ? headerData.recipientIdWew : profile.thirdParty?.idWew,
+        gln: isHeaderGln || profile.thirdParty?.gln,
         role: '2',
         roleDescription: 'Odbiorca (jednostka wewnętrzna/oddział nabywcy)',
       };
@@ -549,13 +568,17 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
 
   let thirdParty: ThirdPartyEntity | null = null;
   if (headerData.recipientName) {
+    const isHeaderIdWewValid = headerData.recipientIdWew && /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(headerData.recipientIdWew);
+    const isHeaderGln = headerData.recipientGln || (headerData.recipientIdWew && /^\d{1,13}$/.test(headerData.recipientIdWew) && !isHeaderIdWewValid ? headerData.recipientIdWew : undefined);
+
     thirdParty = {
       name: headerData.recipientName,
       countryCode: 'PL',
       addressLine1: headerData.recipientAddress || 'ul. Magazynowa 1',
       postalCode: headerData.recipientPostalCode || '00-001',
       city: headerData.recipientCity || 'Warszawa',
-      idWew: headerData.recipientIdWew,
+      idWew: isHeaderIdWewValid ? headerData.recipientIdWew : undefined,
+      gln: isHeaderGln,
       role: '2',
       roleDescription: 'Odbiorca (jednostka wewnętrzna/oddział nabywcy)',
     };

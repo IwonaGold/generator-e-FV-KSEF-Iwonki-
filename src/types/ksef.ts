@@ -85,6 +85,7 @@ export interface ParsedOrderData {
   recipientPostalCode?: string;
   recipientCity?: string;
   recipientIdWew?: string;
+  recipientGln?: string;
   recipientNip?: string;
 }
 
@@ -101,6 +102,7 @@ export interface OcrExtractionResult {
 
 export interface ThirdPartyEntity {
   idWew?: string; // np. 5213842837-54936
+  gln?: string; // np. 5909000848054
   nip?: string;
   name: string; // np. Magazyn Centralny Super Pharm Holding
   countryCode: string;

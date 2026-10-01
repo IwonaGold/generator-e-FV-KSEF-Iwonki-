@@ -432,13 +432,23 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
     let podmiot3Xml = '';
     if (thirdParty && thirdParty.name && thirdParty.name.trim()) {
       let idSection = '';
-      if (thirdParty.nip && cleanNumeric(thirdParty.nip).length === 10) {
-        idSection = `\n            <NIP>${cleanNumeric(thirdParty.nip)}</NIP>`;
-      } else if (thirdParty.idWew && thirdParty.idWew.trim()) {
-        idSection = `\n            <IDWew>${escapeXml(thirdParty.idWew.trim())}</IDWew>`;
+      const cleanNip = thirdParty.nip ? cleanNumeric(thirdParty.nip) : '';
+      const rawIdWew = (thirdParty.idWew || '').trim();
+
+      // Oficjalny wzorzec KSeF dla IDWew (TNIPIdWew): 10 cyfr NIP - 5 cyfr identyfikatora wewnętrznego
+      const isValidIdWew = /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(rawIdWew);
+
+      if (cleanNip.length === 10) {
+        idSection = `\n            <NIP>${cleanNip}</NIP>`;
+      } else if (isValidIdWew) {
+        idSection = `\n            <IDWew>${escapeXml(rawIdWew)}</IDWew>`;
       } else {
         idSection = `\n            <BrakID>1</BrakID>`;
       }
+
+      // Jeśli podano GLN (1-13 cyfr, np. z zamówienia 5909000848054) lub idWew jest w formacie GLN
+      const rawGln = (thirdParty.gln || (!isValidIdWew && /^\d{1,13}$/.test(rawIdWew) ? rawIdWew : '')).trim();
+      const glnXml = rawGln && /^\d{1,13}$/.test(rawGln) ? `\n            <GLN>${escapeXml(rawGln)}</GLN>` : '';
 
       podmiot3Xml = `\n    <Podmiot3>
         <DaneIdentyfikacyjne>${idSection}
@@ -446,7 +456,7 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
         </DaneIdentyfikacyjne>
         <Adres>
             <KodKraju>${thirdParty.countryCode || 'PL'}</KodKraju>
-            <AdresL1>${escapeXml(formatAdresL1(thirdParty))}</AdresL1>
+            <AdresL1>${escapeXml(formatAdresL1(thirdParty))}</AdresL1>${glnXml}
         </Adres>
         <Rola>${thirdParty.role || '2'}</Rola>
     </Podmiot3>`;
@@ -621,11 +631,18 @@ ${platnoscXml}${warunkiTransakcjiXml}
   if (thirdParty && thirdParty.name) {
     const tp = thirdParty;
     const tpAdres = formatAdresL1(tp);
-    const idTag = tp.idWew
-      ? `<IDWew>${escapeXml(tp.idWew)}</IDWew>`
-      : tp.nip
-      ? `<NIP>${cleanNumeric(tp.nip)}</NIP>`
+    const cleanNip = tp.nip ? cleanNumeric(tp.nip) : '';
+    const rawIdWew = (tp.idWew || '').trim();
+    const isValidIdWew = /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(rawIdWew);
+
+    const idTag = cleanNip.length === 10
+      ? `<NIP>${cleanNip}</NIP>`
+      : isValidIdWew
+      ? `<IDWew>${escapeXml(rawIdWew)}</IDWew>`
       : `<BrakID>1</BrakID>`;
+
+    const rawGln = (tp.gln || (!isValidIdWew && /^\d{1,13}$/.test(rawIdWew) ? rawIdWew : '')).trim();
+    const glnXml = rawGln && /^\d{1,13}$/.test(rawGln) ? `\n      <GLN>${escapeXml(rawGln)}</GLN>` : '';
 
     podmiot3XmlFa2 = `\n  <Podmiot3>
     <DaneIdentyfikacyjne>
@@ -634,7 +651,7 @@ ${platnoscXml}${warunkiTransakcjiXml}
     </DaneIdentyfikacyjne>
     <Adres>
       <KodKraju>${tp.countryCode || 'PL'}</KodKraju>
-      <AdresL1>${escapeXml(tpAdres)}</AdresL1>
+      <AdresL1>${escapeXml(tpAdres)}</AdresL1>${glnXml}
     </Adres>
     <Rola>${tp.role || '2'}</Rola>
   </Podmiot3>`;
