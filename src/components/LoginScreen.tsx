@@ -54,7 +54,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             🌸
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent">
-            GENERATOR Iwonki
+            generator-e-FV-KSEF-Iwonki-
           </h1>
           <p className="text-xs font-semibold text-rose-500 mt-0.5">
             E-faktury KSEF · Dostęp autoryzowany ✨

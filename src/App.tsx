@@ -460,7 +460,7 @@ export default function App() {
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600">
-                🌸 GENERATOR Iwonki E-faktur KSEF
+                🌸 generator-e-FV-KSEF-Iwonki-
               </span>
               <span className="text-xs font-bold text-rose-600 bg-rose-100/80 border border-rose-200 px-2 py-0.5 rounded-full">
                 FA(3) ✨
