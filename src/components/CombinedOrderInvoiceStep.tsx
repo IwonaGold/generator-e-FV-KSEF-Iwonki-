@@ -1,0 +1,1061 @@
+import React, { useRef, useState } from 'react';
+import {
+  FileText,
+  Upload,
+  CheckCircle2,
+  Trash2,
+  Sparkles,
+  Calendar,
+  CreditCard,
+  Hash,
+  Truck,
+  Building2,
+  ChevronDown,
+  ChevronUp,
+  FileCheck2,
+  ShieldCheck,
+  CheckSquare,
+  Square,
+  Warehouse,
+  Check,
+} from 'lucide-react';
+import { PHARMACY_CHAINS } from '../utils/sampleData';
+import { PharmacyChain, EntityDetails, InvoiceMeta, ThirdPartyEntity, InvoiceItem, ParsedOrderData } from '../types/ksef';
+import {
+  parseOrderFromFile,
+  parseOrderText,
+  matchOrBuildBuyerFromOrder,
+  OrderIngestionMatch,
+} from '../utils/orderParser';
+
+export interface VerificationChecks {
+  buyer: boolean;
+  thirdParty: boolean;
+  invoiceNumber: boolean;
+  dates: boolean;
+  orderNumber: boolean;
+  orderDate: boolean;
+  dueDate: boolean;
+  seller: boolean;
+}
+
+interface CombinedOrderInvoiceStepProps {
+  // Parsowanie zamówienia
+  onOrderTextParsed: (
+    parsedItems: Partial<InvoiceItem>[],
+    rawText: string,
+    parsedHeader?: ParsedOrderData,
+    hasBatchesOrExpiry?: boolean
+  ) => void;
+  orderFile: { name: string; size: string } | null;
+  onOrderFileChange: (fileInfo: { name: string; size: string } | null) => void;
+  itemsCount: number;
+
+  // Dane faktury
+  selectedChain: PharmacyChain;
+  onSelectChain: (chain: PharmacyChain) => void;
+  seller: EntityDetails;
+  onUpdateSeller: (seller: EntityDetails) => void;
+  buyer: EntityDetails;
+  onUpdateBuyer: (buyer: EntityDetails) => void;
+  thirdParty?: ThirdPartyEntity | null;
+  onUpdateThirdParty?: (thirdParty: ThirdPartyEntity | null) => void;
+  meta: InvoiceMeta;
+  onUpdateMeta: (meta: InvoiceMeta) => void;
+
+  // Wzorce (opcjonalne)
+  onLoadPresetDrMax?: () => void;
+  onLoadPresetDoz?: () => void;
+  onLoadPresetSuperPharm?: () => void;
+  onLoadPresetNoBatches?: () => void;
+}
+
+export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> = ({
+  onOrderTextParsed,
+  orderFile,
+  onOrderFileChange,
+  itemsCount,
+  selectedChain,
+  onSelectChain,
+  seller,
+  onUpdateSeller,
+  buyer,
+  onUpdateBuyer,
+  thirdParty,
+  onUpdateThirdParty,
+  meta,
+  onUpdateMeta,
+}) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [showAddressDetails, setShowAddressDetails] = useState(false);
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+  const [lastExtractedInfo, setLastExtractedInfo] = useState<OrderIngestionMatch | null>(null);
+  const [isEditingBuyer, setIsEditingBuyer] = useState(false);
+  const orderInputRef = useRef<HTMLInputElement>(null);
+
+  // Stan weryfikacji i zatwierdzenia poszczególnych informacji
+  const [verified, setVerified] = useState<VerificationChecks>({
+    buyer: true,
+    thirdParty: true,
+    invoiceNumber: true,
+    dates: true,
+    orderNumber: true,
+    orderDate: true,
+    dueDate: true,
+    seller: true,
+  });
+
+  const toggleVerification = (key: keyof VerificationChecks) => {
+    setVerified((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleVerifyAll = () => {
+    const allTrue = Object.values(verified).every(Boolean);
+    const targetState = !allTrue;
+    setVerified({
+      buyer: targetState,
+      thirdParty: targetState,
+      invoiceNumber: targetState,
+      dates: targetState,
+      orderNumber: targetState,
+      orderDate: targetState,
+      dueDate: targetState,
+      seller: targetState,
+    });
+  };
+
+  const verifiedCount = Object.entries(verified).filter(([k, v]) => {
+    if (k === 'thirdParty' && !thirdParty?.name) return false;
+    return v === true;
+  }).length;
+
+  const totalRequired = thirdParty?.name ? 8 : 7;
+  const allVerified = verifiedCount >= totalRequired;
+
+  const handleOrderDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processOrderFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleOrderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processOrderFile(e.target.files[0]);
+    }
+  };
+
+  const processOrderFile = async (file: File) => {
+    const sizeKb = (file.size / 1024).toFixed(1) + ' KB';
+    const fileInfo = { name: file.name, size: sizeKb };
+    onOrderFileChange(fileInfo);
+
+    try {
+      const parsed = await parseOrderFromFile(file);
+      if (parsed.headerData) {
+        const match = matchOrBuildBuyerFromOrder(parsed.headerData);
+        setLastExtractedInfo(match);
+        onSelectChain(match.chain);
+        onUpdateBuyer(match.buyer);
+        if (onUpdateThirdParty) onUpdateThirdParty(match.thirdParty);
+        onUpdateMeta({
+          ...meta,
+          orderNumber: match.metaUpdates.orderNumber || meta.orderNumber,
+          orderDate: match.metaUpdates.orderDate || meta.orderDate,
+          dueDate: match.metaUpdates.dueDate || meta.dueDate,
+          deliveryDate: match.metaUpdates.deliveryDate || meta.deliveryDate,
+          paymentDays: match.metaUpdates.paymentDays ?? meta.paymentDays,
+          paymentMethod: match.metaUpdates.paymentMethod || meta.paymentMethod,
+        });
+      }
+      onOrderTextParsed(parsed.items, parsed.rawText || '', parsed.headerData, parsed.hasBatchesOrExpiry);
+    } catch (err: any) {
+      console.error('Błąd odczytu pliku zamówienia:', err);
+      alert(`Błąd odczytu pliku zamówienia: ${err.message || String(err)}`);
+    }
+  };
+
+  const handleApplyPastedText = () => {
+    if (!pastedText.trim()) return;
+    const fileInfo = {
+      name: 'wklejone_zamowienie.txt',
+      size: `${(pastedText.length / 1024).toFixed(1)} KB`,
+    };
+    onOrderFileChange(fileInfo);
+    const parsed = parseOrderText(pastedText);
+    if (parsed.headerData) {
+      const match = matchOrBuildBuyerFromOrder(parsed.headerData);
+      setLastExtractedInfo(match);
+      onSelectChain(match.chain);
+      onUpdateBuyer(match.buyer);
+      if (onUpdateThirdParty) onUpdateThirdParty(match.thirdParty);
+      onUpdateMeta({
+        ...meta,
+        orderNumber: match.metaUpdates.orderNumber || meta.orderNumber,
+        orderDate: match.metaUpdates.orderDate || meta.orderDate,
+        dueDate: match.metaUpdates.dueDate || meta.dueDate,
+        deliveryDate: match.metaUpdates.deliveryDate || meta.deliveryDate,
+        paymentDays: match.metaUpdates.paymentDays ?? meta.paymentDays,
+        paymentMethod: match.metaUpdates.paymentMethod || meta.paymentMethod,
+      });
+    }
+    onOrderTextParsed(parsed.items, pastedText, parsed.headerData, parsed.hasBatchesOrExpiry);
+    setIsPasteOpen(false);
+    setPastedText('');
+  };
+
+  const setPaymentDaysFromDelivery = (days: number) => {
+    // Uwaga: termin płatności liczony od daty dostawy (P_6)
+    const baseDateStr = meta.deliveryDate || meta.issueDate || meta.orderDate;
+    const base = baseDateStr ? new Date(baseDateStr) : new Date();
+    base.setDate(base.getDate() + days);
+    onUpdateMeta({
+      ...meta,
+      paymentDays: days,
+      dueDate: base.toISOString().slice(0, 10),
+    });
+  };
+
+  const handleDeliveryDateChange = (newDeliveryDate: string) => {
+    const updates: Partial<InvoiceMeta> = { deliveryDate: newDeliveryDate };
+    if (meta.paymentDays && newDeliveryDate) {
+      const base = new Date(newDeliveryDate);
+      base.setDate(base.getDate() + meta.paymentDays);
+      updates.dueDate = base.toISOString().slice(0, 10);
+    }
+    onUpdateMeta({ ...meta, ...updates });
+  };
+
+  return (
+    <div className="bg-white/95 border border-rose-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+      {/* Header & Status weryfikacji */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-rose-100">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center text-xs font-bold shadow-xs">
+              1 & 2
+            </span>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FileCheck2 className="w-5 h-5 text-rose-500" />
+              Krok 1 & 2: Panel Zamówienia & Danych Faktury KSeF 🌸
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Wgraj zamówienie apteczne. Wszystkie dane nabywcy, odbiorcy, daty, termin płatności i pozycje są automatycznie zaczytywane.
+          </p>
+        </div>
+
+        {/* Akcja zatwierdzenia */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleVerifyAll}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
+              allVerified
+                ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 text-white shadow-pink-200'
+                : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
+            }`}
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>{allVerified ? 'Wszystko zatwierdzone ✓' : 'Zatwierdź wszystkie dane jako OK'}</span>
+          </button>
+        </div>
+      </div>
+
+
+      {/* Belka postępu zatwierdzenia danych */}
+      <div className="mt-3 px-3.5 py-2 rounded-xl bg-rose-50/40 border border-rose-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          {allVerified ? (
+            <CheckCircle2 className="w-4 h-4 text-rose-600" />
+          ) : (
+            <ShieldCheck className="w-4 h-4 text-pink-600" />
+          )}
+          <span className="font-semibold text-slate-800">
+            Stan weryfikacji nagłówka:{' '}
+            <strong className="text-rose-700">
+              {verifiedCount} z {totalRequired} zatwierdzonych
+            </strong>
+          </span>
+          <span className="text-rose-200">|</span>
+          <span className="text-slate-500 text-[11px]">
+            Każdy kafelek posiada niezależne pole zatwierdzenia (✓ OK)
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="w-24 bg-rose-100 rounded-full h-2 overflow-hidden">
+            <div
+              className="h-full transition-all duration-300 bg-gradient-to-r from-pink-400 via-rose-500 to-pink-600"
+              style={{ width: `${(verifiedCount / totalRequired) * 100}%` }}
+            />
+          </div>
+          <span className="font-mono text-[11px] font-bold text-slate-700">
+            {Math.round((verifiedCount / totalRequired) * 100)}%
+          </span>
+        </div>
+      </div>
+
+      {/* Kompaktowy Dropzone do wczytania zamówienia */}
+      <div className="mt-3.5">
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleOrderDrop}
+          onClick={() => orderInputRef.current?.click()}
+          className={`border-2 border-dashed rounded-xl p-3.5 text-center transition-all cursor-pointer ${
+            isDragging
+              ? 'border-pink-500 bg-pink-50/60'
+              : 'border-rose-200/80 hover:border-pink-300 bg-rose-50/20 hover:bg-rose-50/50'
+          }`}
+        >
+          <input
+            ref={orderInputRef}
+            type="file"
+            accept=".xlsx,.xls,.pdf,.txt,.csv,.xml"
+            onChange={handleOrderChange}
+            className="hidden"
+          />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white shadow-2xs border border-rose-200 flex items-center justify-center text-pink-500 text-base shrink-0">
+                🌸
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-slate-800">
+                  Kliknij lub upuść plik zamówienia (PDF / Excel .XLSX / TXT / CSV)
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Wszystkie dane zamówienia (nabywca, odbiorca, daty, termin 30/45/60 dni, ceny i pozycje) zostaną automatycznie zaczytane.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsPasteOpen(!isPasteOpen);
+              }}
+              className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 self-start sm:self-auto"
+              title="Wklej tekst zamówienia ze schowka (np. z treści maila)"
+            >
+              <span>📋 Wklej tekst ze schowka</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Rozwijany panel wklejania treści zamówienia ze schowka */}
+        {isPasteOpen && (
+          <div className="mt-2.5 p-4 rounded-xl bg-pink-50/70 border border-pink-200 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <span>📋</span> Wklej tekst lub tabelę zamówienia (z maila, komunikatora lub pliku):
+              </span>
+              <button
+                onClick={() => setIsPasteOpen(false)}
+                className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                ✕ Zamknij
+              </button>
+            </div>
+            <textarea
+              value={pastedText}
+              onChange={(e) => setPastedText(e.target.value)}
+              rows={5}
+              placeholder={`Wklej tutaj treść zamówienia, np.:
+Numer zamówienia: ZAM/2026/10/01
+1. OMNi-BiOTiC Active 60 g | EAN: 9120117912773 | Ilość: 4 szt. | Cena: 166.30 | VAT: 8%
+2. OMNi-BiOTiC TRAVEL | EAN: 9120001435692 | Ilość: 3 szt. | Cena: 157.94 | VAT: 8%`}
+              className="w-full text-xs font-mono text-slate-900 bg-white border border-rose-200 rounded-lg p-2.5 focus:border-pink-500 focus:outline-none"
+            />
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                System automatycznie rozpozna nazwy, kody EAN, ilości, ceny netto oraz stawkę VAT.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsPasteOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  Anuluj
+                </button>
+                <button
+                  onClick={handleApplyPastedText}
+                  disabled={!pastedText.trim()}
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 disabled:opacity-50 rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  Zaczytaj zamówienie
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Wczytany plik */}
+        {orderFile && (
+          <div className="mt-2.5 p-2.5 rounded-lg bg-pink-50/70 border border-pink-200 flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <CheckCircle2 className="w-4 h-4 text-pink-600 shrink-0" />
+              <div className="truncate">
+                <span className="text-xs font-semibold text-slate-900 truncate mr-2">
+                  🌸 {orderFile.name}
+                </span>
+                <span className="text-[11px] text-rose-600 font-mono">
+                  ({orderFile.size} · zaczytano {itemsCount} pozycji towarowych)
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOrderFileChange(null);
+              }}
+              className="p-1 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+              title="Wyczyść plik"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Baner potwierdzenia danych odczytanych z zamówienia */}
+      {lastExtractedInfo && (
+        <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-rose-50/90 via-pink-50/80 to-fuchsia-50/90 border border-rose-300 shadow-2xs animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs font-bold text-slate-900">
+                    Pomyślnie odczytano dane z zamówienia
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-pink-100 text-pink-800 border border-pink-200">
+                    {lastExtractedInfo.isRecognizedChain
+                      ? `Rozpoznano profil: ${lastExtractedInfo.chainProfileName}`
+                      : 'Nabywca zdefiniowany w zamówieniu'}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-slate-700 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    🏢 <strong>Nabywca:</strong> {lastExtractedInfo.buyer.name} (NIP: <strong className="font-mono">{lastExtractedInfo.buyer.nip}</strong>)
+                  </span>
+                  <span>·</span>
+                  <span>
+                    📍 <strong>Adres:</strong> {lastExtractedInfo.buyer.addressLine1}, {lastExtractedInfo.buyer.postalCode} {lastExtractedInfo.buyer.city}
+                  </span>
+                  {lastExtractedInfo.thirdParty && (
+                    <>
+                      <span>·</span>
+                      <span>
+                        🏬 <strong>Odbiorca:</strong> {lastExtractedInfo.thirdParty.name} {lastExtractedInfo.thirdParty.idWew ? `(ID-Wew: ${lastExtractedInfo.thirdParty.idWew})` : ''}
+                      </span>
+                    </>
+                  )}
+                </div>
+                {lastExtractedInfo.extractedSummary.datesFound.length > 0 && (
+                  <p className="mt-1 text-[11px] text-slate-600 font-mono">
+                    📅 Odczytane daty: {lastExtractedInfo.extractedSummary.datesFound.join(' | ')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleVerifyAll}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Zatwierdź wszystkie dane z zamówienia</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* GŁÓWNA SIATKA DANYCH ZAMÓWIENIA & FAKTURY Z POLAMI DO ZATWIERDZENIA       */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
+        
+        {/* KARTA 1: Nabywca / Sieć apteczna */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all ${
+            verified.buyer
+              ? 'bg-rose-50/30 border-rose-300 ring-1 ring-rose-200/60 shadow-2xs'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-rose-500" />
+              Nabywca / Dane Kontrahenta
+            </label>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIsEditingBuyer(!isEditingBuyer)}
+                className="px-1.5 py-0.5 rounded text-[10px] text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+                title="Edytuj dane nabywcy"
+              >
+                {isEditingBuyer ? 'Zwiń' : '✏️ Edytuj'}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleVerification('buyer')}
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                  verified.buyer
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+                }`}
+              >
+                {verified.buyer ? <CheckSquare className="w-3 h-3 text-rose-600" /> : <Square className="w-3 h-3 text-slate-400" />}
+                <span>{verified.buyer ? '✓ Zatwierdzony' : 'Zatwierdź'}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative mb-2">
+            <select
+              value={selectedChain}
+              onChange={(e) => onSelectChain(e.target.value as PharmacyChain)}
+              className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 appearance-none focus:outline-none focus:border-blue-600"
+            >
+              <option value="Super-Pharm">Super-Pharm Poland Sp. z o.o.</option>
+              <option value="Dr. Max">Dr. Max (Dr. Max Lekomat Sp. z o.o.)</option>
+              <option value="DOZ">DOZ (DOZ S.A. Direct Sp. k.)</option>
+              <option value="Gemini">Gemini (Gemini Polska Sp. z o.o.)</option>
+              <option value="Custom">Inna apteka / Z zamówienia</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
+          </div>
+
+          {isEditingBuyer ? (
+            <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-500 block">Nazwa Nabywcy:</span>
+                <input
+                  type="text"
+                  value={buyer.name}
+                  onChange={(e) => onUpdateBuyer({ ...buyer, name: e.target.value })}
+                  className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] text-slate-500 block">NIP:</span>
+                  <input
+                    type="text"
+                    value={buyer.nip}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, nip: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">E-mail:</span>
+                  <input
+                    type="email"
+                    value={buyer.email || ''}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, email: e.target.value })}
+                    className="w-full text-xs text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block">Ulica i numer:</span>
+                <input
+                  type="text"
+                  value={buyer.addressLine1}
+                  onChange={(e) => onUpdateBuyer({ ...buyer, addressLine1: e.target.value })}
+                  className="w-full text-xs text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Kod pocztowy:</span>
+                  <input
+                    type="text"
+                    value={buyer.postalCode}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, postalCode: e.target.value })}
+                    className="w-full text-xs font-mono text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Miejscowość:</span>
+                  <input
+                    type="text"
+                    value={buyer.city}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, city: e.target.value })}
+                    className="w-full text-xs text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-900 truncate" title={buyer.name}>{buyer.name}</p>
+                <span className="shrink-0 text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                  {lastExtractedInfo?.isRecognizedChain ? 'Sieć' : 'Z zamówienia'}
+                </span>
+              </div>
+              <p className="font-mono">NIP: <strong>{buyer.nip}</strong></p>
+              <p className="truncate text-slate-500">{buyer.addressLine1}, {buyer.postalCode} {buyer.city}</p>
+              {buyer.email && <p className="truncate text-slate-500 font-mono text-[10px]">✉️ {buyer.email}</p>}
+            </div>
+          )}
+        </div>
+
+        {/* KARTA 2: Numer Faktury & Typ */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all ${
+            verified.invoiceNumber
+              ? 'bg-rose-50/30 border-rose-300 ring-1 ring-rose-200/60 shadow-2xs'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-rose-500" />
+              Numer Faktury (P_2) & Typ
+            </label>
+            <button
+              type="button"
+              onClick={() => toggleVerification('invoiceNumber')}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                verified.invoiceNumber
+                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+              }`}
+            >
+              {verified.invoiceNumber ? <CheckSquare className="w-3 h-3 text-rose-600" /> : <Square className="w-3 h-3 text-slate-400" />}
+              <span>{verified.invoiceNumber ? '✓ Zatwierdzony' : 'Zatwierdź'}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">Numer faktury:</span>
+              <input
+                type="text"
+                value={meta.invoiceNumber}
+                onChange={(e) => onUpdateMeta({ ...meta, invoiceNumber: e.target.value })}
+                placeholder="np. 35/2026/KSEF"
+                className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">Typ dokumentu:</span>
+              <input
+                type="text"
+                readOnly
+                value="Faktura VAT"
+                className="w-full text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 cursor-not-allowed text-center"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2 font-mono truncate">
+            Schemat: KSeF FA(3) · P_2 unikalne w roku podatkowym
+          </p>
+        </div>
+
+        {/* KARTA 3: Daty Wystawienia (P_1) & Dostawy (P_6) */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all ${
+            verified.dates
+              ? 'bg-rose-50/30 border-rose-300 ring-1 ring-rose-200/60 shadow-2xs'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-rose-500" />
+              Daty: Wystawienie (P_1) & Dostawa (P_6)
+            </label>
+            <button
+              type="button"
+              onClick={() => toggleVerification('dates')}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                verified.dates
+                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+              }`}
+            >
+              {verified.dates ? <CheckSquare className="w-3 h-3 text-rose-600" /> : <Square className="w-3 h-3 text-slate-400" />}
+              <span>{verified.dates ? '✓ Zatwierdzone' : 'Zatwierdź'}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">P_1: Wystawienie</span>
+              <input
+                type="date"
+                value={meta.issueDate}
+                onChange={(e) => onUpdateMeta({ ...meta, issueDate: e.target.value })}
+                className="w-full text-xs font-mono text-slate-800 bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">P_6: Dostawa</span>
+              <input
+                type="date"
+                value={meta.deliveryDate}
+                onChange={(e) => handleDeliveryDateChange(e.target.value)}
+                className="w-full text-xs font-mono text-slate-800 bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-600"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2">
+            Data dostawy zgodna z dokumentem WZ / zleceniem zamówienia
+          </p>
+        </div>
+
+        {/* KARTA 4: Dane Zamówienia (Numer & Data złożenia) */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all ${
+            verified.orderNumber && verified.orderDate
+              ? 'bg-rose-50/30 border-rose-300 ring-1 ring-rose-200/60 shadow-2xs'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Hash className="w-3.5 h-3.5 text-rose-500" />
+              Zamówienie: Numer & Data złożenia
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                const target = !(verified.orderNumber && verified.orderDate);
+                setVerified((prev) => ({ ...prev, orderNumber: target, orderDate: target }));
+              }}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                verified.orderNumber && verified.orderDate
+                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+              }`}
+            >
+              {verified.orderNumber && verified.orderDate ? <CheckSquare className="w-3 h-3 text-rose-600" /> : <Square className="w-3 h-3 text-slate-400" />}
+              <span>{verified.orderNumber && verified.orderDate ? '✓ Zatwierdzone' : 'Zatwierdź'}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">NrZamowienia:</span>
+              <input
+                type="text"
+                value={meta.orderNumber || ''}
+                onChange={(e) => onUpdateMeta({ ...meta, orderNumber: e.target.value })}
+                placeholder="np. C008848894"
+                className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">DataZamowienia:</span>
+              <input
+                type="date"
+                value={meta.orderDate || ''}
+                onChange={(e) => onUpdateMeta({ ...meta, orderDate: e.target.value })}
+                className="w-full text-xs font-mono text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2 truncate">
+            W KSeF FA(3) w węźle: &lt;WarunkiTransakcji&gt;&lt;Zamowienia&gt;&lt;Zamowienie&gt;
+          </p>
+        </div>
+
+        {/* KARTA 5: Płatność & Termin płatności */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all ${
+            verified.dueDate
+              ? 'bg-rose-50/30 border-rose-300 ring-1 ring-rose-200/60 shadow-2xs'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <CreditCard className="w-3.5 h-3.5 text-rose-500" />
+              Termin Płatności & Dni
+            </label>
+            <button
+              type="button"
+              onClick={() => toggleVerification('dueDate')}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                verified.dueDate
+                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+              }`}
+            >
+              {verified.dueDate ? <CheckSquare className="w-3 h-3 text-rose-600" /> : <Square className="w-3 h-3 text-slate-400" />}
+              <span>{verified.dueDate ? '✓ Zatwierdzony' : 'Zatwierdź'}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">Termin płatności:</span>
+              <input
+                type="date"
+                value={meta.dueDate}
+                onChange={(e) => onUpdateMeta({ ...meta, dueDate: e.target.value })}
+                className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block mb-0.5">Forma płatności:</span>
+              <select
+                value={meta.paymentMethod}
+                onChange={(e) => onUpdateMeta({ ...meta, paymentMethod: e.target.value as any })}
+                className="w-full text-xs text-slate-800 bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-rose-400"
+              >
+                <option value="przelew">Przelew (kod 6)</option>
+                <option value="gotowka">Gotówka (kod 1)</option>
+                <option value="karta">Karta (kod 2)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Szybkie przyciski dni: 30, 45, 60 dni OD DATY DOSTAWY (P_6) */}
+          <div className="bg-rose-50/50 p-2.5 rounded-xl border border-rose-200/80 mt-1">
+            <div className="flex items-center justify-between text-[11px] mb-1.5">
+              <span className="font-semibold text-slate-700 flex items-center gap-1">
+                <span>🚚</span> Termin od daty dostawy (P_6: <strong className="font-mono text-rose-700">{meta.deliveryDate || meta.issueDate}</strong>):
+              </span>
+              {meta.paymentDays ? (
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-full border border-rose-200">
+                  Wybrano: {meta.paymentDays} dni ✨
+                </span>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setPaymentDaysFromDelivery(30)}
+                className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
+                  meta.paymentDays === 30
+                    ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white border-pink-500 shadow-xs'
+                    : 'bg-white hover:bg-rose-50/70 text-slate-800 border-slate-200 hover:border-rose-300'
+                }`}
+                title="30 dni od daty dostawy"
+              >
+                30 dni
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentDaysFromDelivery(45)}
+                className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
+                  meta.paymentDays === 45
+                    ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white border-pink-500 shadow-xs'
+                    : 'bg-white hover:bg-rose-50/70 text-slate-800 border-slate-200 hover:border-rose-300'
+                }`}
+                title="45 dni od daty dostawy"
+              >
+                45 dni
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentDaysFromDelivery(60)}
+                className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
+                  meta.paymentDays === 60
+                    ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white border-pink-500 shadow-xs'
+                    : 'bg-white hover:bg-rose-50/70 text-slate-800 border-slate-200 hover:border-rose-300'
+                }`}
+                title="60 dni od daty dostawy"
+              >
+                60 dni
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* KARTA 6: Odbiorca / Miejsce dostawy (Podmiot3) - opcjonalny */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all ${
+            thirdParty?.name
+              ? verified.thirdParty
+                ? 'bg-rose-50/30 border-rose-300 ring-1 ring-rose-200/60 shadow-2xs'
+                : 'bg-white border-slate-200'
+              : 'bg-slate-50/50 border-dashed border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Warehouse className="w-3.5 h-3.5 text-rose-500" />
+              Odbiorca / Miejsce dostawy (Podmiot3)
+            </label>
+            {thirdParty?.name ? (
+              <button
+                type="button"
+                onClick={() => toggleVerification('thirdParty')}
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                  verified.thirdParty
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+                }`}
+              >
+                {verified.thirdParty ? <CheckSquare className="w-3 h-3 text-rose-600" /> : <Square className="w-3 h-3 text-slate-400" />}
+                <span>{verified.thirdParty ? '✓ Zatwierdzony' : 'Zatwierdź'}</span>
+              </button>
+            ) : (
+              <span className="text-[10px] text-slate-400 font-medium">Brak odbiorcy</span>
+            )}
+          </div>
+
+          {thirdParty?.name ? (
+            <div className="space-y-1 text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-900 truncate">{thirdParty.name}</p>
+                <button
+                  type="button"
+                  onClick={() => onUpdateThirdParty && onUpdateThirdParty(null)}
+                  className="text-[10px] text-red-500 hover:text-red-700"
+                  title="Usuń odbiorcę"
+                >
+                  Usuń
+                </button>
+              </div>
+              <p className="font-mono text-slate-500">
+                {thirdParty.idWew ? `ID-Wew: ${thirdParty.idWew}` : thirdParty.nip ? `NIP: ${thirdParty.nip}` : 'Brak NIP (nazwa)'}
+              </p>
+              <p className="truncate text-slate-500">{thirdParty.addressLine1}</p>
+            </div>
+          ) : (
+            <div className="py-3 text-center">
+              <p className="text-[11px] text-slate-500 mb-2">
+                Dostawa bezpośrednio do Nabywcy (Podmiot 2).
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateThirdParty &&
+                  onUpdateThirdParty({
+                    name: 'Magazyn Centralny',
+                    addressLine1: 'ul. Magazynowa 1, 00-001 Warszawa',
+                    countryCode: 'PL',
+                    role: '2',
+                  })
+                }
+                className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 cursor-pointer"
+              >
+                + Dodaj oddzielnego Odbiorcę (Podmiot3)
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Pasek Sprzedawcy & Przycisk szczegółów adresowych */}
+      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-slate-600">
+          <span className="font-semibold text-slate-800">Sprzedawca (Podmiot1):</span>
+          <span>{seller.name}</span>
+          <span>·</span>
+          <span>NIP: <strong>{seller.nip}</strong></span>
+          <span>·</span>
+          <span>BDO: <strong>{seller.bdoNumber || '000585744'}</strong></span>
+          <span>·</span>
+          <span>Konto: <strong className="font-mono">{seller.bankAccount}</strong></span>
+        </div>
+
+        <button
+          onClick={() => setShowAddressDetails(!showAddressDetails)}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 py-1 px-3 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer shrink-0"
+        >
+          <span>Szczegóły strukturalne adresu (&lt;AdresPol&gt;)</span>
+          {showAddressDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      {/* Rozwijane szczegóły adresowe <AdresPol> */}
+      {showAddressDetails && (
+        <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs animate-in fade-in duration-150">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Sprzedawca <AdresPol> */}
+            <div className="bg-white p-3 rounded-lg border border-slate-200">
+              <span className="font-bold text-slate-800 block mb-2">
+                Adres Sprzedawcy (&lt;AdresPol&gt; Podmiot1)
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="col-span-2">
+                  <label className="text-slate-500 block mb-0.5">Ulica i numer:</label>
+                  <input
+                    type="text"
+                    value={seller.addressLine1}
+                    onChange={(e) => onUpdateSeller({ ...seller, addressLine1: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-0.5">Kod pocztowy:</label>
+                  <input
+                    type="text"
+                    value={seller.postalCode}
+                    onChange={(e) => onUpdateSeller({ ...seller, postalCode: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-2 py-1 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-0.5">Miejscowość:</label>
+                  <input
+                    type="text"
+                    value={seller.city}
+                    onChange={(e) => onUpdateSeller({ ...seller, city: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Nabywca <AdresPol> */}
+            <div className="bg-white p-3 rounded-lg border border-slate-200">
+              <span className="font-bold text-slate-800 block mb-2">
+                Adres Nabywcy (&lt;AdresPol&gt; Podmiot2)
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="col-span-2">
+                  <label className="text-slate-500 block mb-0.5">Ulica i numer:</label>
+                  <input
+                    type="text"
+                    value={buyer.addressLine1}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, addressLine1: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-0.5">Kod pocztowy:</label>
+                  <input
+                    type="text"
+                    value={buyer.postalCode}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, postalCode: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-2 py-1 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-0.5">Miejscowość:</label>
+                  <input
+                    type="text"
+                    value={buyer.city}
+                    onChange={(e) => onUpdateBuyer({ ...buyer, city: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-2 py-1"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

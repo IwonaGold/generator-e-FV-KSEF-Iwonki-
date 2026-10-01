@@ -1,0 +1,8 @@
+{
+  "name": "Remix KSeF FA(3) Pharmacy Invoice Generator",
+  "description": "Generator e-faktur KSeF FA(3) dla aptek z obsługą cenników DOZ, Gemini, Dr. Max, Super-Pharm, OCR serii i dat ważności oraz formatu GS1.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
