@@ -243,6 +243,8 @@ export const INITIAL_ARCHIVED_ORDERS: ArchivedOrder[] = [
     }),
     isDelivered: true,
     deliveredAt: '2026-09-16 14:10',
+    shippingStatus: 'delivered',
+    shippingStatusUpdatedAt: '2026-09-16 14:10',
     notes: 'Dostawa dla Apteki Gemini Gdańsk ul. Grunwaldzka.',
     originalFileName: 'zamowienie_Gemini_543.pdf',
     createdAt: '2026-09-14T10:00:00.000Z',

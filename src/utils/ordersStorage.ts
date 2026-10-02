@@ -46,6 +46,19 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
     const effectiveOrderDate = ord.orderDate || ord.issueDate;
     const effectiveAvisoDate = ord.avisoDate || ord.deliveryDate || ord.issueDate;
 
+    // Normalizacja statusu doręczenia i logistyki
+    const isActuallyDelivered = Boolean(ord.isDelivered || ord.shippingStatus === 'delivered');
+    let effectiveShippingStatus = ord.shippingStatus;
+    if (isActuallyDelivered) {
+      effectiveShippingStatus = 'delivered';
+    } else if (!effectiveShippingStatus) {
+      if (ord.trackingNumber && ord.trackingNumber.trim()) {
+        effectiveShippingStatus = 'in_transit';
+      } else {
+        effectiveShippingStatus = 'registered';
+      }
+    }
+
     return {
       ...ord,
       chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
@@ -56,6 +69,8 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       paymentDueDate: effectiveDueDate,
       paymentStatus: effectivePaymentStatus,
       parcelPhotos: Array.isArray(ord.parcelPhotos) ? ord.parcelPhotos : [],
+      isDelivered: isActuallyDelivered,
+      shippingStatus: effectiveShippingStatus,
     };
   });
 }

@@ -151,11 +151,13 @@ export function getOrderEffectiveShippingStatus(ord: {
   isDelivered?: boolean;
   trackingNumber?: string | null;
 }): ShippingStatus {
+  // Jeśli zamówienie jest oznaczone jako doręczone (isDelivered === true),
+  // jego ostateczny status logistyczny to bezwzględnie 'delivered'!
+  if (ord.isDelivered || ord.shippingStatus === 'delivered') {
+    return 'delivered';
+  }
   if (ord.shippingStatus) {
     return ord.shippingStatus;
-  }
-  if (ord.isDelivered) {
-    return 'delivered';
   }
   if (ord.trackingNumber && ord.trackingNumber.trim()) {
     return 'in_transit';
