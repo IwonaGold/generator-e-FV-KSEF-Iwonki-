@@ -1,4 +1,4 @@
-export type PharmacyChain = 'DOZ' | 'Dr. Max' | 'Gemini' | 'Super-Pharm' | 'Custom';
+export type PharmacyChain = 'DOZ' | 'Dr. Max' | 'Gemini' | 'Super-Pharm' | 'Custom' | 'Inne';
 
 /**
  * Trzy wersje zapisu/obsługi cech logistycznych w strukturze KSeF FA(3):
@@ -35,8 +35,8 @@ export interface EntityDetails {
   name: string;
   countryCode: string;
   addressLine1: string;
-  postalCode: string;
-  city: string;
+  postalCode?: string;
+  city?: string;
   street?: string; // np. Nowatorów
   houseNumber?: string; // np. 31
   apartmentNumber?: string; // np. 4

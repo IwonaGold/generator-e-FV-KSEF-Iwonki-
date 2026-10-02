@@ -327,6 +327,99 @@ app.post('/api/parse-order-pdf', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * ARCHIWUM ZAMÓWIEŃ SIECIOWYCH I FAKTUR (HISTORIA ZAMÓWIEŃ)
+ */
+const dataDir = path.join(process.cwd(), 'data');
+const ordersFilePath = path.join(dataDir, 'orders_history.json');
+
+function ensureDataDir() {
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch (e) {
+      console.error('Błąd tworzenia katalogu data:', e);
+    }
+  }
+}
+
+function readOrdersFromDisk(): any[] {
+  ensureDataDir();
+  if (!fs.existsSync(ordersFilePath)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(ordersFilePath, 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Błąd odczytu bazy zamówień:', e);
+    return [];
+  }
+}
+
+function writeOrdersToDisk(orders: any[]): boolean {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(ordersFilePath, JSON.stringify(orders, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Błąd zapisu bazy zamówień:', e);
+    return false;
+  }
+}
+
+app.get('/api/orders-history', (req: Request, res: Response) => {
+  const orders = readOrdersFromDisk();
+  return res.json(orders);
+});
+
+app.post('/api/orders-history', (req: Request, res: Response) => {
+  const newOrder = req.body;
+  if (!newOrder || !newOrder.id) {
+    return res.status(400).json({ error: 'Nieprawidłowe dane zamówienia (brak id)' });
+  }
+
+  const orders = readOrdersFromDisk();
+  const idx = orders.findIndex((o: any) => o.id === newOrder.id);
+  if (idx >= 0) {
+    orders[idx] = { ...newOrder, updatedAt: new Date().toISOString() };
+  } else {
+    orders.unshift(newOrder);
+  }
+
+  writeOrdersToDisk(orders);
+  return res.json({ success: true, order: newOrder });
+});
+
+app.patch('/api/orders-history/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const updates = req.body;
+  const orders = readOrdersFromDisk();
+  const idx = orders.findIndex((o: any) => o.id === id);
+
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Nie znaleziono zamówienia o podanym id' });
+  }
+
+  orders[idx] = {
+    ...orders[idx],
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  writeOrdersToDisk(orders);
+  return res.json({ success: true, order: orders[idx] });
+});
+
+app.delete('/api/orders-history/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const orders = readOrdersFromDisk();
+  const filtered = orders.filter((o: any) => o.id !== id);
+
+  writeOrdersToDisk(filtered);
+  return res.json({ success: true, deletedId: id });
+});
+
 async function startServer() {
   if (!isProduction) {
     const vite = await createViteServer({

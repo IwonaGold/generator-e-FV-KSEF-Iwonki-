@@ -13,6 +13,7 @@ interface KSeFXMLModalProps {
   logisticsFormat: LogisticsFormat;
   schemaVersion: KSeFSchemaVersion;
   onSchemaVersionChange: (ver: KSeFSchemaVersion) => void;
+  onSaveToHistory?: () => void;
 }
 
 export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
@@ -24,8 +25,10 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
   logisticsFormat,
   schemaVersion,
   onSchemaVersionChange,
+  onSaveToHistory,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isSavedToHistory, setIsSavedToHistory] = useState(false);
   const [isValidatingXsd, setIsValidatingXsd] = useState(false);
   const [xsdResult, setXsdResult] = useState<XsdValidationResult | null>(null);
 
@@ -33,8 +36,17 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
   useEffect(() => {
     if (isOpen && xmlContent) {
       runXsdValidation();
+      setIsSavedToHistory(false);
     }
   }, [isOpen, xmlContent]);
+
+  const handleSaveHistoryClick = () => {
+    if (onSaveToHistory) {
+      onSaveToHistory();
+      setIsSavedToHistory(true);
+      setTimeout(() => setIsSavedToHistory(false), 3000);
+    }
+  };
 
   const runXsdValidation = async () => {
     setIsValidatingXsd(true);
@@ -105,6 +117,25 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
               {copied ? <Check className="w-3.5 h-3.5 text-rose-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? 'Skopiowano' : 'Kopiuj XML'}</span>
             </button>
+            {onSaveToHistory && (
+              <button
+                onClick={handleSaveHistoryClick}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                title="Zapisz to zamówienie i wygenerowaną fakturę w Historii Zamówień Sieciowych"
+              >
+                {isSavedToHistory ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-800">Zapisano!</span>
+                  </>
+                ) : (
+                  <>
+                    <span>💾</span>
+                    <span>Zapisz w Historii</span>
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={handleDownload}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -241,12 +272,22 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
               Silnik walidacji: <strong>libxml2 (xmllint-wasm)</strong> · Schemat XSD: <strong>FA(3) wzór 13775 wersja 1-0E</strong>
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="px-3.5 py-1.5 text-slate-700 hover:text-slate-900 border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            Zamknij
-          </button>
+          <div className="flex items-center gap-2">
+            {onSaveToHistory && (
+              <button
+                onClick={handleSaveHistoryClick}
+                className="px-3.5 py-1.5 text-xs font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-lg transition-colors cursor-pointer"
+              >
+                {isSavedToHistory ? '✓ Zapisano w Historii' : '💾 Zapisz w Historii Zamówień'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-3.5 py-1.5 text-slate-700 hover:text-slate-900 border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              Zamknij
+            </button>
+          </div>
         </div>
       </div>
     </div>
