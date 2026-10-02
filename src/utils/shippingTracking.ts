@@ -134,3 +134,23 @@ export function getShippingStatusConfig(status?: ShippingStatus | null): Shippin
   const found = SHIPPING_STATUSES.find((s) => s.id === status);
   return found || SHIPPING_STATUSES[1]; // Domyślnie 'in_transit'
 }
+
+/**
+ * Wyznacza efektywny status logistyczny zamówienia na podstawie pól i stanu doręczenia
+ */
+export function getOrderEffectiveShippingStatus(ord: {
+  shippingStatus?: ShippingStatus | null;
+  isDelivered?: boolean;
+  trackingNumber?: string | null;
+}): ShippingStatus {
+  if (ord.shippingStatus) {
+    return ord.shippingStatus;
+  }
+  if (ord.isDelivered) {
+    return 'delivered';
+  }
+  if (ord.trackingNumber && ord.trackingNumber.trim()) {
+    return 'in_transit';
+  }
+  return 'registered';
+}

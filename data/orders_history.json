@@ -61,11 +61,13 @@
     "notes": "Z pliku zamówienia: zam. 6746.pdf",
     "originalFileName": "zam. 6746.pdf",
     "createdAt": "2026-10-02T18:00:35.193Z",
-    "updatedAt": "2026-10-02T18:13:31.891Z",
+    "updatedAt": "2026-10-02T19:38:22.107Z",
     "shippingStatus": "delivered",
     "shippingStatusUpdatedAt": "02.10.2026, 20:03",
     "trackingNumber": "GK261002192282",
-    "courierName": "Inny"
+    "courierName": "FedEx",
+    "paymentStatus": "paid",
+    "paidAt": "2.10.2026"
   },
   {
     "id": "kor-1790928499189",
@@ -745,7 +747,9 @@
     "notes": "Wysłano paletę kurierem Raben nr listu RB-994821. Przewidywana dostawa poniedziałek.",
     "originalFileName": "zamowienie_C008848894_SuperPharm.txt",
     "createdAt": "2026-09-18T11:00:00.000Z",
-    "updatedAt": "2026-10-02T07:39:31.889Z"
+    "updatedAt": "2026-10-02T19:26:55.224Z",
+    "paymentStatus": "paid",
+    "paidAt": "2.10.2026"
   },
   {
     "id": "ord-gemini-2026-09-10",

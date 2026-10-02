@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Filter,
@@ -29,6 +29,9 @@ import {
   Truck,
   Package,
   AlertTriangle,
+  Camera,
+  Eye,
+  ZoomIn,
 } from 'lucide-react';
 import {
   ArchivedOrder,
@@ -55,7 +58,9 @@ import {
   detectCourierFromTrackingNumber,
   getTrackingUrl,
   getShippingStatusConfig,
+  getOrderEffectiveShippingStatus,
 } from '../utils/shippingTracking';
+import { compressImageToDataUrl, downloadImageDataUrl } from '../utils/imageUtils';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
@@ -108,6 +113,32 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const [editAvisoDate, setEditAvisoDate] = useState<string>('');
   const [isSavingDates, setIsSavingDates] = useState(false);
 
+  // Stan dodawania i podglądu zdjęć przesyłki (dowodu spakowania)
+  const [uploadingPhotosOrderId, setUploadingPhotosOrderId] = useState<string | null>(null);
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ order: ArchivedOrder; photoIndex: number } | null>(null);
+
+  // Klawiatura dla lightboxa zdjęć przesyłki (Esc, Strzałki Lewo/Prawo)
+  useEffect(() => {
+    if (!lightboxPhoto) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightboxPhoto(null);
+      } else if (e.key === 'ArrowLeft') {
+        const total = lightboxPhoto.order.parcelPhotos?.length || 1;
+        setLightboxPhoto((prev) =>
+          prev ? { order: prev.order, photoIndex: (prev.photoIndex - 1 + total) % total } : null
+        );
+      } else if (e.key === 'ArrowRight') {
+        const total = lightboxPhoto.order.parcelPhotos?.length || 1;
+        setLightboxPhoto((prev) =>
+          prev ? { order: prev.order, photoIndex: (prev.photoIndex + 1) % total } : null
+        );
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxPhoto]);
+
   // Obliczenia liczników dla sieci
   const chainCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -125,6 +156,27 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         counts[resolved]++;
       } else {
         counts.Inne++;
+      }
+    });
+
+    return counts;
+  }, [orders]);
+
+  // Obliczenia liczników dla statusów dostawy
+  const deliveryCounts = useMemo(() => {
+    const counts = {
+      all: orders.length,
+      registered: 0,
+      in_transit: 0,
+      out_for_delivery: 0,
+      delivered: 0,
+      exception: 0,
+    };
+
+    orders.forEach((ord) => {
+      const st = getOrderEffectiveShippingStatus(ord);
+      if (counts[st] !== undefined) {
+        counts[st]++;
       }
     });
 
@@ -185,8 +237,12 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       }
 
       // 2. Filtr statusu dostawy
-      if (statusFilter === 'delivered' && !ord.isDelivered) return false;
-      if (statusFilter === 'pending' && ord.isDelivered) return false;
+      if (statusFilter !== 'all') {
+        const effectiveShipping = getOrderEffectiveShippingStatus(ord);
+        if (effectiveShipping !== statusFilter) {
+          return false;
+        }
+      }
 
       // 2b. Filtr statusu płatności
       if (paymentFilter !== 'all') {
@@ -245,6 +301,81 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       return true;
     });
   }, [orders, chainFilter, statusFilter, paymentFilter, periodFilter, customDateFrom, customDateTo, searchQuery]);
+
+  // Obsługa wgrywania zdjęć przesyłki (z kompresją do lekkiego formatu JPEG)
+  const handleAddParcelPhotos = async (order: ArchivedOrder, files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (fileArray.length === 0) {
+      setInvoiceNotice('Wybierz prawidłowe pliki graficzne (np. JPG, PNG).');
+      setTimeout(() => setInvoiceNotice(null), 3000);
+      return;
+    }
+
+    setUploadingPhotosOrderId(order.id);
+    try {
+      const compressedUrls: string[] = [];
+      for (const file of fileArray) {
+        try {
+          const url = await compressImageToDataUrl(file, 1280, 0.82);
+          compressedUrls.push(url);
+        } catch (err) {
+          console.error('Błąd optymalizacji zdjęcia:', err);
+        }
+      }
+
+      if (compressedUrls.length === 0) {
+        setInvoiceNotice('Nie udało się przetworzyć wybranych zdjęć.');
+        setTimeout(() => setInvoiceNotice(null), 3000);
+        return;
+      }
+
+      const existingPhotos = Array.isArray(order.parcelPhotos) ? order.parcelPhotos : [];
+      const updatedPhotos = [...existingPhotos, ...compressedUrls];
+
+      await updateArchivedOrderFields(order.id, { parcelPhotos: updatedPhotos });
+      order.parcelPhotos = updatedPhotos;
+      onRefreshOrders();
+
+      setInvoiceNotice(
+        `📸 Pomyślnie dodano ${compressedUrls.length} ${
+          compressedUrls.length === 1 ? 'zdjęcie' : 'zdjęcia'
+        } przesyłki do zamówienia ${order.invoiceNumber}!`
+      );
+      setTimeout(() => setInvoiceNotice(null), 3500);
+    } catch (e) {
+      console.error('Błąd zapisu zdjęć przesyłki:', e);
+      setInvoiceNotice('Błąd podczas zapisywania zdjęć przesyłki.');
+      setTimeout(() => setInvoiceNotice(null), 3500);
+    } finally {
+      setUploadingPhotosOrderId(null);
+    }
+  };
+
+  // Obsługa usuwania pojedynczego zdjęcia przesyłki
+  const handleDeleteParcelPhoto = async (order: ArchivedOrder, photoIndex: number) => {
+    const existingPhotos = Array.isArray(order.parcelPhotos) ? order.parcelPhotos : [];
+    if (photoIndex < 0 || photoIndex >= existingPhotos.length) return;
+
+    const confirmDelete = window.confirm('Czy na pewno chcesz usunąć to zdjęcie przesyłki z zamówienia?');
+    if (!confirmDelete) return;
+
+    const updatedPhotos = existingPhotos.filter((_, idx) => idx !== photoIndex);
+    await updateArchivedOrderFields(order.id, { parcelPhotos: updatedPhotos });
+    order.parcelPhotos = updatedPhotos;
+    onRefreshOrders();
+
+    if (lightboxPhoto && lightboxPhoto.order.id === order.id) {
+      if (updatedPhotos.length === 0) {
+        setLightboxPhoto(null);
+      } else {
+        const nextIndex = Math.min(photoIndex, updatedPhotos.length - 1);
+        setLightboxPhoto({ order, photoIndex: nextIndex });
+      }
+    }
+
+    setInvoiceNotice('Usunięto zdjęcie przesyłki.');
+    setTimeout(() => setInvoiceNotice(null), 2500);
+  };
 
   // Obsługa zmiany checkboxa "Towar dotarł do odbiorcy"
   const handleToggleDelivered = async (order: ArchivedOrder) => {
@@ -782,38 +913,78 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
-            {/* Filtr dostawy */}
-            <div className="flex items-center gap-1.5">
+            {/* Filtr dostawy (Statusy logistyczne) */}
+            <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-slate-500 font-medium text-[11px]">Dostawa:</span>
-              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+              <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
                 <button
                   onClick={() => setStatusFilter('all')}
                   className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    statusFilter === 'all'
+                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
                   }`}
+                  title="Wszystkie zamówienia bez względu na status dostawy"
                 >
-                  Wszystkie
+                  Wszystkie ({deliveryCounts.all})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('registered')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'registered'
+                      ? 'bg-slate-700 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
+                >
+                  📦 Do wysyłki ({deliveryCounts.registered})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('in_transit')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'in_transit'
+                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
+                >
+                  🚚 W drodze ({deliveryCounts.in_transit})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('out_for_delivery')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'out_for_delivery'
+                      ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Wydane kurierowi do doręczenia dzisiaj do apteki"
+                >
+                  ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
                 </button>
                 <button
                   onClick={() => setStatusFilter('delivered')}
                   className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     statusFilter === 'delivered'
-                      ? 'bg-emerald-600 text-white shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
+                  title="Doręczone i odebrane przez aptekę"
                 >
-                  ✅ Doręczone
+                  ✅ Doręczone ({deliveryCounts.delivered})
                 </button>
-                <button
-                  onClick={() => setStatusFilter('pending')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'pending'
-                      ? 'bg-amber-600 text-white shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  🚚 W drodze
-                </button>
+                {deliveryCounts.exception > 0 ? (
+                  <button
+                    onClick={() => setStatusFilter('exception')}
+                    className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      statusFilter === 'exception'
+                        ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                        : 'text-rose-600 hover:text-rose-800'
+                    }`}
+                    title="Awizo lub problem z doręczeniem przesyłki"
+                  >
+                    ⚠️ Awizo ({deliveryCounts.exception})
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1165,6 +1336,21 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         >
                           {ord.documentType === 'KOR' ? '📝 Korekta KOR' : '📄 Faktura VAT FA(3)'}
                         </span>
+
+                        {/* BADGE ZDJĘĆ PRZESYŁKI */}
+                        {ord.parcelPhotos && ord.parcelPhotos.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setLightboxPhoto({ order: ord, photoIndex: 0 })}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors cursor-pointer shadow-2xs"
+                            title="Kliknij, aby otworzyć zdjęcia przesyłki w powiększeniu"
+                          >
+                            <Camera className="w-3 h-3 text-amber-600" />
+                            <span>
+                              {ord.parcelPhotos.length} {ord.parcelPhotos.length === 1 ? 'zdjęcie paczki' : 'zdjęć paczki'}
+                            </span>
+                          </button>
+                        ) : null}
 
                         {/* DEDYKOWANE MIEJSCE NA NUMER FAKTURY (Z GENEROWANIEM Z XML) */}
                         {isEditingThisInvoice ? (
@@ -1667,6 +1853,126 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     </div>
                   </div>
 
+                  {/* SEKCJA ZDJĘĆ PRZESYŁKI / DOWODU SPAKOWANIA PACZKI */}
+                  <div className="mt-3.5 pt-3 border-t border-slate-100">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-rose-500 shrink-0" />
+                        <span className="text-xs font-bold text-slate-800">Zdjęcia przesyłki / Dowód spakowania:</span>
+                        <span
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            ord.parcelPhotos && ord.parcelPhotos.length > 0
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {ord.parcelPhotos && ord.parcelPhotos.length > 0
+                            ? `${ord.parcelPhotos.length} ${ord.parcelPhotos.length === 1 ? 'zdjęcie' : 'zdjęcia'}`
+                            : 'Brak zdjęć'}
+                        </span>
+                      </div>
+
+                      {/* PRZYCISK DODAWANIA ZDJĘĆ */}
+                      <label
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
+                          uploadingPhotosOrderId === ord.id
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 hover:border-rose-300'
+                        }`}
+                        title="Dodaj zdjęcia spakowanej paczki, kartonu lub etykiety kurierskiej"
+                      >
+                        {uploadingPhotosOrderId === ord.id ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                            <span>Optymalizuję zdjęcia...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5 text-rose-600" />
+                            <span>+ Dodaj zdjęcia przesyłki</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              disabled={uploadingPhotosOrderId === ord.id}
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  handleAddParcelPhotos(ord, e.target.files);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                          </>
+                        )}
+                      </label>
+                    </div>
+
+                    {/* GALERIA MINIATUR LUB KOMUNIKAT O BRAKU Z OBSŁUGĄ DRAG & DROP */}
+                    {ord.parcelPhotos && ord.parcelPhotos.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                        {ord.parcelPhotos.map((photoUrl, photoIdx) => (
+                          <div
+                            key={photoIdx}
+                            className="relative group w-20 h-20 sm:w-24 sm:h-24 rounded-xl border border-slate-200 bg-slate-100 overflow-hidden shadow-2xs hover:shadow-md transition-all shrink-0"
+                          >
+                            <img
+                              src={photoUrl}
+                              alt={`Paczka ${ord.invoiceNumber} - ${photoIdx + 1}`}
+                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform duration-200"
+                              onClick={() => setLightboxPhoto({ order: ord, photoIndex: photoIdx })}
+                            />
+
+                            {/* NAKŁADKA HOVER Z AKCJAMI */}
+                            <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1">
+                              <button
+                                type="button"
+                                onClick={() => setLightboxPhoto({ order: ord, photoIndex: photoIdx })}
+                                className="p-1.5 rounded-lg bg-white/90 text-slate-800 hover:bg-white hover:text-rose-600 transition-colors shadow-xs cursor-pointer"
+                                title="Powiększ zdjęcie"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteParcelPhoto(ord, photoIdx)}
+                                className="p-1.5 rounded-lg bg-rose-600/90 text-white hover:bg-rose-700 transition-colors shadow-xs cursor-pointer"
+                                title="Usuń to zdjęcie"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* NUMEREK W ROGU */}
+                            <span className="absolute bottom-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-900/70 text-white pointer-events-none">
+                              #{photoIdx + 1}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                            handleAddParcelPhotos(ord, e.dataTransfer.files);
+                          }
+                        }}
+                        className="p-3 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl text-center flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-slate-500 hover:bg-rose-50/30 hover:border-rose-300 transition-colors"
+                      >
+                        <Camera className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>
+                          Brak zdjęć paczki. Przeciągnij tutaj lub kliknij <strong>„+ Dodaj zdjęcia przesyłki”</strong>, aby zapisać dowód spakowania kartonu i etykiety dla klienta.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* PASEK AKCJI DLA ZAMÓWIENIA */}
                   <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                     <button
@@ -1885,6 +2191,123 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               >
                 Zamknij
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIGHTBOX DLA ZDJĘĆ PRZESYŁKI */}
+      {lightboxPhoto && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+          onClick={() => setLightboxPhoto(null)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl text-white animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* PASEK GÓRNY LIGHTBOXA */}
+            <div className="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-rose-400" />
+                <span className="font-bold text-sm">
+                  Zdjęcie przesyłki #{lightboxPhoto.photoIndex + 1} z {lightboxPhoto.order.parcelPhotos?.length || 1}
+                </span>
+                <span className="text-slate-400 text-xs hidden sm:inline">
+                  (Faktura: <strong className="text-white">{lightboxPhoto.order.invoiceNumber}</strong> · {lightboxPhoto.order.buyer?.name})
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* POBIERZ ZDJĘCIE */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const photos = lightboxPhoto.order.parcelPhotos || [];
+                    const currentUrl = photos[lightboxPhoto.photoIndex];
+                    if (currentUrl) {
+                      const cleanInv = (lightboxPhoto.order.invoiceNumber || 'zamowienie').replace(/[/\\?%*:|"<>]/g, '_');
+                      downloadImageDataUrl(currentUrl, `paczka-${cleanInv}-foto-${lightboxPhoto.photoIndex + 1}.jpg`);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 transition-colors cursor-pointer"
+                  title="Pobierz to zdjęcie na dysk komputera"
+                >
+                  <Download className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="hidden sm:inline">Pobierz</span>
+                </button>
+
+                {/* USUŃ ZDJĘCIE */}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteParcelPhoto(lightboxPhoto.order, lightboxPhoto.photoIndex)}
+                  className="p-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 hover:text-rose-100 border border-rose-800/80 transition-colors cursor-pointer"
+                  title="Usuń to zdjęcie"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+
+                {/* ZAMKNIJ */}
+                <button
+                  type="button"
+                  onClick={() => setLightboxPhoto(null)}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer ml-1"
+                  title="Zamknij podgląd (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* OBSZAR ZDJĘCIA */}
+            <div className="flex-1 min-h-[320px] max-h-[72vh] p-2 sm:p-4 flex items-center justify-center bg-black/50 overflow-hidden relative select-none">
+              {/* NAWIGACJA POPRZEDNIE */}
+              {(lightboxPhoto.order.parcelPhotos?.length || 0) > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const total = lightboxPhoto.order.parcelPhotos?.length || 1;
+                    const prevIndex = (lightboxPhoto.photoIndex - 1 + total) % total;
+                    setLightboxPhoto({ order: lightboxPhoto.order, photoIndex: prevIndex });
+                  }}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white transition-colors cursor-pointer shadow-lg z-10"
+                  title="Poprzednie zdjęcie (Strzałka w lewo)"
+                >
+                  <ChevronDown className="w-5 h-5 rotate-90" />
+                </button>
+              )}
+
+              <img
+                src={lightboxPhoto.order.parcelPhotos?.[lightboxPhoto.photoIndex]}
+                alt={`Powiększenie zdjęcia ${lightboxPhoto.photoIndex + 1}`}
+                className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl"
+              />
+
+              {/* NAWIGACJA NASTĘPNE */}
+              {(lightboxPhoto.order.parcelPhotos?.length || 0) > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const total = lightboxPhoto.order.parcelPhotos?.length || 1;
+                    const nextIndex = (lightboxPhoto.photoIndex + 1) % total;
+                    setLightboxPhoto({ order: lightboxPhoto.order, photoIndex: nextIndex });
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white transition-colors cursor-pointer shadow-lg z-10"
+                  title="Następne zdjęcie (Strzałka w prawo)"
+                >
+                  <ChevronDown className="w-5 h-5 -rotate-90" />
+                </button>
+              )}
+            </div>
+
+            {/* DOLNY PASEK */}
+            <div className="px-4 py-2 bg-slate-900 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+              <span>Użyj klawiszy ◀ / ▶ na klawiaturze do przełączania zdjęć, a Esc do zamknięcia.</span>
+              <span className="font-mono text-slate-300">
+                {lightboxPhoto.photoIndex + 1} / {lightboxPhoto.order.parcelPhotos?.length || 1}
+              </span>
             </div>
           </div>
         </div>

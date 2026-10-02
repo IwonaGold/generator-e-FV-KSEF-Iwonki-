@@ -227,6 +227,7 @@ export default function App() {
       originalFileName: orderFile?.name,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      parcelPhotos: [],
     };
 
     await saveArchivedOrder(newOrder);

@@ -39,6 +39,8 @@ export interface ArchivedOrder {
   courierName?: ShippingCourier | string | null;
   shippingStatus?: ShippingStatus | null;
   shippingStatusUpdatedAt?: string | null;
+  // Zdjęcia przesyłki / dowód spakowania paczki
+  parcelPhotos?: string[];
   // Pola specyficzne dla korekt (gdy documentType === 'KOR')
   correctionReason?: string;
   originalInvoiceNumber?: string;
@@ -49,7 +51,13 @@ export type ShippingCourier = 'DPD' | 'InPost' | 'DHL' | 'GLS' | 'FedEx' | 'Pocz
 export type ShippingStatus = 'registered' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception';
 
 export type OrderChainFilter = 'Wszystkie' | 'DOZ' | 'Dr. Max' | 'Super-Pharm' | 'Gemini' | 'Inne';
-export type OrderStatusFilter = 'all' | 'delivered' | 'pending';
+export type OrderStatusFilter =
+  | 'all'
+  | 'registered'
+  | 'in_transit'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'exception';
 export type OrderPaymentFilter = 'all' | 'paid' | 'pending' | 'overdue';
 export type OrderDatePeriodFilter =
   | 'all'

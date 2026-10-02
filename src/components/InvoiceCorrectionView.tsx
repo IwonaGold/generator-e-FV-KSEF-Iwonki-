@@ -1459,6 +1459,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         (hasOriginalKsefNumber && originalKsefNumber ? ` [KSeF: ${originalKsefNumber}]` : ''),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      parcelPhotos: [],
       correctionReason: `${reasonCategory}: ${reasonDescription}`,
       originalInvoiceNumber,
       originalInvoiceDate,

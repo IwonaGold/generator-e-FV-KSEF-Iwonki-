@@ -55,6 +55,7 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       deliveryDate: ord.deliveryDate || effectiveAvisoDate,
       paymentDueDate: effectiveDueDate,
       paymentStatus: effectivePaymentStatus,
+      parcelPhotos: Array.isArray(ord.parcelPhotos) ? ord.parcelPhotos : [],
     };
   });
 }
