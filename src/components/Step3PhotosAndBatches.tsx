@@ -364,19 +364,19 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   };
 
   return (
-    <div className="bg-white/95 border border-rose-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+    <div className="bg-white/95 border border-fuchsia-200/80 rounded-2xl p-5 mb-6 shadow-xs">
       {/* Nagłówek sekcji */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-rose-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-fuchsia-100">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
+            <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shadow-2xs">
               3
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Camera className="w-4 h-4 text-rose-500" />
+                <Camera className="w-4 h-4 text-fuchsia-600" />
                 <span>Zdjęcia Opakowań – Weryfikacja Produktu i Odczyt LOT/MHD (OCR)</span>
-                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
                   Krok 3 🌸
                 </span>
               </h2>
@@ -389,13 +389,13 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
         <div className="flex items-center gap-2">
           {logisticsFormat === 'none' ? (
-            <span className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+            <span className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 px-2.5 py-1 rounded-lg">
               Tryb: Faktura bez serii i dat
             </span>
           ) : (
             <button
               onClick={() => photoInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 rounded-xl shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-600 hover:to-pink-600 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Camera className="w-4 h-4" />
               <span>🌸 Dodaj zdjęcie produktu</span>

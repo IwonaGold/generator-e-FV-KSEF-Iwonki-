@@ -591,8 +591,8 @@ export default function App() {
           <div className="space-y-6">
             {/* Powiadomienie systemowe */}
             {priceNotice && (
-              <div className="p-3.5 rounded-xl bg-pink-50 border border-pink-200 text-xs text-pink-900 flex items-center gap-2.5 shadow-2xs animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4 text-pink-600 shrink-0" />
+              <div className="p-3.5 rounded-xl bg-fuchsia-50 border border-fuchsia-200 text-xs text-fuchsia-900 flex items-center gap-2.5 shadow-2xs animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-fuchsia-600 shrink-0" />
                 <span className="font-medium">{priceNotice}</span>
               </div>
             )}

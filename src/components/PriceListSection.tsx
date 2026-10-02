@@ -200,22 +200,22 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
   });
 
   return (
-    <div className="bg-white/95 border border-rose-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+    <div className="bg-white/95 border border-fuchsia-200/80 rounded-2xl p-5 mb-6 shadow-xs">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-rose-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-fuchsia-100">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
+            <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shadow-2xs">
               4
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-rose-500" />
+                <FileSpreadsheet className="w-4 h-4 text-fuchsia-600" />
                 <span>Weryfikacja z Cennikiem (Plik XLSX / Schowek)</span>
-                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
                   Krok 4 🌸
                 </span>
-                <span className="text-[11px] font-mono text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                <span className="text-[11px] font-mono text-fuchsia-700 bg-fuchsia-50 px-2 py-0.5 rounded-full border border-fuchsia-200">
                   Ceny netto po rabacie
                 </span>
               </h2>
