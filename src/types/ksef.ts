@@ -50,6 +50,15 @@ export interface EntityDetails {
   gln?: string; // Globalny Numer Lokalizacyjny GS1 (np. ILN 5909000828476)
 }
 
+export const EMPTY_BUYER: EntityDetails = {
+  nip: '',
+  name: '',
+  countryCode: 'PL',
+  addressLine1: '',
+  postalCode: '',
+  city: '',
+};
+
 export interface InvoiceMeta {
   invoiceNumber: string; // P_2 np. 41/2026/KSEF lub 40/2026/KSEF
   invoiceType: 'VAT'; // Faktura podstawowa

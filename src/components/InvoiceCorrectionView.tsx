@@ -31,7 +31,7 @@ import {
   Tag,
   ExternalLink,
 } from 'lucide-react';
-import { EntityDetails, ThirdPartyEntity, InvoiceItem, VatRate, PharmacyChain } from '../types/ksef';
+import { EntityDetails, ThirdPartyEntity, InvoiceItem, VatRate, PharmacyChain, EMPTY_BUYER } from '../types/ksef';
 import {
   CorrectionItem,
   KSeFCorrectionData,
@@ -51,6 +51,136 @@ import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { saveArchivedOrder } from '../utils/ordersStorage';
 import { parseAddressString } from '../utils/ksefPdfInvoiceParser';
 import { detectPharmacyChain } from '../utils/orderParser';
+
+const EMPTY_FORMAL_FIELDS: Record<
+  FormalCorrectionField,
+  {
+    active: boolean;
+    name: string;
+    origValue: string;
+    corrValue: string;
+  }
+> = {
+  buyer_name: {
+    active: false,
+    name: 'Nazwa Nabywcy (literówka / zmiana nazwy)',
+    origValue: '',
+    corrValue: '',
+  },
+  buyer_address: {
+    active: false,
+    name: 'Adres siedziby Nabywcy (ulica, nr, kod pocztowy, miasto)',
+    origValue: '',
+    corrValue: '',
+  },
+  third_party: {
+    active: false,
+    name: 'Dane Odbiorcy towaru / Apteki (Podmiot 3)',
+    origValue: 'Brak odrębnego odbiorcy',
+    corrValue: 'Brak odrębnego odbiorcy',
+  },
+  delivery_date: {
+    active: false,
+    name: 'Data dokonania / zakończenia dostawy',
+    origValue: '',
+    corrValue: '',
+  },
+  order_number: {
+    active: false,
+    name: 'Numer zamówienia klienta (ZZ)',
+    origValue: '',
+    corrValue: '',
+  },
+  expiry_date: {
+    active: false,
+    name: 'Data ważności (MHD) produktu / partii',
+    origValue: '',
+    corrValue: '',
+  },
+  batch_number: {
+    active: false,
+    name: 'Numer serii towaru (LOT)',
+    origValue: '',
+    corrValue: '',
+  },
+  bank_account: {
+    active: false,
+    name: 'Rachunek bankowy do płatności',
+    origValue: '',
+    corrValue: '',
+  },
+  other: {
+    active: false,
+    name: 'Inne dane formalne / opisowe',
+    origValue: '',
+    corrValue: '',
+  },
+};
+
+const SAMPLE_FORMAL_FIELDS: Record<
+  FormalCorrectionField,
+  {
+    active: boolean;
+    name: string;
+    origValue: string;
+    corrValue: string;
+  }
+> = {
+  buyer_name: {
+    active: false,
+    name: 'Nazwa Nabywcy (literówka / zmiana nazwy)',
+    origValue: 'DR. MAX LEKOMAT SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
+    corrValue: 'DR. MAX LEKOMAT SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
+  },
+  buyer_address: {
+    active: true,
+    name: 'Adres siedziby Nabywcy (ulica, nr, kod pocztowy, miasto)',
+    origValue: 'ul. Krzemieniecka 60A, 54-613 Wrocław',
+    corrValue: 'ul. Krzemieniecka 60A, 54-613 Wrocław',
+  },
+  third_party: {
+    active: false,
+    name: 'Dane Odbiorcy towaru / Apteki (Podmiot 3)',
+    origValue: 'Brak odrębnego odbiorcy',
+    corrValue: 'Brak odrębnego odbiorcy',
+  },
+  delivery_date: {
+    active: false,
+    name: 'Data dokonania / zakończenia dostawy',
+    origValue: '2026-09-30',
+    corrValue: '2026-09-30',
+  },
+  order_number: {
+    active: false,
+    name: 'Numer zamówienia klienta (ZZ)',
+    origValue: 'ZZ-1009/09/26',
+    corrValue: 'ZZ-1009/09/26',
+  },
+  expiry_date: {
+    active: false,
+    name: 'Data ważności (MHD) produktu / partii',
+    origValue: '2028-04-30',
+    corrValue: '2028-04-30',
+  },
+  batch_number: {
+    active: false,
+    name: 'Numer serii towaru (LOT)',
+    origValue: '25E1244',
+    corrValue: '25E1244',
+  },
+  bank_account: {
+    active: false,
+    name: 'Rachunek bankowy do płatności',
+    origValue: '96 1090 1098 0000 0001 6398 3525',
+    corrValue: '96 1090 1098 0000 0001 6398 3525',
+  },
+  other: {
+    active: false,
+    name: 'Inne dane formalne / opisowe',
+    origValue: '',
+    corrValue: '',
+  },
+};
 
 interface InvoiceCorrectionViewProps {
   archivedOrders: ArchivedOrder[];
@@ -123,62 +253,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         corrValue: string;
       }
     >
-  >({
-    buyer_name: {
-      active: false,
-      name: 'Nazwa Nabywcy (literówka / zmiana nazwy)',
-      origValue: 'DR. MAX LEKOMAT SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
-      corrValue: 'DR. MAX LEKOMAT SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
-    },
-    buyer_address: {
-      active: true,
-      name: 'Adres siedziby Nabywcy (ulica, nr, kod pocztowy, miasto)',
-      origValue: 'ul. Krzemieniecka 60A, 54-613 Wrocław',
-      corrValue: 'ul. Krzemieniecka 60A, 54-613 Wrocław',
-    },
-    third_party: {
-      active: false,
-      name: 'Dane Odbiorcy towaru / Apteki (Podmiot 3)',
-      origValue: 'Brak odrębnego odbiorcy',
-      corrValue: 'Brak odrębnego odbiorcy',
-    },
-    delivery_date: {
-      active: false,
-      name: 'Data dokonania / zakończenia dostawy',
-      origValue: '2026-09-30',
-      corrValue: '2026-09-30',
-    },
-    order_number: {
-      active: false,
-      name: 'Numer zamówienia klienta (ZZ)',
-      origValue: 'ZZ-1009/09/26',
-      corrValue: 'ZZ-1009/09/26',
-    },
-    expiry_date: {
-      active: false,
-      name: 'Data ważności (MHD) produktu / partii',
-      origValue: '2028-04-30',
-      corrValue: '2028-04-30',
-    },
-    batch_number: {
-      active: false,
-      name: 'Numer serii towaru (LOT)',
-      origValue: '25E1244',
-      corrValue: '25E1244',
-    },
-    bank_account: {
-      active: false,
-      name: 'Rachunek bankowy do płatności',
-      origValue: '96 1090 1098 0000 0001 6398 3525',
-      corrValue: '96 1090 1098 0000 0001 6398 3525',
-    },
-    other: {
-      active: false,
-      name: 'Inne dane formalne / opisowe',
-      origValue: '',
-      corrValue: '',
-    },
-  });
+  >(SAMPLE_FORMAL_FIELDS);
 
   // Stan cennika do automatycznej korekty cen (1-kliknięciem)
   const [priceList, setPriceList] = useState<PriceListItem[] | null>(null);
@@ -267,6 +342,83 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     setSelectedChain('Dr. Max');
     setCorrectionMode('value');
     setTypKorekty('1');
+    setDeliveryDate('2026-09-30');
+    setOrderNumber('ZZ-1009/09/26');
+    setOrderDate('2026-09-28');
+    setBankAccount('96 1090 1098 0000 0001 6398 3525');
+    setFormalFields(SAMPLE_FORMAL_FIELDS);
+    setCorrectionNumber('KOR-01/10/2026');
+    setReasonCategory(COMMON_CORRECTION_REASONS[0]);
+    setReasonDescription('Zwrot 2 sztuk towaru z powodu uszkodzenia opakowania w transporcie');
+    setCorrectedInvoices([
+      {
+        id: 'inv-init-1',
+        invoiceNumber: '41/2026/KSEF',
+        invoiceDate: '2026-09-29',
+        hasKsefNumber: true,
+        ksefNumber: '9571106742-20260929-4D51D9800003-0F',
+        netTotal: 9239.92,
+        grossTotal: 9979.11,
+        fileName: 'faktura_41_2026_KSEF.pdf',
+      },
+    ]);
+    setNotification('Załadowano przykładowe dane korekty (wzorzec testowy Dr. Max).');
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const handleResetEverything = () => {
+    // 1. Pozycje i powiązane faktury korygowane
+    setItems([]);
+    setCorrectedInvoices([]);
+
+    // 2. Dane faktury pierwotnej
+    setOriginalInvoiceNumber('');
+    setOriginalInvoiceDate('');
+    setHasOriginalKsefNumber(false);
+    setOriginalKsefNumber('');
+    setDeliveryDate('');
+    setOrderNumber('');
+    setOrderDate('');
+    setBankAccount(DEFAULT_SELLER.bankAccount || '');
+
+    // 3. Strony transakcji
+    setBuyer(EMPTY_BUYER);
+    setThirdParty(null);
+    setSelectedChain('Inne');
+
+    // 4. Tryby korekty, okres i rabaty
+    setCorrectionMode('value');
+    setTypKorekty('1');
+    setOkresFaKorygowanej('');
+    setDiscountType('percentage');
+    setDiscountPercent(0);
+    setDiscountAmountNet(0);
+    setDiscountDescription('');
+
+    // 5. Pola formalne (TypKorekty: 2)
+    setFormalFields(EMPTY_FORMAL_FIELDS);
+
+    // 6. Cennik
+    setPriceList(null);
+    setPriceListFileName(null);
+
+    // 7. Numer i przyczyna korekty
+    setCorrectionNumber('');
+    setReasonCategory(COMMON_CORRECTION_REASONS[0]);
+    setReasonDescription('');
+
+    // 8. Wygenerowany XML i walidacja XSD
+    setGeneratedXml('');
+    setXsdResult(null);
+
+    // 9. Reset inputów plików
+    if (pdfInputRef.current) pdfInputRef.current.value = '';
+    if (bulkPdfInputRef.current) bulkPdfInputRef.current.value = '';
+    if (priceListInputRef.current) priceListInputRef.current.value = '';
+
+    // 10. Powiadomienie
+    setNotification('Wyczyszczono formularz korekty. Wszystkie wprowadzone dane zostały zresetowane.');
+    setTimeout(() => setNotification(null), 4000);
   };
 
   const loadFromArchivedOrder = (order: ArchivedOrder) => {
@@ -1298,11 +1450,22 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             </label>
 
             <button
+              type="button"
               onClick={loadSampleCorrectionData}
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
               <span>Wzorzec testowy</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResetEverything}
+              className="inline-flex items-center gap-2 px-4 py-2 sm:px-4.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border-2 border-rose-300 hover:border-rose-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer"
+              title="Wyczyść wszystkie wprowadzone dane formularza korekty"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Wyczyść wszystko</span>
             </button>
           </div>
         </div>
@@ -1462,7 +1625,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
               <div className="font-bold text-slate-900 flex items-center gap-2">
                 <span>Nabywca: {buyer.name || 'Brak danych'}</span>
                 <span className="text-[10px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 font-semibold">
-                  NIP: {buyer.nip}
+                  NIP: {buyer.nip || 'Brak NIP'}
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 mt-0.5">

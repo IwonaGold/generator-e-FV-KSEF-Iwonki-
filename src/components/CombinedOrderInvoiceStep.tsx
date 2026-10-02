@@ -326,11 +326,13 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
                   setLastExtractedInfo(null);
                   setPastedText('');
                   setIsPasteOpen(false);
+                  if (orderInputRef.current) orderInputRef.current.value = '';
                   onResetEverything();
                 }}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 px-4 py-2 sm:px-4.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border-2 border-rose-300 hover:border-rose-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer"
                 title="Wyczyść wszystkie wprowadzone dane i zresetuj weryfikację"
               >
+                <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>Wyczyść wszystko</span>
               </button>
             )}

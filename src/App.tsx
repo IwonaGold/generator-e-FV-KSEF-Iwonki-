@@ -12,6 +12,7 @@ import {
   PharmacyChain,
   LogisticsFormat,
   EntityDetails,
+  EMPTY_BUYER,
   ThirdPartyEntity,
   InvoiceItem,
   InvoiceMeta,
@@ -40,15 +41,6 @@ import { InvoiceCorrectionView } from './components/InvoiceCorrectionView';
 import { OrderHistoryView } from './components/OrderHistoryView';
 import { ArchivedOrder } from './types/ordersHistory';
 import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
-
-const EMPTY_BUYER: EntityDetails = {
-  nip: '',
-  name: '',
-  countryCode: 'PL',
-  addressLine1: '',
-  postalCode: '',
-  city: '',
-};
 
 /**
  * Generator świeżych, czystych metadanych faktury (od zera)
