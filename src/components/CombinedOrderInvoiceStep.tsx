@@ -678,13 +678,13 @@ Numer zamówienia: ZAM/2026/10/01
                 onSelectChain(e.target.value as PharmacyChain);
                 setVerified((prev) => ({ ...prev, buyer: false }));
               }}
-              className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 appearance-none focus:outline-none focus:border-blue-600"
+              className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 appearance-none focus:outline-none focus:border-rose-400"
             >
+              <option value="Custom">Wybierz sieć apteczną lub wgraj zamówienie...</option>
               <option value="Super-Pharm">Super-Pharm Poland Sp. z o.o.</option>
               <option value="Dr. Max">Dr. Max (Dr. Max Lekomat Sp. z o.o.)</option>
               <option value="DOZ">DOZ (DOZ S.A. Direct Sp. k.)</option>
               <option value="Gemini">Gemini (Gemini Polska Sp. z o.o.)</option>
-              <option value="Custom">Inna apteka / Z zamówienia</option>
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
           </div>
@@ -697,6 +697,7 @@ Numer zamówienia: ZAM/2026/10/01
                   type="text"
                   value={buyer.name}
                   onChange={(e) => onUpdateBuyer({ ...buyer, name: e.target.value })}
+                  placeholder="np. DR. MAX LEKOMAT SP. Z O.O."
                   className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
                 />
               </div>
@@ -707,6 +708,7 @@ Numer zamówienia: ZAM/2026/10/01
                     type="text"
                     value={buyer.nip}
                     onChange={(e) => onUpdateBuyer({ ...buyer, nip: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    placeholder="10 cyfr NIP"
                     className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
                   />
                 </div>
@@ -716,6 +718,7 @@ Numer zamówienia: ZAM/2026/10/01
                     type="email"
                     value={buyer.email || ''}
                     onChange={(e) => onUpdateBuyer({ ...buyer, email: e.target.value })}
+                    placeholder="faktury@odbiorca.pl"
                     className="w-full text-xs text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
                   />
                 </div>
@@ -726,6 +729,7 @@ Numer zamówienia: ZAM/2026/10/01
                   type="text"
                   value={buyer.addressLine1}
                   onChange={(e) => onUpdateBuyer({ ...buyer, addressLine1: e.target.value })}
+                  placeholder="ul. Przykładowa 1"
                   className="w-full text-xs text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
                 />
               </div>
@@ -736,6 +740,7 @@ Numer zamówienia: ZAM/2026/10/01
                     type="text"
                     value={buyer.postalCode}
                     onChange={(e) => onUpdateBuyer({ ...buyer, postalCode: e.target.value })}
+                    placeholder="00-000"
                     className="w-full text-xs font-mono text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
                   />
                 </div>
@@ -745,16 +750,22 @@ Numer zamówienia: ZAM/2026/10/01
                     type="text"
                     value={buyer.city}
                     onChange={(e) => onUpdateBuyer({ ...buyer, city: e.target.value })}
+                    placeholder="Miasto"
                     className="w-full text-xs text-slate-900 bg-white border border-slate-300 rounded px-2 py-1"
                   />
                 </div>
               </div>
             </div>
+          ) : !buyer.name && !buyer.nip ? (
+            <div className="py-4 px-3 rounded-xl border border-dashed border-rose-200 bg-rose-50/30 text-center">
+              <p className="text-xs font-semibold text-slate-700">Brak kontrahenta</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Wgraj plik z zamówieniem lub wybierz sieć apteczną powyżej</p>
+            </div>
           ) : (
             <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900 truncate" title={buyer.name}>{buyer.name}</p>
-                <span className="shrink-0 text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                <span className="shrink-0 text-[10px] font-bold text-pink-700 bg-pink-50 px-1.5 py-0.5 rounded border border-pink-200">
                   {lastExtractedInfo?.isRecognizedChain ? 'Sieć' : 'Z zamówienia'}
                 </span>
               </div>

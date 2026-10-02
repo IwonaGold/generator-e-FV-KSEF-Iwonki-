@@ -41,24 +41,30 @@ import { OrderHistoryView } from './components/OrderHistoryView';
 import { ArchivedOrder } from './types/ordersHistory';
 import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
 
+export const EMPTY_BUYER: EntityDetails = {
+  nip: '',
+  name: '',
+  countryCode: 'PL',
+  addressLine1: '',
+  postalCode: '',
+  city: '',
+};
+
 /**
- * Generator świeżych metadanych faktury
+ * Generator świeżych, czystych metadanych faktury (od zera)
  */
 const getFreshInvoiceMeta = (): InvoiceMeta => {
   const today = new Date().toISOString().slice(0, 10);
-  const future = new Date();
-  future.setDate(future.getDate() + 30);
-  const dueDate = future.toISOString().slice(0, 10);
-
   return {
-    invoiceNumber: '41/2026/KSEF',
+    invoiceNumber: '',
     invoiceType: 'VAT',
     issueDate: today,
     issuePlace: 'Gdańsk',
-    deliveryDate: today,
-    orderNumber: 'ZZ-1009/09/26',
-    orderDate: today,
-    dueDate: dueDate,
+    deliveryDate: '',
+    orderNumber: '',
+    orderDate: '',
+    dueDate: '',
+    paymentDays: undefined,
     paymentMethod: 'przelew',
     currency: 'PLN',
     systemSource: 'KSeF Pharmacy Suite v3.2',
@@ -106,12 +112,12 @@ export default function App() {
   };
 
   // --- Stan Aplikacji: CZYSTY START OD ZERA ---
-  const [selectedChain, setSelectedChain] = useState<PharmacyChain>('Dr. Max');
-  const [logisticsFormat, setLogisticsFormat] = useState<LogisticsFormat>('gs1_composite');
+  const [selectedChain, setSelectedChain] = useState<PharmacyChain>('Custom');
+  const [logisticsFormat, setLogisticsFormat] = useState<LogisticsFormat>('none');
   const [schemaVersion, setSchemaVersion] = useState<KSeFSchemaVersion>('FA3');
 
   const [seller, setSeller] = useState<EntityDetails>(DEFAULT_SELLER);
-  const [buyer, setBuyer] = useState<EntityDetails>(PHARMACY_CHAINS['Dr. Max'].buyer);
+  const [buyer, setBuyer] = useState<EntityDetails>(EMPTY_BUYER);
   const [thirdParty, setThirdParty] = useState<ThirdPartyEntity | null>(null);
   const [meta, setMeta] = useState<InvoiceMeta>(getFreshInvoiceMeta());
 
@@ -228,8 +234,10 @@ export default function App() {
     setPriceList(null);
     setPriceListFileName(null);
     setThirdParty(null);
+    setBuyer(EMPTY_BUYER);
+    setSelectedChain('Custom');
     setMeta(getFreshInvoiceMeta());
-    setPriceNotice('Wyczyszczono formularz. Możesz rozpocząć nowe zamówienie od zera.');
+    setPriceNotice('Wyczyszczono formularz. Wszystkie dane nagłówka i pozycji zostały zresetowane.');
     setTimeout(() => setPriceNotice(null), 4000);
   };
 
@@ -290,12 +298,9 @@ export default function App() {
       if (profile.preferredLogisticsFormat) {
         setLogisticsFormat(profile.preferredLogisticsFormat);
       }
-      if (profile.defaultOrderNumber) {
-        setMeta((prev) => ({
-          ...prev,
-          orderNumber: profile.defaultOrderNumber,
-        }));
-      }
+    } else {
+      setBuyer(EMPTY_BUYER);
+      setThirdParty(null);
     }
   };
 
