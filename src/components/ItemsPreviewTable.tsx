@@ -3,7 +3,7 @@ import { InvoiceItem, LogisticsFormat, VatRate } from '../types/ksef';
 import { formatGS1CompositeString } from '../utils/ksefGenerator';
 import { PriceComparisonItem } from '../types/priceList';
 import { evaluateShelfLife } from '../utils/expiryDateValidator';
-import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus, Clock } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus, Clock, FileText } from 'lucide-react';
 
 interface ItemsPreviewTableProps {
   items: InvoiceItem[];
@@ -19,6 +19,7 @@ interface ItemsPreviewTableProps {
   onApplySinglePrice?: (itemId: string, newPrice: number) => void;
   onApplySingleGtin?: (itemId: string, newGtin: string) => void;
   onOpenXmlModal?: () => void;
+  onOpenWzModal?: () => void;
   onSaveToHistory?: () => void;
 }
 
@@ -36,6 +37,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   onApplySinglePrice,
   onApplySingleGtin,
   onOpenXmlModal,
+  onOpenWzModal,
   onSaveToHistory,
 }) => {
   // Weryfikacja dat ważności pod kątem wymogu min. 12 miesięcy w sieciach aptecznych
@@ -655,6 +657,17 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
             >
               <BookmarkPlus className="w-3.5 h-3.5 text-fuchsia-600" />
               <span>💾 Zapisz w historii</span>
+            </button>
+          )}
+          {onOpenWzModal && (
+            <button
+              type="button"
+              onClick={onOpenWzModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl shadow-xs transition-colors cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              title="Wygeneruj i wydrukuj magazynowy dokument WZ (Wydanie Zewnętrzne) z seriami i datami ważności do paczki/dla kierowcy"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-600" />
+              <span>📄 Generuj WZ</span>
             </button>
           )}
           {onOpenXmlModal && (

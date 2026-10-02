@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { FileCode, Sparkles, BookOpen, LogOut, ShieldCheck, ChevronDown, ExternalLink } from 'lucide-react';
+import { FileCode, Sparkles, BookOpen, LogOut, ShieldCheck, ChevronDown, ExternalLink, FileText } from 'lucide-react';
 import appLogo from '../assets/app-logo.png';
 
 interface HeaderProps {
   onOpenXmlModal: () => void;
+  onOpenWzModal?: () => void;
   onOpenAiGuide: () => void;
   onOpenDirectApiModal: () => void;
   itemCount: number;
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenXmlModal,
+  onOpenWzModal,
   onOpenAiGuide,
   onOpenDirectApiModal,
   itemCount,
@@ -112,6 +114,28 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </button>
 
+                {onOpenWzModal && (
+                  <>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={onOpenWzModal}
+                      className="w-full text-left p-2.5 rounded-xl hover:bg-fuchsia-50 transition-colors flex items-start gap-2.5 cursor-pointer"
+                    >
+                      <div className="w-6 h-6 rounded-lg bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                        2
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                          <span>2. Generuj dokument WZ</span>
+                          <FileText className="w-3 h-3 text-fuchsia-600" />
+                        </div>
+                        <div className="text-[11px] text-slate-500 leading-tight">Wydanie Zewnętrzne z seriami i datami (Drukuj / PDF)</div>
+                      </div>
+                    </button>
+                  </>
+                )}
+
                 <div className="my-1 border-t border-slate-100" />
 
                 <a
@@ -121,11 +145,11 @@ export const Header: React.FC<HeaderProps> = ({
                   className="w-full text-left p-2.5 rounded-xl hover:bg-blue-50 transition-colors flex items-start gap-2.5 cursor-pointer"
                 >
                   <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
-                    2
+                    3
                   </div>
                   <div>
                     <div className="text-xs font-bold text-blue-950 flex items-center gap-1">
-                      <span>2. Przejdź do logowania KSeF</span>
+                      <span>3. Przejdź do logowania KSeF</span>
                       <ExternalLink className="w-3 h-3 text-blue-600" />
                     </div>
                     <div className="text-[11px] text-slate-500 leading-tight">Oficjalny portal MF do wgrania pobranego pliku XML</div>

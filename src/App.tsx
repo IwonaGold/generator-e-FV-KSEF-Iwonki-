@@ -6,6 +6,7 @@ import { Step3PhotosAndBatches } from './components/Step3PhotosAndBatches';
 import { PriceListSection } from './components/PriceListSection';
 import { ItemsPreviewTable } from './components/ItemsPreviewTable';
 import { KSeFXMLModal } from './components/KSeFXMLModal';
+import { WZDocumentModal } from './components/WZDocumentModal';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
 import { KSeFDirectApiModal } from './components/KSeFDirectApiModal';
 import {
@@ -128,6 +129,7 @@ export default function App() {
 
   // Modale
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
+  const [isWzModalOpen, setIsWzModalOpen] = useState(false);
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
   const [isDirectApiModalOpen, setIsDirectApiModalOpen] = useState(false);
 
@@ -593,6 +595,7 @@ export default function App() {
       {/* Nagłówek */}
       <Header
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
+        onOpenWzModal={() => setIsWzModalOpen(true)}
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
         onOpenDirectApiModal={() => setIsDirectApiModalOpen(true)}
         itemCount={items.length}
@@ -687,6 +690,7 @@ export default function App() {
               onApplySinglePrice={handleApplySinglePrice}
               onApplySingleGtin={handleApplySingleGtin}
               onOpenXmlModal={() => setIsXmlModalOpen(true)}
+              onOpenWzModal={() => setIsWzModalOpen(true)}
               onSaveToHistory={handleSaveInvoiceToHistory}
             />
           </div>
@@ -731,6 +735,19 @@ export default function App() {
         schemaVersion={schemaVersion}
         onSchemaVersionChange={setSchemaVersion}
         onSaveToHistory={handleSaveInvoiceToHistory}
+        onOpenWzModal={() => setIsWzModalOpen(true)}
+      />
+
+      {/* Modal generowania i wydruku dokumentu WZ */}
+      <WZDocumentModal
+        isOpen={isWzModalOpen}
+        onClose={() => setIsWzModalOpen(false)}
+        seller={seller}
+        buyer={buyer}
+        thirdParty={thirdParty}
+        meta={meta}
+        items={items}
+        selectedChain={selectedChain}
       />
 
       {/* Modal konfiguracji Vision LLM */}

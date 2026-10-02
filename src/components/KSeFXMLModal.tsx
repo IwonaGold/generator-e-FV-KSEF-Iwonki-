@@ -14,6 +14,7 @@ interface KSeFXMLModalProps {
   schemaVersion: KSeFSchemaVersion;
   onSchemaVersionChange: (ver: KSeFSchemaVersion) => void;
   onSaveToHistory?: () => void;
+  onOpenWzModal?: () => void;
 }
 
 export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
@@ -26,6 +27,7 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
   schemaVersion,
   onSchemaVersionChange,
   onSaveToHistory,
+  onOpenWzModal,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isSavedToHistory, setIsSavedToHistory] = useState(false);
@@ -375,6 +377,19 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {onOpenWzModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenWzModal();
+                }}
+                className="px-3.5 py-1.5 text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+                title="Przejdź do dokumentu WZ (Wydanie Zewnętrzne) dla tej faktury"
+              >
+                📄 Generuj WZ
+              </button>
+            )}
             {onSaveToHistory && (
               <button
                 onClick={handleSaveHistoryClick}
