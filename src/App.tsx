@@ -35,8 +35,9 @@ import {
 import { generateKSeFXML, validateKSeFInvoice } from './utils/ksefGenerator';
 import { comparePricesWithInvoice } from './utils/priceListParser';
 import { matchOrBuildBuyerFromOrder, detectPharmacyChain } from './utils/orderParser';
-import { FileCode, CheckCircle2, RotateCcw, Server, BookmarkPlus } from 'lucide-react';
-import { ModuleTilesNav, AppModule } from './components/ModuleTilesNav';
+import { AppModule } from './types/navigation';
+import { HomePortalView } from './components/HomePortalView';
+import { SubpageHeaderBar } from './components/SubpageHeaderBar';
 import { InvoiceCorrectionView } from './components/InvoiceCorrectionView';
 import { OrderHistoryView } from './components/OrderHistoryView';
 import { ArchivedOrder } from './types/ordersHistory';
@@ -131,17 +132,17 @@ export default function App() {
   const [isWzModalOpen, setIsWzModalOpen] = useState(false);
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
 
-  // --- Moduł Aplikacji (3 Kafelki: Faktura XML | Korekta Faktury XML | Historia Zamówień) ---
+  // --- Moduł Aplikacji: 'home' (Strona startowa z 2 kafelkami) | 'invoice' | 'correction' | 'history' ---
   const [activeModule, setActiveModule] = useState<AppModule>(() => {
     try {
       const saved = localStorage.getItem('iwonka_active_module');
-      if (saved === 'invoice' || saved === 'correction' || saved === 'history') {
+      if (saved === 'home' || saved === 'invoice' || saved === 'correction' || saved === 'history') {
         return saved as AppModule;
       }
     } catch (e) {
       console.warn('Storage error:', e);
     }
-    return 'invoice';
+    return 'home';
   });
 
   useEffect(() => {
@@ -616,6 +617,7 @@ export default function App() {
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
+        onNavigateHome={() => setActiveModule('home')}
         itemCount={items.length}
         username="Eubiosis"
         onLogout={handleLogout}
@@ -624,13 +626,24 @@ export default function App() {
       {/* Główny obszar roboczy */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* ==================================================================== */}
-        {/* 3 GŁÓWNE KAFELKI NAWIGACJI MODUŁOWEJ (WYSTAW FV / KOREKTA / HISTORIA) */}
+        {/* STRONA 1: WYBÓR Z TYLKO DWÓCH KAFELKÓW (CENTRUM FAKTUR / ZAMÓWIEŃ)  */}
         {/* ==================================================================== */}
-        <ModuleTilesNav
-          activeModule={activeModule}
-          onSelectModule={setActiveModule}
-          ordersCount={archivedOrders.length}
-        />
+        {activeModule === 'home' ? (
+          <HomePortalView
+            onSelectModule={setActiveModule}
+            ordersCount={archivedOrders.length}
+          />
+        ) : (
+          /* ==================================================================== */
+          /* PODSTRONY: PASEK POWROTU ORAZ PRZEŁĄCZANIA PODMODUŁÓW               */
+          /* ==================================================================== */
+          <SubpageHeaderBar
+            activeModule={activeModule}
+            onSelectModule={setActiveModule}
+            onNavigateHome={() => setActiveModule('home')}
+            ordersCount={archivedOrders.length}
+          />
+        )}
 
         {/* ==================================================================== */}
         {/* MODUŁ 1: 1. WYGENERUJ FAKTURĘ XML                                    */}

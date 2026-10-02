@@ -1,7 +1,8 @@
 import React from 'react';
 import { FileText, FileEdit, History, CheckCircle2, ChevronRight, Sparkles, Building2, PackageCheck } from 'lucide-react';
 
-export type AppModule = 'invoice' | 'correction' | 'history';
+import { AppModule } from '../types/navigation';
+export type { AppModule };
 
 interface ModuleTilesNavProps {
   activeModule: AppModule;

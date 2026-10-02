@@ -6,6 +6,7 @@ interface HeaderProps {
   onOpenXmlModal: () => void;
   onOpenWzModal?: () => void;
   onOpenAiGuide: () => void;
+  onNavigateHome?: () => void;
   itemCount: number;
   username?: string;
   onLogout?: () => void;
@@ -15,6 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenXmlModal,
   onOpenWzModal,
   onOpenAiGuide,
+  onNavigateHome,
   itemCount,
   username = 'Eubiosis',
   onLogout,
@@ -25,8 +27,13 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-rose-200/80 shadow-xs">
       <div className="h-1 bg-gradient-to-r from-pink-400 via-rose-400 to-fuchsia-400 w-full" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Zone 1: Wordmark & Logo */}
-        <div className="flex items-center gap-3">
+        {/* Zone 1: Wordmark & Logo (kliknięcie powraca do menu 2 kafelków) */}
+        <button
+          type="button"
+          onClick={onNavigateHome}
+          className="flex items-center gap-3 text-left hover:opacity-85 transition-opacity cursor-pointer focus:outline-none"
+          title="Przejdź do strony głównej (Wybór Centrum)"
+        >
           <img
             src={appLogo}
             alt="Centrum Obsługi Zamówień Sieciowych"
@@ -35,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent leading-tight">
             Centrum Obsługi Zamówień Sieciowych
           </span>
-        </div>
+        </button>
 
         {/* Zone 2: Clean text navigation links / status */}
         <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600">
