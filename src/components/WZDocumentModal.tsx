@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Printer,
@@ -49,11 +49,31 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
     'Warunki przechowywania: 15°C – 25°C. Towar zabezpieczony, w nienaruszonych opakowaniach fabrycznych.'
   );
 
+  // Synchronizacja numeru WZ i dat przy otwarciu lub zmianie metadanych
+  useEffect(() => {
+    if (isOpen) {
+      const rawInv = meta.invoiceNumber || meta.orderNumber || '1';
+      const cleanInv = rawInv.replace(/^FA\/?/i, '').replace(/\/KSEF$/i, '');
+      const currentYear = new Date().getFullYear();
+      setWzNumber(`WZ/${cleanInv}/${currentYear}`);
+      setIssueDate(meta.issueDate || new Date().toISOString().slice(0, 10));
+      setReleaseDate(meta.deliveryDate || meta.issueDate || new Date().toISOString().slice(0, 10));
+    }
+  }, [isOpen, meta.invoiceNumber, meta.orderNumber, meta.issueDate, meta.deliveryDate]);
+
   if (!isOpen) return null;
 
+  // Bezpieczne pobieranie ceny jednostkowej i ilości z obiektu pozycji
+  const getItemPrice = (it: any): number => {
+    return Number(it.netPrice ?? it.unitPriceNet ?? it.originalNetPrice ?? it.correctedNetPrice ?? 0);
+  };
+  const getItemQty = (it: any): number => {
+    return Number(it.quantity ?? it.correctedQuantity ?? 0);
+  };
+
   // Obliczenia podsumowań
-  const totalQuantity = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-  const totalNet = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPriceNet) || 0), 0);
+  const totalQuantity = items.reduce((sum, it) => sum + getItemQty(it), 0);
+  const totalNet = items.reduce((sum, it) => sum + Math.round(getItemQty(it) * getItemPrice(it) * 100) / 100, 0);
 
   // Obsługa drukowania (A4)
   const handlePrint = () => {
@@ -70,7 +90,10 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
     }
     txt += `\nPOZYCJE:\n`;
     items.forEach((it, idx) => {
-      txt += `${idx + 1}. ${it.name} | EAN: ${it.gtin || '—'} | LOT: ${it.batchNumber || '—'} | EXP: ${it.expiryDate || '—'} | Ilość: ${it.quantity} szt.\n`;
+      const price = getItemPrice(it);
+      const qty = getItemQty(it);
+      const lineNet = Math.round(qty * price * 100) / 100;
+      txt += `${idx + 1}. ${it.name} | EAN: ${it.gtin || '—'} | LOT: ${it.batchNumber || '—'} | EXP: ${it.expiryDate || '—'} | Ilość: ${qty} ${it.unit || 'szt.'} | Cena netto: ${price.toFixed(2)} zł | Wartość netto: ${lineNet.toFixed(2)} zł\n`;
     });
     txt += `\nŁącznie sztuk: ${totalQuantity}\nWartość netto: ${totalNet.toFixed(2)} PLN\n`;
     navigator.clipboard.writeText(txt);
@@ -349,7 +372,9 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-mono text-[11px]">
                   {items.map((it, idx) => {
-                    const lineNet = (Number(it.quantity) || 0) * (Number(it.unitPriceNet) || 0);
+                    const price = getItemPrice(it);
+                    const qty = getItemQty(it);
+                    const lineNet = Math.round(qty * price * 100) / 100;
                     return (
                       <tr key={it.id || idx} className="hover:bg-slate-50/50">
                         <td className="py-2 px-2 text-center text-slate-500">{idx + 1}</td>
@@ -359,9 +384,9 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
                           {it.batchNumber || '—'}
                         </td>
                         <td className="py-2 px-2 text-center text-slate-800">{it.expiryDate || '—'}</td>
-                        <td className="py-2 px-2 text-right font-bold text-slate-900">{it.quantity}</td>
+                        <td className="py-2 px-2 text-right font-bold text-slate-900">{qty}</td>
                         <td className="py-2 px-2 text-center text-slate-600 font-sans">{it.unit || 'szt.'}</td>
-                        <td className="py-2 px-2 text-right text-slate-700">{Number(it.unitPriceNet || 0).toFixed(2)} zł</td>
+                        <td className="py-2 px-2 text-right text-slate-700 font-bold">{price.toFixed(2)} zł</td>
                         <td className="py-2 px-2 text-right font-bold text-slate-900">{lineNet.toFixed(2)} zł</td>
                       </tr>
                     );
