@@ -1,6 +1,7 @@
 import { ShippingCourier, ShippingStatus } from '../types/ordersHistory';
 
 export const COURIER_OPTIONS: { id: ShippingCourier; name: string }[] = [
+  { id: 'Globkurier', name: 'Globkurier.pl (GK)' },
   { id: 'DPD', name: 'DPD Polska' },
   { id: 'InPost', name: 'InPost Paczkomat/Kurier' },
   { id: 'DHL', name: 'DHL Express' },
@@ -65,6 +66,11 @@ export function detectCourierFromTrackingNumber(trackingNumber: string): Shippin
 
   if (!clean) return 'Inny';
 
+  // Globkurier: numery zamówień GK... (np. GK261002192282)
+  if (/^GK/i.test(clean)) {
+    return 'Globkurier';
+  }
+
   // InPost: 24 cyfry
   if (/^\d{24}$/.test(clean)) {
     return 'InPost';
@@ -108,6 +114,8 @@ export function getTrackingUrl(trackingNumber: string, courier?: ShippingCourier
   const effectiveCourier = courier || detectCourierFromTrackingNumber(clean);
 
   switch (effectiveCourier) {
+    case 'Globkurier':
+      return `https://www.globkurier.pl/tracking`;
     case 'DPD':
       return `https://tracktrace.dpd.com.pl/parcelDetails?p1=${encodeURIComponent(clean)}`;
     case 'InPost':

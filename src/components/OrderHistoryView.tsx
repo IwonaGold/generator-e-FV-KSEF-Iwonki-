@@ -537,6 +537,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       }
     }
 
+    // Obsługa Globkurier.pl
+    if (detected === 'Globkurier' || /^GK/i.test(cleanNo)) {
+      setCheckingTrackingId(null);
+      navigator.clipboard.writeText(cleanNo);
+      setInvoiceNotice(`📋 Skopiowano numer ${cleanNo} do schowka! Wklej go (Ctrl+V) w wyszukiwarce na otwartej stronie Globkurier.pl`);
+      window.open('https://www.globkurier.pl/tracking', '_blank');
+      setTimeout(() => setInvoiceNotice(null), 5000);
+      return;
+    }
+
     // Dla pozostałych kurierów (DPD, DHL, GLS, Pocztex itp.) otwieramy oficjalny portal śledzenia
     setCheckingTrackingId(null);
     setInvoiceNotice(`Otwieram portal śledzenia ${detected}...`);
@@ -1773,6 +1783,17 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           href={getTrackingUrl(ord.trackingNumber, ord.courierName)}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (ord.trackingNumber) {
+                              navigator.clipboard.writeText(ord.trackingNumber.trim());
+                              setInvoiceNotice(
+                                ord.courierName === 'Globkurier' || /^GK/i.test(ord.trackingNumber)
+                                  ? `📋 Skopiowano numer ${ord.trackingNumber} do schowka! Wklej go (Ctrl+V) na stronie Globkurier.pl`
+                                  : `Skopiowano nr listu do schowka (${ord.trackingNumber}) i otwarto portal kuriera.`
+                              );
+                              setTimeout(() => setInvoiceNotice(null), 4000);
+                            }
+                          }}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-lg transition-colors cursor-pointer shadow-2xs shrink-0"
                           title={`Otwórz oficjalne śledzenie przesyłki ${ord.courierName || 'Kurier'}`}
                         >

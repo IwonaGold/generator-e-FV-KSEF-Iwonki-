@@ -47,7 +47,16 @@ export interface ArchivedOrder {
   originalInvoiceDate?: string;
 }
 
-export type ShippingCourier = 'DPD' | 'InPost' | 'DHL' | 'GLS' | 'FedEx' | 'Pocztex' | 'Schenker' | 'Inny';
+export type ShippingCourier =
+  | 'Globkurier'
+  | 'DPD'
+  | 'InPost'
+  | 'DHL'
+  | 'GLS'
+  | 'FedEx'
+  | 'Pocztex'
+  | 'Schenker'
+  | 'Inny';
 export type ShippingStatus = 'registered' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception';
 
 export type OrderChainFilter = 'Wszystkie' | 'DOZ' | 'Dr. Max' | 'Super-Pharm' | 'Gemini' | 'Inne';
