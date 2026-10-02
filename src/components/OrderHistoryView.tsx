@@ -7,6 +7,8 @@ import {
   Download,
   FileCode,
   FileEdit,
+  FileText,
+  Upload,
   Trash2,
   ChevronDown,
   ChevronUp,
@@ -18,11 +20,14 @@ import {
   Plus,
   RefreshCw,
   ExternalLink,
+  Edit3,
+  Check,
+  X,
 } from 'lucide-react';
 import { ArchivedOrder, OrderChainFilter, OrderStatusFilter } from '../types/ordersHistory';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
-import { parseKSeFXMLString } from '../utils/ksefXmlParser';
+import { parseKSeFXMLString, extractInvoiceNumberFromXml } from '../utils/ksefXmlParser';
 import { detectPharmacyChain } from '../utils/orderParser';
 
 interface OrderHistoryViewProps {
@@ -50,6 +55,12 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   // Stan lokalny edycji notatek i statusu dostawy
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [notesState, setNotesState] = useState<Record<string, string>>({});
+
+  // Stan lokalny edycji numeru faktury (i generowania z XML)
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [invoiceNumberState, setInvoiceNumberState] = useState<Record<string, string>>({});
+  const [savingInvoiceId, setSavingInvoiceId] = useState<string | null>(null);
+  const [invoiceNotice, setInvoiceNotice] = useState<string | null>(null);
 
   // Obliczenia liczników dla sieci
   const chainCounts = useMemo(() => {
@@ -91,7 +102,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       // 3. Wyszukiwarka
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
-        const matchesInv = ord.invoiceNumber?.toLowerCase().includes(query);
+        const xmlNum = extractInvoiceNumberFromXml(ord.xmlContent);
+        const matchesInv =
+          ord.invoiceNumber?.toLowerCase().includes(query) ||
+          xmlNum?.toLowerCase().includes(query);
         const matchesOrd = ord.orderNumber?.toLowerCase().includes(query);
         const matchesBuyer = ord.buyer?.name?.toLowerCase().includes(query);
         const matchesRecipient = ord.thirdParty?.name?.toLowerCase().includes(query);
@@ -150,6 +164,92 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       await deleteArchivedOrder(order.id);
       onRefreshOrders();
     }
+  };
+
+  // Rozpoczęcie edycji numeru faktury
+  const handleStartEditInvoice = (order: ArchivedOrder) => {
+    const xmlNum = extractInvoiceNumberFromXml(order.xmlContent);
+    const initialVal = order.invoiceNumber && order.invoiceNumber !== 'FAKTURA'
+      ? order.invoiceNumber
+      : (xmlNum || order.invoiceNumber || '');
+    setInvoiceNumberState((prev) => ({ ...prev, [order.id]: initialVal }));
+    setEditingInvoiceId(order.id);
+  };
+
+  // Zmiana tekstu w polu numeru faktury
+  const handleInvoiceNumberChange = (orderId: string, value: string) => {
+    setInvoiceNumberState((prev) => ({ ...prev, [orderId]: value }));
+  };
+
+  // Anulowanie edycji numeru faktury
+  const handleCancelEditInvoice = () => {
+    setEditingInvoiceId(null);
+  };
+
+  // Zapis numeru faktury
+  const handleSaveInvoiceNumber = async (orderId: string) => {
+    const newNum = invoiceNumberState[orderId]?.trim();
+    if (newNum === undefined) {
+      setEditingInvoiceId(null);
+      return;
+    }
+    setSavingInvoiceId(orderId);
+    await updateArchivedOrderFields(orderId, { invoiceNumber: newNum || 'FAKTURA' });
+    setSavingInvoiceId(null);
+    setEditingInvoiceId(null);
+    setInvoiceNotice(`Zapisano numer faktury: ${newNum || 'FAKTURA'}`);
+    setTimeout(() => setInvoiceNotice(null), 3500);
+    onRefreshOrders();
+  };
+
+  // Automatyczne pobranie numeru z pliku XML (<P_2>) i zapisanie
+  const handleExtractFromXmlAndSave = async (order: ArchivedOrder) => {
+    const extracted = extractInvoiceNumberFromXml(order.xmlContent);
+    if (!extracted) {
+      setInvoiceNotice('Nie odnaleziono znacznika <P_2> w dołączonym pliku XML.');
+      setTimeout(() => setInvoiceNotice(null), 4000);
+      return;
+    }
+    setSavingInvoiceId(order.id);
+    await updateArchivedOrderFields(order.id, { invoiceNumber: extracted });
+    setInvoiceNumberState((prev) => ({ ...prev, [order.id]: extracted }));
+    setSavingInvoiceId(null);
+    setEditingInvoiceId(null);
+    setInvoiceNotice(`Pomyślnie wygenerowano numer faktury z XML (<P_2>): ${extracted}`);
+    setTimeout(() => setInvoiceNotice(null), 3500);
+    onRefreshOrders();
+  };
+
+  // Wgranie/podmiana pliku XML dla konkretnego zamówienia i automatyczne wyciągnięcie numeru faktury
+  const handleUploadXmlForOrder = (order: ArchivedOrder, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const extracted = extractInvoiceNumberFromXml(text);
+        const effectiveNum = extracted || (order.invoiceNumber && order.invoiceNumber !== 'FAKTURA' ? order.invoiceNumber : 'FAKTURA');
+
+        await updateArchivedOrderFields(order.id, {
+          xmlContent: text,
+          invoiceNumber: effectiveNum,
+        });
+
+        setInvoiceNotice(
+          extracted
+            ? `Wgrano plik XML (${file.name}) i wyodrębniono numer faktury: ${extracted}`
+            : `Wgrano plik XML (${file.name}).`
+        );
+        setTimeout(() => setInvoiceNotice(null), 4000);
+        onRefreshOrders();
+      } catch (err: any) {
+        alert('Błąd podczas odczytu pliku XML: ' + (err?.message || 'Niepoprawny format'));
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
   };
 
   // Pobieranie pliku XML
@@ -345,6 +445,23 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         </div>
       </div>
 
+      {/* POWIADOMIENIE O AKTUALIZACJI NUMERU FAKTURY / XML */}
+      {invoiceNotice && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center justify-between text-xs font-semibold animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{invoiceNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setInvoiceNotice(null)}
+            className="text-emerald-600 hover:text-emerald-900 font-bold p-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* LISTA ZAMÓWIEŃ */}
       {filteredOrders.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
@@ -362,6 +479,17 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             const isExpanded = expandedOrderId === ord.id;
             const currentNote = notesState[ord.id] !== undefined ? notesState[ord.id] : ord.notes || '';
             const isNoteSaving = savingNoteId === ord.id;
+
+            const xmlInvoiceNo = extractInvoiceNumberFromXml(ord.xmlContent);
+            const effectiveInvoiceNumber =
+              ord.invoiceNumber && ord.invoiceNumber !== 'FAKTURA'
+                ? ord.invoiceNumber
+                : xmlInvoiceNo || ord.invoiceNumber || 'Brak numeru';
+            const isEditingThisInvoice = editingInvoiceId === ord.id;
+            const currentEditingInvoiceVal =
+              invoiceNumberState[ord.id] !== undefined
+                ? invoiceNumberState[ord.id]
+                : (effectiveInvoiceNumber === 'Brak numeru' ? '' : effectiveInvoiceNumber);
 
             const displayChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
 
@@ -394,9 +522,86 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           {ord.documentType === 'KOR' ? '📝 Korekta KOR' : '📄 Faktura VAT FA(3)'}
                         </span>
 
-                        <span className="text-sm font-black text-slate-900 font-mono tracking-tight">
-                          {ord.invoiceNumber}
-                        </span>
+                        {/* DEDYKOWANE MIEJSCE NA NUMER FAKTURY (Z GENEROWANIEM Z XML) */}
+                        {isEditingThisInvoice ? (
+                          <div className="inline-flex items-center gap-1.5 bg-rose-50/90 border border-rose-300 rounded-xl px-2.5 py-1 shadow-2xs">
+                            <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span className="text-[11px] font-bold text-rose-800">Nr faktury:</span>
+                            <input
+                              type="text"
+                              value={currentEditingInvoiceVal}
+                              onChange={(e) => handleInvoiceNumberChange(ord.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveInvoiceNumber(ord.id);
+                                if (e.key === 'Escape') handleCancelEditInvoice();
+                              }}
+                              placeholder="Wpisz nr faktury..."
+                              className="px-2 py-0.5 text-xs font-mono font-bold bg-white border border-rose-300 rounded-lg text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-rose-400 w-36 sm:w-44"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveInvoiceNumber(ord.id)}
+                              disabled={savingInvoiceId === ord.id}
+                              className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
+                              title="Zapisz numer faktury"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            {xmlInvoiceNo && (
+                              <button
+                                type="button"
+                                onClick={() => handleExtractFromXmlAndSave(ord)}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-white hover:bg-pink-100 text-pink-700 border border-pink-300 transition-colors cursor-pointer whitespace-nowrap"
+                                title={`Wstaw numer z XML: ${xmlInvoiceNo}`}
+                              >
+                                ⚡ Z XML ({xmlInvoiceNo})
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleCancelEditInvoice}
+                              className="p-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
+                              title="Anuluj"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-rose-50 via-white to-pink-50 border border-rose-200 rounded-xl px-2.5 py-1 shadow-2xs">
+                            <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nr faktury:</span>
+                            <span className="text-sm font-black text-slate-900 font-mono tracking-tight select-all">
+                              {effectiveInvoiceNumber}
+                            </span>
+                            {xmlInvoiceNo && (
+                              <span
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                title={`Numer wygenerowany z pliku XML (węzeł <P_2>: ${xmlInvoiceNo})`}
+                              >
+                                XML ✓
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditInvoice(ord)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-100/60 transition-colors cursor-pointer"
+                              title="Edytuj numer faktury"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            {xmlInvoiceNo && ord.invoiceNumber !== xmlInvoiceNo && (
+                              <button
+                                type="button"
+                                onClick={() => handleExtractFromXmlAndSave(ord)}
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 transition-colors cursor-pointer"
+                                title={`Kliknij, aby zastosować numer z pliku XML: ${xmlInvoiceNo}`}
+                              >
+                                ⚡ Pobierz z XML
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         {ord.orderNumber && (
                           <span className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded-md">
@@ -522,6 +727,21 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         <span>Wygeneruj Korektę</span>
                       </button>
 
+                      {/* WGRAJ XML DLA ZAMÓWIENIA */}
+                      <label
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                        title="Wgraj/podmień plik XML dla tego zamówienia, aby automatycznie odczytać numer faktury (<P_2>) i zaktualizować dane"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Wgraj XML</span>
+                        <input
+                          type="file"
+                          accept=".xml,text/xml"
+                          className="hidden"
+                          onChange={(e) => handleUploadXmlForOrder(ord, e)}
+                        />
+                      </label>
+
                       {/* PODGLĄD XML */}
                       <button
                         type="button"
@@ -558,8 +778,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                 {/* ROZWINIĘCIE POZYCJI TOWAROWYCH */}
                 {isExpanded && ord.items && ord.items.length > 0 && (
                   <div className="bg-slate-50/80 p-4 border-t border-slate-200 animate-in fade-in">
-                    <div className="text-xs font-bold text-slate-700 mb-2">
-                      Pozycje na fakturze {ord.invoiceNumber}:
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700 mb-2">
+                      <span>Pozycje na fakturze:</span>
+                      <span className="font-mono text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                        {effectiveInvoiceNumber}
+                      </span>
+                      {xmlInvoiceNo && (
+                        <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200" title="Numer faktury odczytany z węzła <P_2> w dołączonym pliku XML">
+                          XML &lt;P_2&gt;: {xmlInvoiceNo}
+                        </span>
+                      )}
                     </div>
                     <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
                       <table className="w-full text-left text-xs text-slate-700">
@@ -629,9 +857,28 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                   <FileCode className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Podgląd Archiwalnego XML: {viewXmlOrder.invoiceNumber}
-                  </h3>
+                  {(() => {
+                    const modalXmlNum = extractInvoiceNumberFromXml(viewXmlOrder.xmlContent);
+                    const modalEffectiveNum =
+                      viewXmlOrder.invoiceNumber && viewXmlOrder.invoiceNumber !== 'FAKTURA'
+                        ? viewXmlOrder.invoiceNumber
+                        : modalXmlNum || viewXmlOrder.invoiceNumber || 'Brak numeru';
+                    return (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Podgląd Archiwalnego XML: <span className="font-mono text-rose-700">{modalEffectiveNum}</span>
+                        </h3>
+                        {modalXmlNum && (
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200"
+                            title="Numer faktury odnaleziony w węźle XML <P_2>"
+                          >
+                            &lt;P_2&gt;: {modalXmlNum}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <p className="text-xs text-slate-500 font-mono">
                     {viewXmlOrder.chain} · {viewXmlOrder.buyer.name}
                   </p>

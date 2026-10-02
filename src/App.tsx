@@ -41,6 +41,7 @@ import { InvoiceCorrectionView } from './components/InvoiceCorrectionView';
 import { OrderHistoryView } from './components/OrderHistoryView';
 import { ArchivedOrder } from './types/ordersHistory';
 import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
+import { extractInvoiceNumberFromXml } from './utils/ksefXmlParser';
 
 /**
  * Generator świeżych, czystych metadanych faktury (od zera)
@@ -176,12 +177,14 @@ export default function App() {
     const totalGross = Math.round((totalNet + totalVat) * 100) / 100;
 
     const resolvedChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
+    const xmlInvoiceNum = extractInvoiceNumberFromXml(xmlPayload);
+    const resolvedInvoiceNumber = meta.invoiceNumber?.trim() || xmlInvoiceNum || 'FAKTURA';
 
     const newOrder: ArchivedOrder = {
       id: `ord-${Date.now()}`,
       chain: resolvedChain,
       documentType: 'FV',
-      invoiceNumber: meta.invoiceNumber || 'FAKTURA',
+      invoiceNumber: resolvedInvoiceNumber,
       orderNumber: meta.orderNumber,
       issueDate: meta.issueDate,
       deliveryDate: meta.deliveryDate,

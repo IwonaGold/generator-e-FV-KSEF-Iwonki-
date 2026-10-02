@@ -15,6 +15,35 @@ export interface ParsedKSeFXMLInvoice {
   items: InvoiceItem[];
 }
 
+/**
+ * Szybkie i bezpieczne wyciąganie numeru faktury z zawartości pliku XML KSeF (węzeł <P_2>)
+ */
+export function extractInvoiceNumberFromXml(xmlText?: string | null): string | null {
+  if (!xmlText || typeof xmlText !== 'string') return null;
+
+  // 1. Dopasowanie Regex (najszybsze i odporne na błędy parsowania)
+  const match = xmlText.match(/<P_2(?: [^>]*)?>([\s\S]*?)<\/P_2>/i);
+  if (match && match[1]) {
+    const val = match[1].trim();
+    if (val) return val;
+  }
+
+  // 2. DOMParser fallback
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, 'text/xml');
+    const p2 = doc.getElementsByTagName('P_2')[0];
+    if (p2 && p2.textContent) {
+      const val = p2.textContent.trim();
+      if (val) return val;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
 export function parseKSeFXMLString(xmlText: string): ParsedKSeFXMLInvoice {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlText, 'text/xml');

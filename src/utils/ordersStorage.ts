@@ -1,17 +1,27 @@
 import { ArchivedOrder } from '../types/ordersHistory';
 import { INITIAL_ARCHIVED_ORDERS } from './sampleOrdersHistory';
 import { detectPharmacyChain } from './orderParser';
+import { extractInvoiceNumberFromXml } from './ksefXmlParser';
 
 const LOCAL_STORAGE_KEY = 'iwonka_ksef_orders_history_v1';
 
 /**
- * Normalizuje przypisanie sieci dla każdego zamówienia/korekty
+ * Normalizuje przypisanie sieci dla każdego zamówienia/korekty i wyciąga numer faktury z XML jeśli brak
  */
 function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
-  return list.map((ord) => ({
-    ...ord,
-    chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
-  }));
+  return list.map((ord) => {
+    const xmlInv = extractInvoiceNumberFromXml(ord.xmlContent);
+    const invoiceNumber =
+      ord.invoiceNumber && ord.invoiceNumber !== 'FAKTURA'
+        ? ord.invoiceNumber
+        : xmlInv || ord.invoiceNumber || 'FAKTURA';
+
+    return {
+      ...ord,
+      chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
+      invoiceNumber,
+    };
+  });
 }
 
 /**
@@ -99,7 +109,7 @@ export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedO
  */
 export async function updateArchivedOrderFields(
   id: string,
-  fields: Partial<Pick<ArchivedOrder, 'isDelivered' | 'deliveredAt' | 'notes'>>
+  fields: Partial<Pick<ArchivedOrder, 'isDelivered' | 'deliveredAt' | 'notes' | 'invoiceNumber' | 'xmlContent'>>
 ): Promise<boolean> {
   // Próba na serwerze
   try {
