@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   FileText,
   Upload,
@@ -88,11 +88,29 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [showAddressDetails, setShowAddressDetails] = useState(false);
+  const [showThirdPartyDetails, setShowThirdPartyDetails] = useState(false);
   const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [pastedText, setPastedText] = useState('');
   const [lastExtractedInfo, setLastExtractedInfo] = useState<OrderIngestionMatch | null>(null);
   const [isEditingBuyer, setIsEditingBuyer] = useState(false);
   const orderInputRef = useRef<HTMLInputElement>(null);
+
+  // Automatyczna sanitacja: Jeśli w thirdParty.idWew znajduje się numer GLN (np. 13 cyfr 5909000848054 z DOZ),
+  // natychmiast przenosimy go do thirdParty.gln i czyścimy pole idWew, by nie psuło schematu KSeF.
+  useEffect(() => {
+    if (thirdParty && thirdParty.idWew) {
+      const cleanId = thirdParty.idWew.trim();
+      const isValidKSeFIdWew = /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(cleanId);
+      if (!isValidKSeFIdWew) {
+        const isGln = /^\d{1,13}$/.test(cleanId);
+        onUpdateThirdParty && onUpdateThirdParty({
+          ...thirdParty,
+          idWew: undefined,
+          gln: thirdParty.gln || (isGln ? cleanId : undefined),
+        });
+      }
+    }
+  }, [thirdParty, onUpdateThirdParty]);
 
   // Stan weryfikacji i zatwierdzenia poszczególnych informacji
   const [verified, setVerified] = useState<VerificationChecks>({
@@ -455,7 +473,8 @@ Numer zamówienia: ZAM/2026/10/01
                     <>
                       <span>·</span>
                       <span>
-                        🏬 <strong>Odbiorca:</strong> {lastExtractedInfo.thirdParty.name} {lastExtractedInfo.thirdParty.idWew ? `(ID-Wew: ${lastExtractedInfo.thirdParty.idWew})` : ''}
+                        🏬 <strong>Odbiorca:</strong> {lastExtractedInfo.thirdParty.name}{' '}
+                        {lastExtractedInfo.thirdParty.gln ? `(GLN: ${lastExtractedInfo.thirdParty.gln})` : lastExtractedInfo.thirdParty.idWew ? `(ID-Wew: ${lastExtractedInfo.thirdParty.idWew})` : ''}
                       </span>
                     </>
                   )}
@@ -914,23 +933,130 @@ Numer zamówienia: ZAM/2026/10/01
           </div>
 
           {thirdParty?.name ? (
-            <div className="space-y-1 text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-slate-200">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-900 truncate">{thirdParty.name}</p>
-                <button
-                  type="button"
-                  onClick={() => onUpdateThirdParty && onUpdateThirdParty(null)}
-                  className="text-[10px] text-red-500 hover:text-red-700"
-                  title="Usuń odbiorcę"
-                >
-                  Usuń
-                </button>
+            showThirdPartyDetails ? (
+              <div className="space-y-2 bg-white p-3 rounded-xl border border-rose-200 text-xs animate-in fade-in">
+                <div className="flex items-center justify-between pb-1 border-b border-rose-100">
+                  <span className="font-bold text-rose-700 text-xs">Edycja Odbiorcy / Miejsca dostawy:</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowThirdPartyDetails(false)}
+                    className="text-[10px] text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                  >
+                    Zwiń ▲
+                  </button>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block mb-0.5">Nazwa odbiorcy / hurtowni:</span>
+                  <input
+                    type="text"
+                    value={thirdParty.name}
+                    onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, name: e.target.value })}
+                    className="w-full text-xs font-semibold text-slate-900 bg-white border border-slate-300 rounded px-2 py-1 focus:border-rose-400 focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block mb-0.5">GLN / ILN miejsca dostawy:</span>
+                    <input
+                      type="text"
+                      value={thirdParty.gln || ''}
+                      onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, gln: e.target.value.trim() })}
+                      placeholder="np. 5909000848054"
+                      className="w-full text-xs font-mono font-bold text-pink-700 bg-pink-50/50 border border-pink-200 rounded px-2 py-1 focus:border-pink-500 focus:outline-none"
+                    />
+                    <span className="text-[9px] text-slate-400 block mt-0.5">Zgodne z FA(3) &lt;GLN&gt;</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block mb-0.5">ID-Wew (NIP-oddział):</span>
+                    <input
+                      type="text"
+                      value={thirdParty.idWew || ''}
+                      onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, idWew: e.target.value.trim() })}
+                      placeholder="np. 5213842837-54936"
+                      className="w-full text-xs font-mono text-slate-900 bg-white border border-slate-300 rounded px-2 py-1 focus:border-rose-400 focus:outline-none"
+                    />
+                    <span className="text-[9px] text-slate-400 block mt-0.5">W DOZ: puste (nie występuje)</span>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block mb-0.5">Ulica i numer:</span>
+                  <input
+                    type="text"
+                    value={thirdParty.addressLine1}
+                    onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, addressLine1: e.target.value })}
+                    className="w-full text-xs text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:border-rose-400 focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block mb-0.5">Kod pocztowy:</span>
+                    <input
+                      type="text"
+                      value={thirdParty.postalCode || ''}
+                      onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, postalCode: e.target.value })}
+                      className="w-full text-xs font-mono text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block mb-0.5">Miasto:</span>
+                    <input
+                      type="text"
+                      value={thirdParty.city || ''}
+                      onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, city: e.target.value })}
+                      className="w-full text-xs text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                </div>
               </div>
-              <p className="font-mono text-slate-500">
-                {thirdParty.idWew ? `ID-Wew: ${thirdParty.idWew}` : thirdParty.nip ? `NIP: ${thirdParty.nip}` : 'Brak NIP (nazwa)'}
-              </p>
-              <p className="truncate text-slate-500">{thirdParty.addressLine1}</p>
-            </div>
+            ) : (
+              <div className="space-y-1.5 text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-slate-900 truncate" title={thirdParty.name}>
+                    {thirdParty.name}
+                  </p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowThirdPartyDetails(true)}
+                      className="text-[10px] font-semibold text-pink-700 hover:text-pink-900 bg-pink-50 hover:bg-pink-100 px-2 py-0.5 rounded border border-pink-200 cursor-pointer transition-colors"
+                    >
+                      Edytuj
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateThirdParty && onUpdateThirdParty(null)}
+                      className="text-[10px] text-rose-500 hover:text-rose-700 cursor-pointer"
+                      title="Usuń odbiorcę"
+                    >
+                      Usuń
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                  {thirdParty.gln ? (
+                    <span className="bg-pink-50 text-pink-700 px-2 py-0.5 rounded border border-pink-200 font-bold">
+                      GLN: {thirdParty.gln}
+                    </span>
+                  ) : null}
+                  {thirdParty.idWew ? (
+                    <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-bold">
+                      ID-Wew: {thirdParty.idWew}
+                    </span>
+                  ) : null}
+                  {thirdParty.nip ? (
+                    <span className="text-slate-600">NIP: {thirdParty.nip}</span>
+                  ) : null}
+                  {!thirdParty.idWew && !thirdParty.nip && (
+                    <span className="text-[10px] text-slate-400">
+                      ID: BrakID (KSeF)
+                    </span>
+                  )}
+                </div>
+                <p className="truncate text-slate-500 font-sans">
+                  {thirdParty.addressLine1}{thirdParty.city ? `, ${thirdParty.postalCode || ''} ${thirdParty.city}` : ''}
+                </p>
+              </div>
+            )
           ) : (
             <div className="py-3 text-center">
               <p className="text-[11px] text-slate-500 mb-2">

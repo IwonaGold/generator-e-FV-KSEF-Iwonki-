@@ -526,7 +526,9 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
         </DaneIdentyfikacyjne>
         <Adres>
             <KodKraju>${buyer.countryCode || 'PL'}</KodKraju>
-            <AdresL1>${escapeXml(formatAdresL1(buyer))}</AdresL1>
+            <AdresL1>${escapeXml(formatAdresL1(buyer))}</AdresL1>${
+              buyer.gln && /^\d{1,13}$/.test(buyer.gln.trim()) ? `\n            <GLN>${escapeXml(buyer.gln.trim())}</GLN>` : ''
+            }
         </Adres>${
           buyer.email
             ? `\n        <DaneKontaktowe><Email>${escapeXml(buyer.email)}</Email></DaneKontaktowe>`

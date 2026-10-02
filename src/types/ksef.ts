@@ -47,6 +47,7 @@ export interface EntityDetails {
   bankName?: string; // np. ERSTE BANK POLSKA S.A.
   email?: string;
   phone?: string;
+  gln?: string; // Globalny Numer Lokalizacyjny GS1 (np. ILN 5909000828476)
 }
 
 export interface InvoiceMeta {
