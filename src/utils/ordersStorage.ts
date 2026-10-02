@@ -42,10 +42,17 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       effectivePaymentStatus = 'overdue';
     }
 
+    // Domyślna data złożenia zamówienia i data awizacji
+    const effectiveOrderDate = ord.orderDate || ord.issueDate;
+    const effectiveAvisoDate = ord.avisoDate || ord.deliveryDate || ord.issueDate;
+
     return {
       ...ord,
       chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
       invoiceNumber,
+      orderDate: effectiveOrderDate,
+      avisoDate: effectiveAvisoDate,
+      deliveryDate: ord.deliveryDate || effectiveAvisoDate,
       paymentDueDate: effectiveDueDate,
       paymentStatus: effectivePaymentStatus,
     };

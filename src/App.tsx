@@ -186,8 +186,10 @@ export default function App() {
       documentType: 'FV',
       invoiceNumber: resolvedInvoiceNumber,
       orderNumber: meta.orderNumber,
+      orderDate: meta.orderDate || undefined,
       issueDate: meta.issueDate,
-      deliveryDate: meta.deliveryDate,
+      avisoDate: meta.deliveryDate || undefined,
+      deliveryDate: meta.deliveryDate || undefined,
       dueDate: meta.dueDate,
       seller,
       buyer,
@@ -517,8 +519,8 @@ export default function App() {
       invoiceNumber: order.invoiceNumber || prev.invoiceNumber,
       issueDate: order.issueDate || prev.issueDate,
       orderNumber: order.orderNumber || prev.orderNumber,
-      orderDate: order.issueDate || prev.orderDate,
-      deliveryDate: order.deliveryDate || prev.deliveryDate,
+      orderDate: order.orderDate || order.issueDate || prev.orderDate,
+      deliveryDate: order.avisoDate || order.deliveryDate || prev.deliveryDate,
       dueDate: order.dueDate || prev.dueDate,
     }));
     if (order.items && order.items.length > 0) {

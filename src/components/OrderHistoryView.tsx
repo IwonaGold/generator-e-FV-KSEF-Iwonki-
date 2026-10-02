@@ -97,6 +97,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const [savingInvoiceId, setSavingInvoiceId] = useState<string | null>(null);
   const [invoiceNotice, setInvoiceNotice] = useState<string | null>(null);
 
+  // Typ daty używanej do filtrowania okresów: 'issueDate' (Wystawienie) | 'orderDate' (Złożenie zamówienia) | 'avisoDate' (Awizacja)
+  const [dateFilterField, setDateFilterField] = useState<'issueDate' | 'orderDate' | 'avisoDate'>('issueDate');
+
+  // Stan lokalny edycji dat zamówienia
+  const [editingDatesOrderId, setEditingDatesOrderId] = useState<string | null>(null);
+  const [editIssueDate, setEditIssueDate] = useState<string>('');
+  const [editOrderDate, setEditOrderDate] = useState<string>('');
+  const [editAvisoDate, setEditAvisoDate] = useState<string>('');
+  const [isSavingDates, setIsSavingDates] = useState(false);
+
   // Obliczenia liczników dla sieci
   const chainCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -139,10 +149,22 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return counts;
   }, [orders]);
 
-  // Obliczenia liczników dla okresów
+  // Obliczenia liczników dla okresów z uwzględnieniem wybranego pola daty
   const periodCounts = useMemo(() => {
-    return calculatePeriodCounts(orders);
-  }, [orders]);
+    const mappedOrders = orders.map((o) => {
+      const targetDate =
+        dateFilterField === 'orderDate'
+          ? (o.orderDate || o.issueDate)
+          : dateFilterField === 'avisoDate'
+          ? (o.avisoDate || o.deliveryDate || o.issueDate)
+          : (o.issueDate || o.createdAt);
+      return {
+        ...o,
+        issueDate: targetDate,
+      };
+    });
+    return calculatePeriodCounts(mappedOrders);
+  }, [orders, dateFilterField]);
 
   // Informacja o aktualnie wybranym zakresie dat
   const activePeriodInfo = useMemo(() => {
@@ -176,10 +198,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         if (paymentFilter === 'overdue' && !isOverdue) return false;
       }
 
-      // 2c. Filtr okresu / daty wystawienia
+      // 2c. Filtr okresu / wybranego typu daty
       if (periodFilter !== 'all') {
-        const orderDate = ord.issueDate || ord.createdAt;
-        if (!isOrderInPeriod(orderDate, periodFilter, customDateFrom, customDateTo)) {
+        const targetDate =
+          dateFilterField === 'orderDate'
+            ? (ord.orderDate || ord.issueDate)
+            : dateFilterField === 'avisoDate'
+            ? (ord.avisoDate || ord.deliveryDate || ord.issueDate)
+            : (ord.issueDate || ord.createdAt);
+
+        if (!isOrderInPeriod(targetDate, periodFilter, customDateFrom, customDateTo)) {
           return false;
         }
       }
@@ -355,6 +383,34 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     }, 400);
   };
 
+  // Obsługa edycji dat zamówienia (Wystawienie, Złożenie, Awizacja)
+  const handleStartEditDates = (ord: ArchivedOrder) => {
+    setEditingDatesOrderId(ord.id);
+    setEditIssueDate(ord.issueDate || '');
+    setEditOrderDate(ord.orderDate || '');
+    setEditAvisoDate(ord.avisoDate || ord.deliveryDate || '');
+  };
+
+  const handleCancelEditDates = () => {
+    setEditingDatesOrderId(null);
+  };
+
+  const handleSaveDates = async (ord: ArchivedOrder) => {
+    setIsSavingDates(true);
+    const updates: Partial<ArchivedOrder> = {
+      issueDate: editIssueDate || ord.issueDate,
+      orderDate: editOrderDate ? editOrderDate : null as any,
+      avisoDate: editAvisoDate ? editAvisoDate : null as any,
+      deliveryDate: editAvisoDate ? editAvisoDate : ord.deliveryDate,
+    };
+    await updateArchivedOrderFields(ord.id, updates);
+    setIsSavingDates(false);
+    setEditingDatesOrderId(null);
+    setInvoiceNotice(`Zaktualizowano daty dla faktury ${ord.invoiceNumber}.`);
+    setTimeout(() => setInvoiceNotice(null), 3000);
+    onRefreshOrders();
+  };
+
   // Usuwanie zamówienia
   const handleDeleteOrder = async (order: ArchivedOrder) => {
     if (window.confirm(`Czy na pewno chcesz usunąć z historii zamówienie ${order.invoiceNumber}?`)) {
@@ -426,13 +482,22 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
+        const parsed = parseKSeFXMLString(text);
         const extracted = extractInvoiceNumberFromXml(text);
         const effectiveNum = extracted || (order.invoiceNumber && order.invoiceNumber !== 'FAKTURA' ? order.invoiceNumber : 'FAKTURA');
 
-        await updateArchivedOrderFields(order.id, {
+        const updates: Partial<ArchivedOrder> = {
           xmlContent: text,
           invoiceNumber: effectiveNum,
-        });
+        };
+        if (parsed.orderDate) updates.orderDate = parsed.orderDate;
+        if (parsed.deliveryDate) {
+          updates.deliveryDate = parsed.deliveryDate;
+          updates.avisoDate = parsed.deliveryDate;
+        }
+        if (parsed.issueDate) updates.issueDate = parsed.issueDate;
+
+        await updateArchivedOrderFields(order.id, updates);
 
         setInvoiceNotice(
           extracted
@@ -532,8 +597,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           documentType: 'FV',
           invoiceNumber: parsed.invoiceNumber,
           orderNumber: parsed.orderNumber || 'ZAM-IMPORT',
+          orderDate: parsed.orderDate || undefined,
           issueDate: parsed.issueDate,
-          deliveryDate: parsed.issueDate,
+          avisoDate: parsed.deliveryDate || parsed.issueDate,
+          deliveryDate: parsed.deliveryDate || parsed.issueDate,
           seller: parsed.seller,
           buyer: parsed.buyer,
           thirdParty: parsed.thirdParty,
@@ -749,9 +816,54 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
         </div>
 
-        {/* FILTR OKRESU (DATA WYSTAWIENIA FAKTURY / ZAMÓWIENIA) */}
+        {/* FILTR OKRESU (DATA WYSTAWIENIA FAKTURY / ZAMÓWIENIA / AWIZACJI) */}
         <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-2">
+            {/* PRZEŁĄCZNIK TYPU DATY DO FILTROWANIA */}
+            <div className="inline-flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-xl border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-500 px-1.5 uppercase tracking-wider">
+                Wg daty:
+              </span>
+              <button
+                type="button"
+                onClick={() => setDateFilterField('issueDate')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                  dateFilterField === 'issueDate'
+                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Filtruj wg daty wystawienia faktury (<P_1>)"
+              >
+                📅 Wystawienia
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterField('orderDate')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                  dateFilterField === 'orderDate'
+                    ? 'bg-fuchsia-600 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Filtruj wg daty złożenia zamówienia (<DataZamowienia>)"
+              >
+                📝 Zamówienia
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterField('avisoDate')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                  dateFilterField === 'avisoDate'
+                    ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Filtruj wg daty awizacji dostawy (<P_6>)"
+              >
+                🚚 Awizacji
+              </button>
+            </div>
+
+            <span className="text-slate-300 hidden sm:inline">|</span>
+
             <span className="text-slate-500 font-medium text-[11px] flex items-center gap-1 shrink-0">
               <Calendar className="w-3.5 h-3.5 text-rose-500" />
               <span>Okres:</span>
@@ -1108,10 +1220,120 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           </div>
                         )}
 
-                        <div className="flex items-center gap-1 text-slate-500 font-mono text-[11px]">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Wystawiono: {ord.issueDate}</span>
-                        </div>
+                        {/* FORMULARZ EDYCJI DAT DLA ZAMÓWIENIA */}
+                        {editingDatesOrderId === ord.id ? (
+                          <div className="mt-2.5 p-3 bg-fuchsia-50/70 border border-fuchsia-200 rounded-xl space-y-2 animate-in fade-in">
+                            <div className="text-[11px] font-bold text-fuchsia-950 flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-fuchsia-600" />
+                                <span>Edycja dat dla faktury {ord.invoiceNumber}:</span>
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-normal">KSeF FA(3)</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-700 block mb-0.5">
+                                  📅 Data wystawienia (&lt;P_1&gt;):
+                                </label>
+                                <input
+                                  type="date"
+                                  value={editIssueDate}
+                                  onChange={(e) => setEditIssueDate(e.target.value)}
+                                  className="w-full text-xs font-mono bg-white border border-slate-300 focus:border-rose-400 rounded-lg px-2 py-1 text-slate-900"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-fuchsia-900 block mb-0.5">
+                                  📝 Data złożenia zamówienia:
+                                </label>
+                                <input
+                                  type="date"
+                                  value={editOrderDate}
+                                  onChange={(e) => setEditOrderDate(e.target.value)}
+                                  className="w-full text-xs font-mono bg-white border border-fuchsia-300 focus:border-fuchsia-500 rounded-lg px-2 py-1 text-fuchsia-950 font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                                  🚚 Data awizacji dostawy:
+                                </label>
+                                <input
+                                  type="date"
+                                  value={editAvisoDate}
+                                  onChange={(e) => setEditAvisoDate(e.target.value)}
+                                  className="w-full text-xs font-mono bg-white border border-amber-300 focus:border-amber-500 rounded-lg px-2 py-1 text-amber-950 font-bold"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 pt-1 justify-end">
+                              <button
+                                type="button"
+                                onClick={handleCancelEditDates}
+                                className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              >
+                                Anuluj
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveDates(ord)}
+                                disabled={isSavingDates}
+                                className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-white bg-fuchsia-600 hover:bg-fuchsia-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>{isSavingDates ? 'Zapisuję...' : 'Zapisz daty'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* WIDOK TRZECH DAT (WYSTAWIENIE / ZAMÓWIENIE / AWIZACJA) */
+                          <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                            {/* 1. DATA WYSTAWIENIA */}
+                            <div
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200 transition-colors"
+                              title="Data wystawienia faktury VAT (węzeł <P_1> w KSeF)"
+                            >
+                              <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <span>Wystawiono: <strong className="font-bold text-slate-900">{ord.issueDate}</strong></span>
+                            </div>
+
+                            {/* 2. DATA ZŁOŻENIA ZAMÓWIENIA */}
+                            <div
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors ${
+                                ord.orderDate
+                                  ? 'bg-fuchsia-50/70 text-fuchsia-950 border-fuchsia-200 hover:bg-fuchsia-100/70'
+                                  : 'bg-slate-50 text-slate-400 border-slate-200'
+                              }`}
+                              title="Data złożenia zamówienia przez sieć apteczną (<DataZamowienia>)"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-fuchsia-600 shrink-0" />
+                              <span>Zamówiono: <strong className="font-bold font-mono">{ord.orderDate || '—'}</strong></span>
+                            </div>
+
+                            {/* 3. DATA AWIZACJI DOSTAWY */}
+                            <div
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors ${
+                                (ord.avisoDate || ord.deliveryDate)
+                                  ? 'bg-amber-50/80 text-amber-950 border-amber-200 hover:bg-amber-100/80'
+                                  : 'bg-slate-50 text-slate-400 border-slate-200'
+                              }`}
+                              title="Data planowanej awizacji dostawy do magazynu apteki / centrum dystrybucyjnego (<P_6>)"
+                            >
+                              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>Awizacja: <strong className="font-bold font-mono">{ord.avisoDate || ord.deliveryDate || '—'}</strong></span>
+                            </div>
+
+                            {/* PRZYCISK SZYBKIEJ EDYCJI DAT */}
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditDates(ord)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-fuchsia-700 hover:bg-fuchsia-50 rounded-lg border border-transparent hover:border-fuchsia-200 transition-colors cursor-pointer"
+                              title="Kliknij, aby edytować datę wystawienia, datę złożenia zamówienia lub datę awizacji"
+                            >
+                              <Edit3 className="w-3 h-3 text-slate-400 hover:text-fuchsia-600" />
+                              <span>Zmień daty</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 

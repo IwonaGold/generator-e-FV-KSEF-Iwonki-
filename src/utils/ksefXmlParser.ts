@@ -56,6 +56,7 @@ export function parseKSeFXMLString(xmlText: string): ParsedKSeFXMLInvoice {
   // 1. Numer i daty faktury
   const invoiceNumber = getTagText(xmlDoc, 'P_2') || 'FAKTURA';
   const issueDate = getTagText(xmlDoc, 'P_1') || new Date().toISOString().slice(0, 10);
+  const deliveryDate = getTagText(xmlDoc, 'P_6');
   const issuePlace = getTagText(xmlDoc, 'P_1M');
   const currency = getTagText(xmlDoc, 'KodWaluty') || 'PLN';
   const totalGrossStr = getTagText(xmlDoc, 'P_15') || '0';
@@ -144,6 +145,7 @@ export function parseKSeFXMLString(xmlText: string): ParsedKSeFXMLInvoice {
   return {
     invoiceNumber,
     issueDate,
+    deliveryDate,
     issuePlace,
     currency,
     totalGross,

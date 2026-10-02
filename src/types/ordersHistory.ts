@@ -8,7 +8,9 @@ export interface ArchivedOrder {
   documentType: InvoiceDocumentType;
   invoiceNumber: string;
   orderNumber?: string;
+  orderDate?: string;
   issueDate: string;
+  avisoDate?: string;
   deliveryDate?: string;
   dueDate?: string;
   seller: EntityDetails;

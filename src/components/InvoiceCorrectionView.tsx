@@ -423,6 +423,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   const loadFromArchivedOrder = (order: ArchivedOrder) => {
     setOriginalInvoiceNumber(order.invoiceNumber);
     setOriginalInvoiceDate(order.issueDate);
+    if (order.orderDate) setOrderDate(order.orderDate);
+    if (order.avisoDate || order.deliveryDate) setDeliveryDate(order.avisoDate || order.deliveryDate);
+    if (order.orderNumber) setOrderNumber(order.orderNumber);
     setBuyer(order.buyer);
     setThirdParty(order.thirdParty || null);
     setSeller(order.seller || DEFAULT_SELLER);
@@ -1425,8 +1428,10 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       documentType: 'KOR',
       invoiceNumber: correctionNumber,
       orderNumber: `KOR DO ${originalInvoiceNumber}`,
+      orderDate: orderDate || undefined,
       issueDate: issueDate,
-      deliveryDate: issueDate,
+      avisoDate: deliveryDate || issueDate,
+      deliveryDate: deliveryDate || issueDate,
       dueDate: dueDate,
       seller,
       buyer,
