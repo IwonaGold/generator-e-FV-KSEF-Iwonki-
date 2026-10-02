@@ -1093,7 +1093,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
           <h3 className="text-sm font-bold text-slate-800">Brak zamówień spełniających kryteria</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Zmień filtry lub wygeneruj nowe zamówienie za pomocą kafelka &quot;1. WYGENERUJ FAKTURĘ XML&quot;.
+            Zmień filtry lub wygeneruj nowe zamówienie w module &quot;Centrum Faktur → 1. Wygeneruj FV&quot;.
           </p>
         </div>
       ) : (
