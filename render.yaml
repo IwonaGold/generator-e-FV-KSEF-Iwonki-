@@ -6,6 +6,8 @@ services:
     region: frankfurt
     buildCommand: npm install && npm run build
     startCommand: npm start
+    autoDeployTrigger: commit
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
