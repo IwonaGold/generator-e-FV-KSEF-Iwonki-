@@ -30,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
               <span className="text-base font-extrabold tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent leading-tight">
-                generator-e-FV-KSEF-Iwonki-
+                Centrum Obsługi Zamówień Sieciowych
               </span>
               <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded-full font-bold">
                 FA(3)

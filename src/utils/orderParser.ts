@@ -73,6 +73,96 @@ export function normalizeNip(nip?: string): string | undefined {
 }
 
 /**
+ * Automatycznie i niezawodnie wykrywa sieć apteczną / grupę nabywcy (Dr. Max, DOZ, Super-Pharm, Gemini)
+ * na podstawie NIP-u, nazwy firmy, adresu e-mail lub odbiorcy (Podmiot3 / GLN).
+ * Wszyscy inni kontrahenci (niepasujący do 4 głównych sieci) trafiają do kategorii 'Inne'.
+ */
+export function detectPharmacyChain(
+  buyer?: { name?: string; nip?: string; email?: string } | null,
+  thirdParty?: { name?: string; nip?: string; gln?: string; idWew?: string } | null,
+  fallbackChain?: PharmacyChain | string
+): PharmacyChain {
+  const cleanNip = (buyer?.nip || '').replace(/\D/g, '');
+  const nameLower = (buyer?.name || '').toLowerCase();
+  const emailLower = (buyer?.email || '').toLowerCase();
+  const recipientNameLower = (thirdParty?.name || '').toLowerCase();
+  const recipientGln = thirdParty?.gln || '';
+
+  // 1. Dr. Max
+  if (
+    cleanNip === '8943149010' ||
+    cleanNip === '8982182017' ||
+    cleanNip === '8942998637' ||
+    nameLower.includes('dr. max') ||
+    nameLower.includes('dr.max') ||
+    nameLower.includes('dr max') ||
+    nameLower.includes('drmax') ||
+    nameLower.includes('lekomat') ||
+    emailLower.includes('drmax') ||
+    recipientNameLower.includes('dr. max') ||
+    recipientNameLower.includes('dr.max') ||
+    recipientNameLower.includes('dr max') ||
+    recipientNameLower.includes('drmax') ||
+    recipientNameLower.includes('lekomat')
+  ) {
+    return 'Dr. Max';
+  }
+
+  // 2. DOZ (Dbam o Zdrowie)
+  if (
+    cleanNip === '8271807718' ||
+    cleanNip === '7282800634' ||
+    cleanNip === '5252445105' ||
+    cleanNip === '5272643534' ||
+    nameLower.includes('doz') ||
+    nameLower.includes('dbam o zdrowie') ||
+    nameLower.includes('d.o.z.') ||
+    emailLower.includes('doz.pl') ||
+    recipientNameLower.includes('doz') ||
+    recipientNameLower.includes('dbam o zdrowie') ||
+    recipientGln === '5909000848054' ||
+    recipientGln === '5909000828476'
+  ) {
+    return 'DOZ';
+  }
+
+  // 3. Super-Pharm
+  if (
+    cleanNip === '5213842837' ||
+    cleanNip === '5252187652' ||
+    nameLower.includes('super-pharm') ||
+    nameLower.includes('super -pharm') ||
+    nameLower.includes('super pharm') ||
+    nameLower.includes('superpharm') ||
+    emailLower.includes('superpharm') ||
+    recipientNameLower.includes('super-pharm') ||
+    recipientNameLower.includes('super -pharm') ||
+    recipientNameLower.includes('super pharm') ||
+    recipientNameLower.includes('superpharm')
+  ) {
+    return 'Super-Pharm';
+  }
+
+  // 4. Gemini
+  if (
+    cleanNip === '5862276537' ||
+    cleanNip === '5862309489' ||
+    nameLower.includes('gemini') ||
+    emailLower.includes('gemini.pl') ||
+    recipientNameLower.includes('gemini')
+  ) {
+    return 'Gemini';
+  }
+
+  // Jeśli jawnie przekazano prawidłową sieć jako fallback (nie Custom ani Inne)
+  if (fallbackChain && (fallbackChain === 'Dr. Max' || fallbackChain === 'DOZ' || fallbackChain === 'Super-Pharm' || fallbackChain === 'Gemini')) {
+    return fallbackChain as PharmacyChain;
+  }
+
+  return 'Inne';
+}
+
+/**
  * Wyciąga metadane nagłówka zamówienia z tekstu dokumentu
  * (w tym pełne dane Nabywcy, Odbiorcy oraz wszystkie daty)
  */
@@ -448,47 +538,12 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
     };
   }
 
-  const cleanNip = headerData.buyerNip ? headerData.buyerNip.replace(/\D/g, '') : '';
-  const cleanNameLower = (headerData.buyerName || '').toLowerCase();
-
   // Sprawdzenie dopasowania do znanych sieci aptecznych
-  let matchedChainId: PharmacyChain | null = null;
-  for (const [key, profile] of Object.entries(PHARMACY_CHAINS)) {
-    if (key === 'Custom') continue;
-    if (cleanNip && profile.buyer.nip === cleanNip) {
-      matchedChainId = profile.id;
-      break;
-    }
-    if (cleanNameLower) {
-      if (
-        key === 'Dr. Max' &&
-        (cleanNameLower.includes('dr. max') ||
-          cleanNameLower.includes('drmax') ||
-          cleanNameLower.includes('lekomat'))
-      ) {
-        matchedChainId = 'Dr. Max';
-        break;
-      }
-      if (
-        key === 'Super-Pharm' &&
-        (cleanNameLower.includes('super-pharm') || cleanNameLower.includes('super pharm'))
-      ) {
-        matchedChainId = 'Super-Pharm';
-        break;
-      }
-      if (
-        key === 'DOZ' &&
-        (cleanNameLower.includes('doz') || cleanNameLower.includes('dbam o zdrowie'))
-      ) {
-        matchedChainId = 'DOZ';
-        break;
-      }
-      if (key === 'Gemini' && cleanNameLower.includes('gemini')) {
-        matchedChainId = 'Gemini';
-        break;
-      }
-    }
-  }
+  const detected = detectPharmacyChain(
+    { name: headerData.buyerName, nip: headerData.buyerNip, email: headerData.buyerEmail },
+    { name: headerData.recipientName, gln: headerData.recipientGln, idWew: headerData.recipientIdWew }
+  );
+  const matchedChainId: PharmacyChain | null = (detected !== 'Inne' && detected !== 'Custom') ? detected : null;
 
   if (matchedChainId && PHARMACY_CHAINS[matchedChainId]) {
     const profile = PHARMACY_CHAINS[matchedChainId];

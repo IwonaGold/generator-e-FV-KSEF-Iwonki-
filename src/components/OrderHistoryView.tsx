@@ -23,6 +23,7 @@ import { ArchivedOrder, OrderChainFilter, OrderStatusFilter } from '../types/ord
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
 import { parseKSeFXMLString } from '../utils/ksefXmlParser';
+import { detectPharmacyChain } from '../utils/orderParser';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
@@ -62,8 +63,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     };
 
     orders.forEach((ord) => {
-      if (counts[ord.chain] !== undefined) {
-        counts[ord.chain]++;
+      const resolved = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
+      if (counts[resolved] !== undefined) {
+        counts[resolved]++;
       } else {
         counts.Inne++;
       }
@@ -75,8 +77,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   // Filtrowanie listy zamówień
   const filteredOrders = useMemo(() => {
     return orders.filter((ord) => {
+      const resolvedChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
+
       // 1. Filtr sieci
-      if (chainFilter !== 'Wszystkie' && ord.chain !== chainFilter) {
+      if (chainFilter !== 'Wszystkie' && resolvedChain !== chainFilter) {
         return false;
       }
 
@@ -173,15 +177,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         const text = event.target?.result as string;
         const parsed = parseKSeFXMLString(text);
 
-        const chain = (parsed.buyer.name?.includes('DR.MAX') || parsed.buyer.name?.includes('Dr. Max'))
-          ? 'Dr. Max'
-          : parsed.buyer.name?.includes('DOZ')
-          ? 'DOZ'
-          : parsed.buyer.name?.includes('SUPER-PHARM')
-          ? 'Super-Pharm'
-          : parsed.buyer.name?.includes('GEMINI')
-          ? 'Gemini'
-          : 'Inne';
+        const chain = detectPharmacyChain(parsed.buyer, parsed.thirdParty);
 
         const newOrder: ArchivedOrder = {
           id: `imported-${Date.now()}`,
@@ -367,6 +363,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             const currentNote = notesState[ord.id] !== undefined ? notesState[ord.id] : ord.notes || '';
             const isNoteSaving = savingNoteId === ord.id;
 
+            const displayChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
+
             return (
               <div
                 key={ord.id}
@@ -380,10 +378,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                       <div className="flex flex-wrap items-center gap-2">
                         <span
                           className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full border ${getChainBadgeStyle(
-                            ord.chain
+                            displayChain
                           )}`}
                         >
-                          {ord.chain}
+                          {displayChain === 'Inne' ? 'Inne (Klient)' : displayChain}
                         </span>
 
                         <span

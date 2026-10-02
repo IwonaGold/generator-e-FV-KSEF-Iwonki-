@@ -33,7 +33,7 @@ import {
 } from './utils/sampleData';
 import { generateKSeFXML, validateKSeFInvoice } from './utils/ksefGenerator';
 import { comparePricesWithInvoice } from './utils/priceListParser';
-import { matchOrBuildBuyerFromOrder } from './utils/orderParser';
+import { matchOrBuildBuyerFromOrder, detectPharmacyChain } from './utils/orderParser';
 import { FileCode, CheckCircle2, RotateCcw, Server, BookmarkPlus } from 'lucide-react';
 import { ModuleTilesNav, AppModule } from './components/ModuleTilesNav';
 import { InvoiceCorrectionView } from './components/InvoiceCorrectionView';
@@ -177,9 +177,11 @@ export default function App() {
     const totalVat = Math.round((vat23 + vat8 + vat5) * 100) / 100;
     const totalGross = Math.round((totalNet + totalVat) * 100) / 100;
 
+    const resolvedChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
+
     const newOrder: ArchivedOrder = {
       id: `ord-${Date.now()}`,
-      chain: selectedChain,
+      chain: resolvedChain,
       documentType: 'FV',
       invoiceNumber: meta.invoiceNumber || 'FAKTURA',
       orderNumber: meta.orderNumber,
@@ -464,6 +466,43 @@ export default function App() {
     }
   };
 
+  // Wczytanie zamówienia z Historii Zamówień Sieciowych bezpośrednio do formularza FV
+  const handleLoadArchivedOrderToInvoice = (order: ArchivedOrder) => {
+    if (order.chain) {
+      setSelectedChain(order.chain);
+    }
+    if (order.buyer) {
+      setBuyer(order.buyer);
+    }
+    if (order.seller) {
+      setSeller(order.seller);
+    }
+    if (order.thirdParty !== undefined) {
+      setThirdParty(order.thirdParty);
+    }
+    setMeta((prev) => ({
+      ...prev,
+      invoiceNumber: order.invoiceNumber || prev.invoiceNumber,
+      issueDate: order.issueDate || prev.issueDate,
+      orderNumber: order.orderNumber || prev.orderNumber,
+      orderDate: order.issueDate || prev.orderDate,
+      deliveryDate: order.deliveryDate || prev.deliveryDate,
+      dueDate: order.dueDate || prev.dueDate,
+    }));
+    if (order.items && order.items.length > 0) {
+      setItems(order.items);
+    }
+    if (order.originalFileName) {
+      setOrderFile({ name: order.originalFileName, size: 'z historii' });
+    } else {
+      setOrderFile({ name: `Zamówienie_${order.orderNumber || order.invoiceNumber}.pdf`, size: 'z historii' });
+    }
+    setPriceNotice(
+      `📥 Wczytano zamówienie/fakturę ${order.orderNumber || order.invoiceNumber} dla: ${order.buyer?.name || 'Nabywcy'} (${order.items?.length || 0} pozycji).`
+    );
+    setTimeout(() => setPriceNotice(null), 6000);
+  };
+
   // Krok 3: Wyniki OCR ze zdjęć opakowań
   const handleOcrCompleted = (ocrResults: OcrExtractionResult[]) => {
     setItems((prevItems) => {
@@ -545,77 +584,15 @@ export default function App() {
         {/* ==================================================================== */}
         {activeModule === 'invoice' && (
           <div className="space-y-6">
-            {/* Tytuł i pasek akcji */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-xs text-rose-500 mb-1 font-medium">
-                  <span>🌸 Farmacja</span>
-                  <span>·</span>
-                  <span>Krajowy System e-Faktur</span>
-                  <span>·</span>
-                  <span>Nowe Zamówienie ✨</span>
-                </div>
-                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600">
-                    🌸 generator-e-FV-KSEF-Iwonki-
-                  </span>
-                  <span className="text-xs font-bold text-rose-600 bg-rose-100/80 border border-rose-200 px-2 py-0.5 rounded-full">
-                    FA(3) ✨
-                  </span>
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-3xl">
-                  Wczytaj zamówienie, uzupełnij dane faktury, zweryfikuj ceny z zamówienia z aktualnym cennikiem, odczytaj serie ze zdjęć
-                  i wygeneruj oficjalny kod XML do KSeF Ministerstwa Finansów.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleResetEverything}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl shadow-xs transition-colors cursor-pointer"
-                  title="Wyczyść wszystkie pola i rozpocznij od nowa"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Wyczyść wszystko</span>
-                </button>
-
-                <button
-                  onClick={handleSaveInvoiceToHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-xl shadow-xs transition-colors cursor-pointer"
-                  title="Zapisz to zamówienie i wygenerowaną fakturę w Historii Zamówień Sieciowych"
-                >
-                  <BookmarkPlus className="w-3.5 h-3.5 text-rose-600" />
-                  <span>💾 Zapisz w historii</span>
-                </button>
-
-                <button
-                  onClick={() => setIsDirectApiModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-pink-700 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-xl shadow-xs transition-colors cursor-pointer"
-                  title="Wytyczne wgrania bezpośrednio do KSeF (API / Portal)"
-                >
-                  <Server className="w-3.5 h-3.5 text-pink-500" />
-                  <span>🌷 Wgraj do KSeF</span>
-                </button>
-
-                <button
-                  onClick={() => setIsXmlModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs shadow-pink-200 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <FileCode className="w-4 h-4" />
-                  <span>🌸 Podgląd i Pobranie XML</span>
-                </button>
-              </div>
-            </div>
-
             {/* Powiadomienie systemowe */}
             {priceNotice && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 flex items-center gap-2 shadow-2xs animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{priceNotice}</span>
+              <div className="p-3.5 rounded-xl bg-pink-50 border border-pink-200 text-xs text-pink-900 flex items-center gap-2.5 shadow-2xs animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-pink-600 shrink-0" />
+                <span className="font-medium">{priceNotice}</span>
               </div>
             )}
 
-            {/* KROK 1 & 2 POŁĄCZONE: PANEL ZAMÓWIENIA & DANYCH FAKTURY KSEF */}
+            {/* KROK 1 & 2: PANEL ZAMÓWIENIA & DANYCH FAKTURY KSEF */}
             <CombinedOrderInvoiceStep
               onOrderTextParsed={handleOrderTextParsed}
               orderFile={orderFile}
@@ -631,6 +608,9 @@ export default function App() {
               onUpdateThirdParty={setThirdParty}
               meta={meta}
               onUpdateMeta={setMeta}
+              archivedOrders={archivedOrders}
+              onLoadArchivedOrder={handleLoadArchivedOrderToInvoice}
+              onResetEverything={handleResetEverything}
               onLoadPresetDrMax={handleLoadPresetDrMax}
               onLoadPresetDoz={handleLoadPresetDoz}
               onLoadPresetSuperPharm={handleLoadPresetSuperPharm}
@@ -659,7 +639,7 @@ export default function App() {
               onApplyPriceListDiscrepancies={handleApplyPriceListDiscrepancies}
             />
 
-            {/* TABELA POZYCJI: Zestawienie końcowe z podglądem XML */}
+            {/* KROK 5: Pozycje Towarowe i Podsumowanie E-Faktury z podglądem XML */}
             <ItemsPreviewTable
               items={items}
               logisticsFormat={logisticsFormat}
@@ -672,6 +652,8 @@ export default function App() {
               priceComparisons={comparisons}
               isVerificationEnabled={isVerificationEnabled && !!priceList}
               onApplySinglePrice={handleApplySinglePrice}
+              onOpenXmlModal={() => setIsXmlModalOpen(true)}
+              onSaveToHistory={handleSaveInvoiceToHistory}
             />
           </div>
         )}
@@ -737,11 +719,11 @@ export default function App() {
       <footer className="bg-white/80 backdrop-blur-sm border-t border-rose-100 py-6 text-xs text-slate-500 mt-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-pink-600 font-bold">🌸 GENERATOR Iwonki E-faktur KSEF</span>
+            <span className="text-pink-600 font-bold">🌸 Centrum Obsługi Zamówień Sieciowych</span>
             <span>·</span>
             <span>Wariant FA(3) wersja 1-0E</span>
             <span>·</span>
-            <span className="text-rose-500 font-medium">Generuj e-faktury z uśmiechem ✨</span>
+            <span className="text-rose-500 font-medium">Obsługa zamówień i e-faktur z uśmiechem ✨</span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
             <span>Eubiosis Sp. z o.o. · BDO: 000585744</span>

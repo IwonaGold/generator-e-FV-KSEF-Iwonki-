@@ -368,18 +368,23 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
       {/* Nagłówek sekcji */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-rose-100">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center text-xs font-bold shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
               3
-            </span>
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Camera className="w-4 h-4 text-rose-500" />
-              Krok 3: Zdjęcia Opakowań – Weryfikacja Produktu i Odczyt LOT/MHD 🌸
-            </h2>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Camera className="w-4 h-4 text-rose-500" />
+                <span>Zdjęcia Opakowań – Weryfikacja Produktu i Odczyt LOT/MHD (OCR)</span>
+                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                  Krok 3 🌸
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Etap 1: Zatwierdzenie produktu ➔ Etap 2: Rzeczywista analiza wizualna nadruków (inkjet / etykiety / GS1)
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Etap 1: Zatwierdzenie produktu ➔ Etap 2: Rzeczywista analiza wizualna nadruków (inkjet / etykiety / GS1)
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

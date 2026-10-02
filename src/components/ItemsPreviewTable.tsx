@@ -2,7 +2,7 @@ import React from 'react';
 import { InvoiceItem, LogisticsFormat, VatRate } from '../types/ksef';
 import { formatGS1CompositeString } from '../utils/ksefGenerator';
 import { PriceComparisonItem } from '../types/priceList';
-import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus } from 'lucide-react';
 
 interface ItemsPreviewTableProps {
   items: InvoiceItem[];
@@ -16,6 +16,8 @@ interface ItemsPreviewTableProps {
   priceComparisons?: Map<string, PriceComparisonItem>;
   isVerificationEnabled?: boolean;
   onApplySinglePrice?: (itemId: string, newPrice: number) => void;
+  onOpenXmlModal?: () => void;
+  onSaveToHistory?: () => void;
 }
 
 export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
@@ -30,6 +32,8 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   priceComparisons,
   isVerificationEnabled,
   onApplySinglePrice,
+  onOpenXmlModal,
+  onSaveToHistory,
 }) => {
   // Obliczenia finansowe zgodne w 100% z ustawą o VAT i KSeF FA(3)
   const calculateTotals = () => {
@@ -85,17 +89,25 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
       {/* Table Header Bar */}
       <div className="p-4 sm:p-5 border-b border-rose-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-rose-50/20">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-bold text-slate-900">
-              🌸 Pozycje Towarowe i Dane E-Faktury
-            </h2>
-            <span className="text-xs text-rose-600 font-mono font-medium">
-              ({items.length} {items.length === 1 ? 'pozycja' : 'pozycji'})
-            </span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
+              5
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>Pozycje Towarowe i Podsumowanie E-Faktury</span>
+                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                  Krok 5 🌸
+                </span>
+                <span className="text-xs text-rose-600 font-mono font-medium">
+                  ({items.length} {items.length === 1 ? 'pozycja' : 'pozycji'})
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Zawiera kody GTIN, stawki VAT oraz edycję serii i daty ważności wg wybranej wersji zapisu
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Zawiera kody GTIN, stawki VAT oraz edycję serii i daty ważności wg wybranej wersji zapisu
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -503,6 +515,36 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Pasek akcji generowania XML i zapisu do historii (Krok 5) */}
+      <div className="p-4 sm:p-5 bg-gradient-to-r from-rose-50/70 via-pink-50/40 to-white border-t border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="text-xs text-slate-600">
+          <span className="font-bold text-slate-900">Status faktury:</span> Gotowa do wygenerowania oficjalnego pliku XML FA(3) do KSeF ({items.length} pozycji).
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onSaveToHistory && (
+            <button
+              type="button"
+              onClick={onSaveToHistory}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-xl shadow-xs transition-colors cursor-pointer"
+              title="Zapisz to zamówienie i wygenerowaną fakturę w Historii Zamówień Sieciowych"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5 text-rose-600" />
+              <span>💾 Zapisz w historii</span>
+            </button>
+          )}
+          {onOpenXmlModal && (
+            <button
+              type="button"
+              onClick={onOpenXmlModal}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs shadow-pink-200 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <FileCode className="w-4 h-4" />
+              <span>🌸 Podgląd i Pobranie XML</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -204,21 +204,26 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-rose-100">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center text-xs font-bold shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
               4
-            </span>
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <FileSpreadsheet className="w-4 h-4 text-rose-500" />
-              Krok 4: Weryfikacja z Cennikiem (Plik XLSX) 🌸
-            </h2>
-            <span className="text-[11px] font-mono text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-              Ceny netto po rabacie
-            </span>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-rose-500" />
+                <span>Weryfikacja z Cennikiem (Plik XLSX / Schowek)</span>
+                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                  Krok 4 🌸
+                </span>
+                <span className="text-[11px] font-mono text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                  Ceny netto po rabacie
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Wgraj plik XLSX lub wklej bezpośrednio z Excela. System weryfikuje ceny netto po rabacie i pozwala je podmienić na fakturze.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Wgraj plik XLSX lub wklej bezpośrednio z Excela. System weryfikuje ceny netto po rabacie i pozwala je podmienić na fakturze.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

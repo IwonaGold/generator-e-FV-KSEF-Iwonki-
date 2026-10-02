@@ -18,9 +18,11 @@ import {
   Square,
   Warehouse,
   Check,
+  RotateCcw,
 } from 'lucide-react';
 import { PHARMACY_CHAINS } from '../utils/sampleData';
 import { PharmacyChain, EntityDetails, InvoiceMeta, ThirdPartyEntity, InvoiceItem, ParsedOrderData } from '../types/ksef';
+import { ArchivedOrder } from '../types/ordersHistory';
 import {
   parseOrderFromFile,
   parseOrderText,
@@ -63,7 +65,10 @@ interface CombinedOrderInvoiceStepProps {
   meta: InvoiceMeta;
   onUpdateMeta: (meta: InvoiceMeta) => void;
 
-  // Wzorce (opcjonalne)
+  // Wzorce i historia
+  archivedOrders?: ArchivedOrder[];
+  onLoadArchivedOrder?: (order: ArchivedOrder) => void;
+  onResetEverything?: () => void;
   onLoadPresetDrMax?: () => void;
   onLoadPresetDoz?: () => void;
   onLoadPresetSuperPharm?: () => void;
@@ -85,6 +90,9 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   onUpdateThirdParty,
   meta,
   onUpdateMeta,
+  archivedOrders,
+  onLoadArchivedOrder,
+  onResetEverything,
   onLoadPresetDrMax,
   onLoadPresetDoz,
   onLoadPresetSuperPharm,
@@ -116,17 +124,28 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     }
   }, [thirdParty, onUpdateThirdParty]);
 
-  // Stan weryfikacji i zatwierdzenia poszczególnych informacji
-  const [verified, setVerified] = useState<VerificationChecks>({
-    buyer: true,
-    thirdParty: true,
-    invoiceNumber: true,
-    dates: true,
-    orderNumber: true,
-    orderDate: true,
-    dueDate: true,
-    seller: true,
-  });
+  // Szablon pustych (niezatwierdzonych) kafelków weryfikacji
+  const EMPTY_VERIFICATION_CHECKS: VerificationChecks = {
+    buyer: false,
+    thirdParty: false,
+    invoiceNumber: false,
+    dates: false,
+    orderNumber: false,
+    orderDate: false,
+    dueDate: false,
+    seller: false,
+  };
+
+  // Stan weryfikacji i zatwierdzenia poszczególnych informacji (domyślnie niezatwierdzone)
+  const [verified, setVerified] = useState<VerificationChecks>(EMPTY_VERIFICATION_CHECKS);
+
+  // Gdy wyczyszczono formularz (brak pliku zamówienia i brak pozycji) -> natychmiast odznacz wszystkie kafelki
+  useEffect(() => {
+    if (!orderFile && itemsCount === 0) {
+      setVerified(EMPTY_VERIFICATION_CHECKS);
+      setLastExtractedInfo(null);
+    }
+  }, [orderFile, itemsCount]);
 
   const toggleVerification = (key: keyof VerificationChecks) => {
     setVerified((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -170,6 +189,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   };
 
   const processOrderFile = async (file: File) => {
+    setVerified(EMPTY_VERIFICATION_CHECKS);
     const sizeKb = (file.size / 1024).toFixed(1) + ' KB';
     const fileInfo = { name: file.name, size: sizeKb };
     onOrderFileChange(fileInfo);
@@ -201,6 +221,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
 
   const handleApplyPastedText = () => {
     if (!pastedText.trim()) return;
+    setVerified(EMPTY_VERIFICATION_CHECKS);
     const fileInfo = {
       name: 'wklejone_zamowienie.txt',
       size: `${(pastedText.length / 1024).toFixed(1)} KB`,
@@ -253,23 +274,20 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   return (
     <div className="space-y-6 mb-6">
       {/* ===================================================================== */}
-      {/* KROK 1: WCZYTAJ ZAMÓWIENIE SIECIOWE (DUŻY I WIDOCZNY DROPZONE)        */}
+      {/* KROK 1: WCZYTAJ ZAMÓWIENIE SIECIOWE (DROPZONE + WYBÓR Z HISTORII)     */}
       {/* ===================================================================== */}
-      <div className="bg-white rounded-2xl border border-rose-200/80 p-5 sm:p-6 shadow-xs">
+      <div className="bg-white rounded-2xl border border-rose-200/80 p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
               1
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <span>Wczytaj Zamówienie Sieciowe (PDF / Excel .XLSX / TXT / CSV)</span>
-                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
-                  Krok 1 🌸
-                </span>
+              <h3 className="text-sm font-bold text-slate-900">
+                Wczytaj Zamówienie w PDF (z pozycjami) lub z Archiwum
               </h3>
               <p className="text-xs text-slate-500">
-                Wgraj plik zamówienia aptecznego od DOZ, Dr. Max, Super-Pharm, Gemini lub innego odbiorcy.
+                Wgraj plik PDF/Excel/TXT otrzymany od klienta – system automatycznie wyodrębni dane kontrahenta, odbiorcę, daty i pozycje.
               </p>
             </div>
           </div>
@@ -281,45 +299,45 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl cursor-pointer transition-colors shadow-2xs"
               title="Wklej treść zamówienia ze schowka (np. z maila)"
             >
-              <span>📋 Wklej ze schowka</span>
+              <Upload className="w-3.5 h-3.5 text-slate-500" />
+              <span>Wklej ze schowka</span>
             </button>
 
             {onLoadPresetDrMax && (
               <button
                 type="button"
-                onClick={onLoadPresetDrMax}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                onClick={() => {
+                  setVerified(EMPTY_VERIFICATION_CHECKS);
+                  onLoadPresetDrMax();
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
                 title="Wczytaj przykładowe zamówienie Dr. Max"
               >
-                <span>Wzorzec Dr. Max</span>
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <span>Wzorzec testowy</span>
               </button>
             )}
 
-            {onLoadPresetDoz && (
+            {onResetEverything && (
               <button
                 type="button"
-                onClick={onLoadPresetDoz}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-                title="Wczytaj przykładowe zamówienie DOZ"
+                onClick={() => {
+                  setVerified(EMPTY_VERIFICATION_CHECKS);
+                  setLastExtractedInfo(null);
+                  setPastedText('');
+                  setIsPasteOpen(false);
+                  onResetEverything();
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                title="Wyczyść wszystkie wprowadzone dane i zresetuj weryfikację"
               >
-                <span>Wzorzec DOZ</span>
-              </button>
-            )}
-
-            {onLoadPresetSuperPharm && (
-              <button
-                type="button"
-                onClick={onLoadPresetSuperPharm}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-                title="Wczytaj przykładowe zamówienie Super-Pharm"
-              >
-                <span>Super-Pharm</span>
+                <span>Wyczyść wszystko</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* DUŻY, PROMINENTNY DROPZONE DLA PLIKU ZAMÓWIENIA */}
+        {/* PROMINENTNY BOKS DROPZONE IDENTYCZNY JAK W KAFELCE 2 */}
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -328,10 +346,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleOrderDrop}
           onClick={() => orderInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-2xl p-7 sm:p-9 text-center transition-all cursor-pointer ${
+          className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer mb-4 ${
             isDragging
               ? 'border-pink-500 bg-pink-50/80 scale-[1.01]'
-              : 'border-pink-200 hover:border-pink-400 bg-gradient-to-b from-rose-50/40 via-white to-pink-50/30 hover:bg-rose-50/50'
+              : 'border-pink-200 hover:border-pink-400 bg-gradient-to-b from-rose-50/30 via-white to-pink-50/20 hover:bg-rose-50/40'
           }`}
         >
           <input
@@ -342,42 +360,52 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
             className="hidden"
           />
 
-          <div className="flex flex-col items-center justify-center gap-2.5">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-500 text-white flex items-center justify-center text-2xl shadow-sm shadow-pink-200">
-              🌸
+          <div className="flex flex-col items-center justify-center gap-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-500 text-white flex items-center justify-center text-xl shadow-sm shadow-pink-200">
+              📄
             </div>
             <div>
-              <div className="text-base font-bold text-slate-900 flex flex-wrap items-center justify-center gap-2">
-                <span>Przeciągnij i upuść tutaj plik zamówienia</span>
-                <span className="text-xs font-semibold text-rose-600 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-200">
-                  lub kliknij, aby wybrać plik z dysku ✨
+              <div className="text-sm font-bold text-slate-900 flex items-center justify-center gap-2">
+                <span>Wgraj Zamówienie w PDF (lub Excel, TXT, CSV)</span>
+                <span className="text-[11px] font-bold text-pink-700 bg-pink-100 px-2 py-0.5 rounded-full border border-pink-200">
+                  Możesz przeciągnąć plik tutaj ✨
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-1 max-w-xl mx-auto">
-                Obsługuje zamówienia PDF (Dr. Max, Gemini, Subiekt), arkusze Excel (.XLSX / .XLS) oraz pliki tekstowe (DOZ, Super-Pharm). System automatycznie odczyta kontrahenta, odbiorcę (aptekę), daty, termin 30/45/60 dni, ceny i pozycje.
+              <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
+                Przeciągnij i upuść tutaj plik z zamówieniem (PDF, Excel .XLSX, TXT lub CSV). System automatycznie sczyta dane kontrahenta, odbiorcę (aptekę), daty, termin płatności i pozycje.
               </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-rose-200 text-slate-700 shadow-2xs">
-                📄 PDF apteczny
-              </span>
-              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-rose-200 text-slate-700 shadow-2xs">
-                📊 Excel .XLSX / .XLS
-              </span>
-              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-rose-200 text-slate-700 shadow-2xs">
-                📝 TXT / CSV (EDI)
-              </span>
-              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-pink-100 text-pink-800 border border-pink-200">
-                ✨ Auto-detekcja DOZ / Dr. Max / Super-Pharm / Gemini
-              </span>
             </div>
           </div>
         </div>
 
+        {/* Szybki wybór z historii zamówień sieciowych (identycznie jak na zrzucie ekranu z Kafelka 2!) */}
+        {archivedOrders && archivedOrders.length > 0 && (
+          <div className="mb-4 p-3 bg-pink-50/50 rounded-xl border border-pink-100">
+            <div className="text-xs font-semibold text-pink-950 mb-2 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-pink-600" />
+              <span>Lub wybierz z Historii Zamówień Sieciowych:</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {archivedOrders.slice(0, 6).map((ord) => (
+                <button
+                  key={ord.id}
+                  type="button"
+                  onClick={() => {
+                    setVerified(EMPTY_VERIFICATION_CHECKS);
+                    if (onLoadArchivedOrder) onLoadArchivedOrder(ord);
+                  }}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border text-left transition-all cursor-pointer bg-white hover:bg-pink-100/70 border-pink-200 text-slate-700 shadow-2xs hover:border-pink-400"
+                >
+                  <span className="font-bold text-pink-700">{ord.chain}</span> · {ord.invoiceNumber || ord.orderNumber} ({ord.totalGross.toFixed(2)} zł)
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Rozwijany panel wklejania treści zamówienia ze schowka */}
         {isPasteOpen && (
-          <div className="mt-3.5 p-4 rounded-xl bg-pink-50/70 border border-pink-200 animate-in fade-in duration-150">
+          <div className="mb-4 p-4 rounded-xl bg-pink-50/70 border border-pink-200 animate-in fade-in duration-150">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <span>📋</span> Wklej tekst lub tabelę zamówienia (z maila, komunikatora lub pliku):
@@ -457,7 +485,11 @@ Numer zamówienia: ZAM/2026/10/01
               </button>
               <button
                 type="button"
-                onClick={() => onOrderFileChange(null)}
+                onClick={() => {
+                  setVerified(EMPTY_VERIFICATION_CHECKS);
+                  setLastExtractedInfo(null);
+                  onOrderFileChange(null);
+                }}
                 className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
                 title="Wyczyść plik"
               >
@@ -642,7 +674,10 @@ Numer zamówienia: ZAM/2026/10/01
           <div className="relative mb-2">
             <select
               value={selectedChain}
-              onChange={(e) => onSelectChain(e.target.value as PharmacyChain)}
+              onChange={(e) => {
+                onSelectChain(e.target.value as PharmacyChain);
+                setVerified((prev) => ({ ...prev, buyer: false }));
+              }}
               className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 appearance-none focus:outline-none focus:border-blue-600"
             >
               <option value="Super-Pharm">Super-Pharm Poland Sp. z o.o.</option>

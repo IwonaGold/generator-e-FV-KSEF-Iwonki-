@@ -30,7 +30,7 @@ import {
   Hash,
   Tag,
 } from 'lucide-react';
-import { EntityDetails, ThirdPartyEntity, InvoiceItem, VatRate } from '../types/ksef';
+import { EntityDetails, ThirdPartyEntity, InvoiceItem, VatRate, PharmacyChain } from '../types/ksef';
 import {
   CorrectionItem,
   KSeFCorrectionData,
@@ -49,6 +49,7 @@ import { validateXmlAgainstKSeFXsd, XsdValidationResult } from '../utils/ksefXsd
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { saveArchivedOrder } from '../utils/ordersStorage';
 import { parseAddressString } from '../utils/ksefPdfInvoiceParser';
+import { detectPharmacyChain } from '../utils/orderParser';
 
 interface InvoiceCorrectionViewProps {
   archivedOrders: ArchivedOrder[];
@@ -184,6 +185,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   const [isPriceListLoading, setIsPriceListLoading] = useState<boolean>(false);
   const priceListInputRef = useRef<HTMLInputElement>(null);
 
+  // Przypisana sieć apteczna / kategoria w historii (Dr. Max, DOZ, Super-Pharm, Gemini, Inne)
+  const [selectedChain, setSelectedChain] = useState<PharmacyChain>('Dr. Max');
+
   // Dane bieżącej korekty
   const [correctionNumber, setCorrectionNumber] = useState<string>('KOR-01/10/2026');
   const [issueDate, setIssueDate] = useState<string>(today);
@@ -258,6 +262,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     setOriginalKsefNumber('5833446059-20260928-123456-ABCDEF-01');
     setHasOriginalKsefNumber(true);
     setBuyer(PHARMACY_CHAINS['Dr. Max'].buyer);
+    setSelectedChain('Dr. Max');
     setCorrectionMode('value');
     setTypKorekty('1');
   };
@@ -271,13 +276,15 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     setCorrectionNumber(`KOR-${order.invoiceNumber.replace('/KSEF', '')}`);
     setHasOriginalKsefNumber(false);
     setOriginalKsefNumber('');
+    const detected = detectPharmacyChain(order.buyer, order.thirdParty, order.chain);
+    setSelectedChain(detected);
 
     if (order.items && order.items.length > 0) {
       const corrItems = convertInvoiceItemsToCorrectionItems(order.items);
       setItems(corrItems);
     }
 
-    setNotification(`Pomyślnie załadowano fakturę pierwotną ${order.invoiceNumber} (${order.chain}).`);
+    setNotification(`Pomyślnie załadowano fakturę pierwotną ${order.invoiceNumber} (${detected}).`);
     setTimeout(() => setNotification(null), 5000);
   };
 
@@ -334,7 +341,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       if (data.dueDate) setDueDate(data.dueDate);
 
       if (data.buyer && data.buyer.name) {
-        setBuyer({
+        const newBuyer: EntityDetails = {
           nip: data.buyer.nip || '',
           name: data.buyer.name || '',
           countryCode: data.buyer.countryCode || 'PL',
@@ -342,7 +349,10 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           postalCode: data.buyer.postalCode || '',
           city: data.buyer.city || '',
           gln: data.buyer.gln || '',
-        });
+        };
+        setBuyer(newBuyer);
+        const detected = detectPharmacyChain(newBuyer, data.thirdParty || thirdParty);
+        setSelectedChain(detected);
       }
       if (data.seller && data.seller.name) {
         setSeller((s) => ({
@@ -488,7 +498,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           });
 
           if (i === 0 && data.buyer && data.buyer.name) {
-            setBuyer({
+            const newBuyer: EntityDetails = {
               nip: data.buyer.nip || '',
               name: data.buyer.name || '',
               countryCode: data.buyer.countryCode || 'PL',
@@ -496,7 +506,10 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
               postalCode: data.buyer.postalCode || '',
               city: data.buyer.city || '',
               gln: data.buyer.gln || '',
-            });
+            };
+            setBuyer(newBuyer);
+            const detected = detectPharmacyChain(newBuyer, data.thirdParty || thirdParty);
+            setSelectedChain(detected);
             if (data.seller && data.seller.name) setSeller(data.seller);
           }
         }
@@ -631,6 +644,8 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         setBuyer(parsed.buyer);
         setSeller(parsed.seller);
         setThirdParty(parsed.thirdParty || null);
+        const detected = detectPharmacyChain(parsed.buyer, parsed.thirdParty);
+        setSelectedChain(detected);
         setCorrectionNumber(`KOR-${parsed.invoiceNumber.replace('/KSEF', '')}`);
 
         const corrItems = convertInvoiceItemsToCorrectionItems(parsed.items);
@@ -1195,17 +1210,11 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       });
     }
 
+    const finalChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
+
     const archivedOrder: ArchivedOrder = {
       id: `kor-${Date.now()}`,
-      chain: (buyer.name?.includes('DR.MAX') || buyer.name?.includes('Dr. Max'))
-        ? 'Dr. Max'
-        : buyer.name?.includes('DOZ')
-        ? 'DOZ'
-        : buyer.name?.includes('SUPER-PHARM')
-        ? 'Super-Pharm'
-        : buyer.name?.includes('GEMINI')
-        ? 'Gemini'
-        : 'Inne',
+      chain: finalChain,
       documentType: 'KOR',
       invoiceNumber: correctionNumber,
       orderNumber: `KOR DO ${originalInvoiceNumber}`,
@@ -1438,6 +1447,41 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                 Faktura wystawiona poza KSeF – w pliku XML zostanie wygenerowany znacznik <strong className="font-mono">&lt;NrKSeFN&gt;1&lt;/NrKSeFN&gt;</strong>.
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ROZPOZNANY KONTRAHENT (PODMIOT 2) I PRZYPISANA SIEĆ FARMACEUTYCZNA */}
+        <div className="mt-3.5 p-3.5 bg-gradient-to-r from-fuchsia-50/70 via-pink-50/40 to-white rounded-xl border border-fuchsia-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shrink-0">
+              🏢
+            </div>
+            <div>
+              <div className="font-bold text-slate-900 flex items-center gap-2">
+                <span>Nabywca: {buyer.name || 'Brak danych'}</span>
+                <span className="text-[10px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 font-semibold">
+                  NIP: {buyer.nip}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Korekta zostanie przypisana do historii zamówień: <strong className="text-fuchsia-900 font-bold">{selectedChain}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] font-bold text-slate-700">Przypisz do sieci w Historii:</span>
+            <select
+              value={selectedChain}
+              onChange={(e) => setSelectedChain(e.target.value as PharmacyChain)}
+              className="px-3 py-1.5 text-xs font-bold text-fuchsia-950 bg-white border border-fuchsia-300 rounded-xl shadow-2xs focus:outline-fuchsia-500 cursor-pointer"
+            >
+              <option value="Dr. Max">Dr. Max</option>
+              <option value="DOZ">DOZ</option>
+              <option value="Super-Pharm">Super-Pharm</option>
+              <option value="Gemini">Gemini</option>
+              <option value="Inne">Inne (inny kontrahent)</option>
+            </select>
           </div>
         </div>
       </div>

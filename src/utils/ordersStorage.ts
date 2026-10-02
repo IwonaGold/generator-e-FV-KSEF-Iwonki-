@@ -1,7 +1,18 @@
 import { ArchivedOrder } from '../types/ordersHistory';
 import { INITIAL_ARCHIVED_ORDERS } from './sampleOrdersHistory';
+import { detectPharmacyChain } from './orderParser';
 
 const LOCAL_STORAGE_KEY = 'iwonka_ksef_orders_history_v1';
+
+/**
+ * Normalizuje przypisanie sieci dla każdego zamówienia/korekty
+ */
+function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
+  return list.map((ord) => ({
+    ...ord,
+    chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
+  }));
+}
 
 /**
  * Pobiera listę archiwalnych zamówień (z serwera lub localStorage z fallbackiem do danych wzorcowych)
@@ -12,9 +23,10 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
+        const normalized = normalizeOrdersList(data);
         // Zapisz kopię zapasową w localStorage
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-        return data;
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
+        return normalized;
       }
     }
   } catch (err) {
@@ -27,7 +39,7 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return normalizeOrdersList(parsed);
       }
     }
   } catch (e) {
@@ -35,21 +47,26 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
   }
 
   // Domyślne dane początkowe
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_ARCHIVED_ORDERS));
-  return INITIAL_ARCHIVED_ORDERS;
+  const defaultOrders = normalizeOrdersList(INITIAL_ARCHIVED_ORDERS);
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultOrders));
+  return defaultOrders;
 }
 
 /**
  * Zapisuje nowe lub aktualizuje istniejące zamówienie w historii
  */
 export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedOrder> {
+  const normalizedOrder: ArchivedOrder = {
+    ...order,
+    chain: detectPharmacyChain(order.buyer, order.thirdParty, order.chain),
+  };
   // Próba zapisu na serwerze
   let serverSaved = false;
   try {
     const res = await fetch('/api/orders-history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(order),
+      body: JSON.stringify(normalizedOrder),
     });
     if (res.ok) {
       serverSaved = true;
@@ -61,20 +78,20 @@ export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedO
   // Zapis w localStorage
   try {
     const existing = await getArchivedOrders();
-    const idx = existing.findIndex((o) => o.id === order.id);
+    const idx = existing.findIndex((o) => o.id === normalizedOrder.id);
     let updated: ArchivedOrder[];
     if (idx >= 0) {
       updated = [...existing];
-      updated[idx] = { ...order, updatedAt: new Date().toISOString() };
+      updated[idx] = { ...normalizedOrder, updatedAt: new Date().toISOString() };
     } else {
-      updated = [order, ...existing];
+      updated = [normalizedOrder, ...existing];
     }
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
   } catch (e) {
     console.warn('Błąd zapisu do localStorage:', e);
   }
 
-  return order;
+  return normalizedOrder;
 }
 
 /**
