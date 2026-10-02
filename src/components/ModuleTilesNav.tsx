@@ -40,7 +40,7 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
                   : 'bg-fuchsia-100 text-fuchsia-600'
               }`}
             >
-              <FileText className="w-5 h-5 text-current" />
+              🧾
             </div>
             <div className="pr-12">
               <div className="text-[10px] font-bold tracking-wider text-fuchsia-600 uppercase mb-0.5">

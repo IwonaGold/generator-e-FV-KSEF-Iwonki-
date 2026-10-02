@@ -51,13 +51,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         {/* Logo & Nagłówek */}
         <div className="text-center mb-6">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-pink-500 via-rose-500 to-fuchsia-400 flex items-center justify-center text-white text-2xl shadow-md shadow-pink-200 mb-3">
-            🌸
+            🧾
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent">
             Centrum Obsługi Zamówień Sieciowych
           </h1>
           <p className="text-xs font-semibold text-rose-500 mt-0.5">
-            E-faktury KSEF · Dostęp autoryzowany ✨
+            E-faktury KSEF · Dostęp autoryzowany
           </p>
           <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-medium">
             <Lock className="w-3 h-3 text-rose-500" />
@@ -140,7 +140,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             className="w-full mt-2 py-3 px-4 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 shadow-md shadow-pink-200 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Sparkles className="w-4 h-4" />
-            <span>{isLoading ? 'Logowanie...' : 'Zaloguj się do generatora 🌸'}</span>
+            <span>{isLoading ? 'Logowanie...' : 'Zaloguj się do generatora e-Faktur'}</span>
           </button>
         </form>
 

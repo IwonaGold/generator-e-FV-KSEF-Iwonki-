@@ -22,10 +22,10 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-rose-200/80 shadow-xs">
       <div className="h-1 bg-gradient-to-r from-pink-400 via-rose-400 to-fuchsia-400 w-full" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Zone 1: Wordmark & Floral Badge */}
+        {/* Zone 1: Wordmark & Invoice Badge */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 via-rose-500 to-fuchsia-400 flex items-center justify-center text-white text-base shadow-sm shadow-pink-300">
-            🌸
+            🧾
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <span className="text-xs text-rose-500/90 font-medium">
-              E-faktury KSEF · z uśmiechem ✨
+              E-faktury i Korekty KSeF · FA(3)
             </span>
           </div>
         </div>
@@ -48,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenDirectApiModal}
             className="flex items-center gap-1.5 hover:text-pink-700 font-semibold transition-colors cursor-pointer text-pink-700 bg-pink-50 hover:bg-pink-100 px-3 py-1.5 rounded-xl border border-pink-200 shadow-2xs"
           >
-            <span>🌷 Wgraj do KSeF (API / Portal)</span>
+            <span>Wgraj do KSeF (API / Portal)</span>
           </button>
           <span className="text-rose-200">·</span>
           <span className="bg-rose-50/80 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 text-xs">
