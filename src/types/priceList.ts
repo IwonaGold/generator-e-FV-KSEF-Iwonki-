@@ -12,6 +12,7 @@ export interface PriceListItem {
 }
 
 export type PriceMatchStatus = 'match' | 'discrepancy' | 'not_found';
+export type GtinMatchStatus = 'match' | 'discrepancy' | 'missing_in_order' | 'missing_in_pricelist' | 'not_found';
 
 export interface PriceComparisonItem {
   invoiceItemId: string;
@@ -24,6 +25,10 @@ export interface PriceComparisonItem {
   status: PriceMatchStatus;
   matchedBy: 'gtin' | 'name' | 'none';
   matchedPriceListItem?: PriceListItem;
+  // Weryfikacja kodów GTIN / EAN (zamówienie vs cennik)
+  gtinStatus: GtinMatchStatus;
+  priceListGtin: string | null;
+  gtinNotice?: string;
 }
 
 export interface PriceListAuditSummary {
@@ -34,6 +39,10 @@ export interface PriceListAuditSummary {
   totalInvoiceNet: number;
   totalPriceListNet: number;
   totalPotentialDiff: number; // Sumaryczna różnica kwotowa
+  // Statystyki weryfikacji EAN/GTIN
+  gtinMatchedCount: number;
+  gtinDiscrepanciesCount: number;
+  gtinMissingCount: number;
 }
 
 export interface ColumnMapping {

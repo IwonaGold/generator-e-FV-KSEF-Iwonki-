@@ -472,6 +472,10 @@ export function comparePricesWithInvoice(
   let totalPriceListNet = 0;
   let totalPotentialDiff = 0;
 
+  let gtinMatchedCount = 0;
+  let gtinDiscrepanciesCount = 0;
+  let gtinMissingCount = 0;
+
   invoiceItems.forEach((item) => {
     totalInvoiceNet += item.quantity * item.netPrice;
 
@@ -500,6 +504,7 @@ export function comparePricesWithInvoice(
 
     if (!matchedItem) {
       notFoundCount++;
+      gtinMissingCount++;
       comparisons.set(item.id, {
         invoiceItemId: item.id,
         invoiceItemName: item.name,
@@ -510,6 +515,9 @@ export function comparePricesWithInvoice(
         differencePercent: null,
         status: 'not_found',
         matchedBy: 'none',
+        gtinStatus: 'not_found',
+        priceListGtin: null,
+        gtinNotice: 'Nie odnaleziono pozycji w cenniku',
       });
       return;
     }
@@ -529,6 +537,34 @@ export function comparePricesWithInvoice(
       totalPotentialDiff += diff * item.quantity;
     }
 
+    // Weryfikacja kodu GTIN / EAN (zamówienie vs cennik)
+    const pGtin = cleanGtinValue(matchedItem.gtin);
+    const priceListGtin = matchedItem.gtin ? matchedItem.gtin.trim() : null;
+    let gtinStatus: GtinMatchStatus = 'not_found';
+    let gtinNotice: string | undefined = undefined;
+
+    if (!cleanInvoiceGtin && pGtin) {
+      gtinStatus = 'missing_in_order';
+      gtinNotice = `Brak kodu EAN w zamówieniu (w cenniku: ${matchedItem.gtin})`;
+      gtinMissingCount++;
+    } else if (cleanInvoiceGtin && !pGtin) {
+      gtinStatus = 'missing_in_pricelist';
+      gtinNotice = 'Brak kodu GTIN w cenniku dla tego produktu';
+    } else if (cleanInvoiceGtin && pGtin) {
+      if (cleanInvoiceGtin === pGtin || cleanInvoiceGtin.includes(pGtin) || pGtin.includes(cleanInvoiceGtin)) {
+        gtinStatus = 'match';
+        gtinNotice = `EAN zgodny z cennikiem (${matchedItem.gtin})`;
+        gtinMatchedCount++;
+      } else {
+        gtinStatus = 'discrepancy';
+        gtinNotice = `Rozbieżność EAN! Zamówienie: ${item.gtin} vs Cennik: ${matchedItem.gtin}`;
+        gtinDiscrepanciesCount++;
+      }
+    } else {
+      gtinStatus = 'missing_in_order';
+      gtinMissingCount++;
+    }
+
     comparisons.set(item.id, {
       invoiceItemId: item.id,
       invoiceItemName: item.name,
@@ -540,6 +576,9 @@ export function comparePricesWithInvoice(
       status: isMatch ? 'match' : 'discrepancy',
       matchedBy,
       matchedPriceListItem: matchedItem,
+      gtinStatus,
+      priceListGtin,
+      gtinNotice,
     });
   });
 
@@ -551,6 +590,9 @@ export function comparePricesWithInvoice(
     totalInvoiceNet: Math.round(totalInvoiceNet * 100) / 100,
     totalPriceListNet: Math.round(totalPriceListNet * 100) / 100,
     totalPotentialDiff: Math.round(totalPotentialDiff * 100) / 100,
+    gtinMatchedCount,
+    gtinDiscrepanciesCount,
+    gtinMissingCount,
   };
 
   return { comparisons, summary };

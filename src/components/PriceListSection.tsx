@@ -14,6 +14,7 @@ import {
   ClipboardPaste,
   Layers,
   ArrowRight,
+  Barcode,
 } from 'lucide-react';
 import {
   PriceListItem,
@@ -40,6 +41,7 @@ interface PriceListSectionProps {
   isVerificationEnabled: boolean;
   onToggleVerification: (enabled: boolean) => void;
   onApplyPriceListDiscrepancies: () => void;
+  onApplyPriceListGtins?: () => void;
 }
 
 export const PriceListSection: React.FC<PriceListSectionProps> = ({
@@ -51,6 +53,7 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
   isVerificationEnabled,
   onToggleVerification,
   onApplyPriceListDiscrepancies,
+  onApplyPriceListGtins,
 }) => {
   const [activeTab, setActiveTab] = useState<'upload' | 'paste'>('upload');
   const [isDragging, setIsDragging] = useState(false);
@@ -438,30 +441,63 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
 
               {/* Status weryfikacji */}
               {auditSummary && (
-                <div className="mt-3 grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
-                  <div className="p-1.5 rounded bg-emerald-50 border border-emerald-100">
-                    <span className="text-[10px] text-emerald-700 block">Zgodne</span>
-                    <span className="text-xs font-bold text-emerald-800">{auditSummary.matchedCount}</span>
+                <div className="mt-3 pt-2 border-t border-slate-100 space-y-2">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                      Weryfikacja cen netto po rabacie:
+                    </span>
+                    <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                      <div className="p-1.5 rounded bg-emerald-50 border border-emerald-100">
+                        <span className="text-[10px] text-emerald-700 block">Zgodne</span>
+                        <span className="text-xs font-bold text-emerald-800">{auditSummary.matchedCount}</span>
+                      </div>
+                      <div
+                        className={`p-1.5 rounded border ${
+                          auditSummary.discrepanciesCount > 0
+                            ? 'bg-amber-50 border-amber-200'
+                            : 'bg-slate-50 border-slate-100'
+                        }`}
+                      >
+                        <span className="text-[10px] text-amber-700 block">Rozbieżności</span>
+                        <span className="text-xs font-bold text-amber-800">{auditSummary.discrepanciesCount}</span>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-50 border border-slate-200">
+                        <span className="text-[10px] text-slate-500 block">Brak w cenniku</span>
+                        <span className="text-xs font-bold text-slate-700">{auditSummary.notFoundCount}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div
-                    className={`p-1.5 rounded border ${
-                      auditSummary.discrepanciesCount > 0
-                        ? 'bg-amber-50 border-amber-200'
-                        : 'bg-slate-50 border-slate-100'
-                    }`}
-                  >
-                    <span className="text-[10px] text-amber-700 block">Rozbieżności</span>
-                    <span className="text-xs font-bold text-amber-800">{auditSummary.discrepanciesCount}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-slate-50 border border-slate-200">
-                    <span className="text-[10px] text-slate-500 block">Brak w cenniku</span>
-                    <span className="text-xs font-bold text-slate-700">{auditSummary.notFoundCount}</span>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                      Weryfikacja kodów GTIN / EAN (zamówienie vs cennik):
+                    </span>
+                    <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                      <div className="p-1.5 rounded bg-emerald-50 border border-emerald-100">
+                        <span className="text-[10px] text-emerald-700 block">EAN zgodny</span>
+                        <span className="text-xs font-bold text-emerald-800">{auditSummary.gtinMatchedCount}</span>
+                      </div>
+                      <div
+                        className={`p-1.5 rounded border ${
+                          auditSummary.gtinDiscrepanciesCount > 0
+                            ? 'bg-amber-50 border-amber-200'
+                            : 'bg-slate-50 border-slate-100'
+                        }`}
+                      >
+                        <span className="text-[10px] text-amber-700 block">Rozbieżny EAN</span>
+                        <span className="text-xs font-bold text-amber-800">{auditSummary.gtinDiscrepanciesCount}</span>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-50 border border-slate-200">
+                        <span className="text-[10px] text-slate-500 block">Brak EAN</span>
+                        <span className="text-xs font-bold text-slate-700">{auditSummary.gtinMissingCount}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Opcja 2: Użycie cen z cennika jeżeli są rozbieżności */}
+            {/* Opcja 2: Użycie cen i kodów EAN z cennika jeżeli są rozbieżności */}
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -469,11 +505,11 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
                     <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">
                       2
                     </span>
-                    Opcja 2: Zastosuj ceny z cennika XLSX
+                    Opcja 2: Zastosuj dane z cennika XLSX
                   </span>
                   {auditSummary && auditSummary.discrepanciesCount > 0 ? (
                     <span className="text-[11px] font-mono text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      Wykryto {auditSummary.discrepanciesCount} {auditSummary.discrepanciesCount === 1 ? 'różnicę' : 'różnice'}
+                      Wykryto {auditSummary.discrepanciesCount} {auditSummary.discrepanciesCount === 1 ? 'różnicę cen' : 'różnice cen'}
                     </span>
                   ) : (
                     <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -482,11 +518,11 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
                   )}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Nadpisuje ceny netto na fakturze cenami netto po rabacie z cennika dla wszystkich pozycji z rozbieżnościami.
+                  Nadpisuje ceny netto lub kody EAN na fakturze danymi z oficjalnego cennika dla pozycji z rozbieżnościami.
                 </p>
               </div>
 
-              <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between gap-3">
+              <div className="mt-3 pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-[11px] text-slate-500">
                   {auditSummary && auditSummary.totalPotentialDiff !== 0 && (
                     <span>
@@ -501,20 +537,36 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
                   )}
                 </div>
 
-                <button
-                  onClick={onApplyPriceListDiscrepancies}
-                  disabled={!auditSummary || auditSummary.discrepanciesCount === 0}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs whitespace-nowrap ${
-                    !auditSummary || auditSummary.discrepanciesCount === 0
-                      ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>
-                    Użyj cen z cennika ({auditSummary ? auditSummary.discrepanciesCount : 0})
-                  </span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {onApplyPriceListGtins && auditSummary && (auditSummary.gtinDiscrepanciesCount > 0 || auditSummary.gtinMissingCount > 0) && (
+                    <button
+                      type="button"
+                      onClick={onApplyPriceListGtins}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-900 border border-pink-300 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+                      title="Wstaw brakujące lub rozbieżne kody EAN/GTIN z cennika dla dopasowanych produktów"
+                    >
+                      <Barcode className="w-3.5 h-3.5 text-pink-700" />
+                      <span>
+                        Wstaw EAN z cennika ({auditSummary.gtinDiscrepanciesCount + auditSummary.gtinMissingCount})
+                      </span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={onApplyPriceListDiscrepancies}
+                    disabled={!auditSummary || auditSummary.discrepanciesCount === 0}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs whitespace-nowrap ${
+                      !auditSummary || auditSummary.discrepanciesCount === 0
+                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>
+                      Użyj cen z cennika ({auditSummary ? auditSummary.discrepanciesCount : 0})
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

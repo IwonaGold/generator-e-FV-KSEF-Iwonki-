@@ -27,6 +27,11 @@ export interface ArchivedOrder {
   originalFileName?: string;
   createdAt: string;
   updatedAt: string;
+  // Śledzenie płatności i terminu rozliczenia
+  paymentStatus?: 'paid' | 'pending' | 'overdue';
+  paymentDueDate?: string | null;
+  paidAt?: string | null;
+  paymentTermDays?: number;
   // Pola specyficzne dla korekt (gdy documentType === 'KOR')
   correctionReason?: string;
   originalInvoiceNumber?: string;
@@ -35,3 +40,5 @@ export interface ArchivedOrder {
 
 export type OrderChainFilter = 'Wszystkie' | 'DOZ' | 'Dr. Max' | 'Super-Pharm' | 'Gemini' | 'Inne';
 export type OrderStatusFilter = 'all' | 'delivered' | 'pending';
+export type OrderPaymentFilter = 'all' | 'paid' | 'pending' | 'overdue';
+

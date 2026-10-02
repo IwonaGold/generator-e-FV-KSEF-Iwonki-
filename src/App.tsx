@@ -283,6 +283,38 @@ export default function App() {
     );
   };
 
+  // Zastosowanie kodów EAN/GTIN z cennika dla pozycji z rozbieżnościami lub brakującymi
+  const handleApplyPriceListGtins = () => {
+    if (!priceList) return;
+
+    let updatedCount = 0;
+    const newItems = items.map((item) => {
+      const comp = comparisons.get(item.id);
+      if (comp && comp.priceListGtin && (comp.gtinStatus === 'discrepancy' || comp.gtinStatus === 'missing_in_order')) {
+        updatedCount++;
+        return {
+          ...item,
+          gtin: comp.priceListGtin,
+        };
+      }
+      return item;
+    });
+
+    setItems(newItems);
+    setPriceNotice(
+      `Zaktualizowano ${updatedCount} ${
+        updatedCount === 1 ? 'kod EAN/GTIN' : 'kody EAN/GTIN'
+      } na podstawie cennika.`
+    );
+    setTimeout(() => setPriceNotice(null), 5000);
+  };
+
+  const handleApplySingleGtin = (itemId: string, newGtin: string) => {
+    setItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, gtin: newGtin } : item))
+    );
+  };
+
   // --- Handlery Sieci i Presety Faktur ---
   const handleSelectChain = (chain: PharmacyChain) => {
     setSelectedChain(chain);
@@ -637,6 +669,7 @@ export default function App() {
               isVerificationEnabled={isVerificationEnabled}
               onToggleVerification={setIsVerificationEnabled}
               onApplyPriceListDiscrepancies={handleApplyPriceListDiscrepancies}
+              onApplyPriceListGtins={handleApplyPriceListGtins}
             />
 
             {/* KROK 5: Pozycje Towarowe i Podsumowanie E-Faktury z podglądem XML */}
@@ -652,6 +685,7 @@ export default function App() {
               priceComparisons={comparisons}
               isVerificationEnabled={isVerificationEnabled && !!priceList}
               onApplySinglePrice={handleApplySinglePrice}
+              onApplySingleGtin={handleApplySingleGtin}
               onOpenXmlModal={() => setIsXmlModalOpen(true)}
               onSaveToHistory={handleSaveInvoiceToHistory}
             />

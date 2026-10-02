@@ -23,12 +23,16 @@ import {
   Edit3,
   Check,
   X,
+  FileSpreadsheet,
+  CreditCard,
+  AlertCircle,
 } from 'lucide-react';
-import { ArchivedOrder, OrderChainFilter, OrderStatusFilter } from '../types/ordersHistory';
+import { ArchivedOrder, OrderChainFilter, OrderStatusFilter, OrderPaymentFilter } from '../types/ordersHistory';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
 import { parseKSeFXMLString, extractInvoiceNumberFromXml } from '../utils/ksefXmlParser';
 import { detectPharmacyChain } from '../utils/orderParser';
+import { exportOrdersToCsv } from '../utils/ordersExport';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
@@ -45,6 +49,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 }) => {
   const [chainFilter, setChainFilter] = useState<OrderChainFilter>('Wszystkie');
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
+  const [paymentFilter, setPaymentFilter] = useState<OrderPaymentFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -85,8 +90,29 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return counts;
   }, [orders]);
 
+  // Obliczenia liczników dla statusów płatności
+  const paymentCounts = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const counts = { all: orders.length, paid: 0, pending: 0, overdue: 0 };
+    orders.forEach((ord) => {
+      const isPaid = ord.paymentStatus === 'paid';
+      const dueDate = ord.paymentDueDate || ord.dueDate;
+      const isOverdue = !isPaid && Boolean(dueDate && dueDate < todayStr);
+      if (isPaid) {
+        counts.paid++;
+      } else if (isOverdue) {
+        counts.overdue++;
+      } else {
+        counts.pending++;
+      }
+    });
+    return counts;
+  }, [orders]);
+
   // Filtrowanie listy zamówień
   const filteredOrders = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
     return orders.filter((ord) => {
       const resolvedChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
 
@@ -98,6 +124,17 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       // 2. Filtr statusu dostawy
       if (statusFilter === 'delivered' && !ord.isDelivered) return false;
       if (statusFilter === 'pending' && ord.isDelivered) return false;
+
+      // 2b. Filtr statusu płatności
+      if (paymentFilter !== 'all') {
+        const isPaid = ord.paymentStatus === 'paid';
+        const dueDate = ord.paymentDueDate || ord.dueDate;
+        const isOverdue = !isPaid && Boolean(dueDate && dueDate < todayStr);
+
+        if (paymentFilter === 'paid' && !isPaid) return false;
+        if (paymentFilter === 'pending' && (isPaid || isOverdue)) return false;
+        if (paymentFilter === 'overdue' && !isOverdue) return false;
+      }
 
       // 3. Wyszukiwarka
       if (searchQuery.trim()) {
@@ -119,7 +156,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
       return true;
     });
-  }, [orders, chainFilter, statusFilter, searchQuery]);
+  }, [orders, chainFilter, statusFilter, paymentFilter, searchQuery]);
 
   // Obsługa zmiany checkboxa "Towar dotarł do odbiorcy"
   const handleToggleDelivered = async (order: ArchivedOrder) => {
@@ -252,6 +289,47 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     e.target.value = '';
   };
 
+  // Zmiana statusu opłacenia (Opłacona <-> Oczekuje na płatność)
+  const handleTogglePaymentStatus = async (order: ArchivedOrder) => {
+    const isPaid = order.paymentStatus === 'paid';
+    const newStatus = isPaid ? 'pending' : 'paid';
+    const nowStr = new Date().toLocaleDateString('pl-PL');
+
+    await updateArchivedOrderFields(order.id, {
+      paymentStatus: newStatus,
+      paidAt: isPaid ? null : nowStr,
+    });
+
+    setInvoiceNotice(
+      isPaid
+        ? `Zmieniono status faktury ${order.invoiceNumber} na: Oczekuje na płatność`
+        : `Oznaczono fakturę ${order.invoiceNumber} jako OPŁACONĄ (data: ${nowStr})`
+    );
+    setTimeout(() => setInvoiceNotice(null), 3500);
+    onRefreshOrders();
+  };
+
+  // Zmiana terminu płatności
+  const handleUpdatePaymentDueDate = async (orderId: string, newDueDate: string) => {
+    if (!newDueDate) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const newStatus = newDueDate < todayStr ? 'overdue' : 'pending';
+
+    await updateArchivedOrderFields(orderId, {
+      paymentDueDate: newDueDate,
+      paymentStatus: newStatus,
+    });
+
+    setInvoiceNotice(`Zaktualizowano termin płatności do: ${newDueDate}`);
+    setTimeout(() => setInvoiceNotice(null), 3000);
+    onRefreshOrders();
+  };
+
+  // Eksport aktualnie przefiltrowanych zamówień do CSV/Excel dla biura rachunkowego
+  const handleExportCsv = () => {
+    exportOrdersToCsv(filteredOrders, 'Zestawienie_Faktur_KSeF');
+  };
+
   // Pobieranie pliku XML
   const handleDownloadXml = (order: ArchivedOrder) => {
     downloadKSeFXMLFile(order.xmlContent, order.invoiceNumber, 'FA3');
@@ -349,6 +427,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl cursor-pointer transition-colors shadow-2xs"
+              title="Pobierz zestawienie faktur w pliku CSV dla biura rachunkowego / Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Eksport do Excela ({filteredOrders.length})</span>
+            </button>
+
             <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl cursor-pointer transition-colors shadow-2xs">
               <Plus className="w-3.5 h-3.5" />
               <span>Importuj plik XML</span>
@@ -396,9 +484,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           )}
         </div>
 
-        {/* FILTRY STATUSU DOSTAWY I WYSZUKIWARKA */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <div className="relative w-full sm:w-80">
+        {/* FILTRY: WYSZUKIWARKA, STATUS DOSTAWY ORAZ ROZLICZENIE PŁATNOŚCI */}
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-3 text-xs">
+          <div className="relative w-full lg:w-80">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -409,37 +497,85 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <span className="text-slate-500 font-medium">Status dostawy:</span>
-            <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Wszystkie
-              </button>
-              <button
-                onClick={() => setStatusFilter('delivered')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  statusFilter === 'delivered'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                ✅ Doręczone
-              </button>
-              <button
-                onClick={() => setStatusFilter('pending')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  statusFilter === 'pending'
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                🚚 W doręczeniu
-              </button>
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+            {/* Filtr dostawy */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 font-medium text-[11px]">Dostawa:</span>
+              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Wszystkie
+                </button>
+                <button
+                  onClick={() => setStatusFilter('delivered')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'delivered'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  ✅ Doręczone
+                </button>
+                <button
+                  onClick={() => setStatusFilter('pending')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'pending'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  🚚 W drodze
+                </button>
+              </div>
+            </div>
+
+            {/* Filtr płatności */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 font-medium text-[11px]">Płatność:</span>
+              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  onClick={() => setPaymentFilter('all')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    paymentFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Wszystkie ({paymentCounts.all})
+                </button>
+                <button
+                  onClick={() => setPaymentFilter('paid')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    paymentFilter === 'paid'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  ✅ Opłacone ({paymentCounts.paid})
+                </button>
+                <button
+                  onClick={() => setPaymentFilter('pending')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    paymentFilter === 'pending'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  ⏳ Do zapłaty ({paymentCounts.pending})
+                </button>
+                <button
+                  onClick={() => setPaymentFilter('overdue')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    paymentFilter === 'overdue'
+                      ? 'bg-red-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  🚨 Po terminie ({paymentCounts.overdue})
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -492,6 +628,19 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                 : (effectiveInvoiceNumber === 'Brak numeru' ? '' : effectiveInvoiceNumber);
 
             const displayChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
+
+            // Obliczenia statusu płatności i terminu
+            const isPaid = ord.paymentStatus === 'paid';
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const effectiveDueDate = ord.paymentDueDate || ord.dueDate || ord.issueDate || '';
+            const isOverdue = !isPaid && Boolean(effectiveDueDate && effectiveDueDate < todayStr);
+
+            let daysDiff: number | null = null;
+            if (effectiveDueDate) {
+              const dDue = new Date(effectiveDueDate);
+              const dNow = new Date(todayStr);
+              daysDiff = Math.round((dDue.getTime() - dNow.getTime()) / (1000 * 60 * 60 * 24));
+            }
 
             return (
               <div
@@ -631,10 +780,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                       </div>
                     </div>
 
-                    {/* PRAWA STRONA: FINANSE & GŁÓWNY STATUS DORĘCZENIA */}
-                    <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0">
+                    {/* PRAWA STRONA: FINANSE, STATUS PŁATNOŚCI & GŁÓWNY STATUS DORĘCZENIA */}
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0">
                       {/* KWOTY */}
-                      <div className="text-left lg:text-right">
+                      <div className="text-left lg:text-right pr-1">
                         <div className="text-[10px] text-slate-400 font-semibold uppercase">
                           Wartość brutto
                         </div>
@@ -646,8 +795,77 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         </div>
                       </div>
 
+                      {/* STATUS PŁATNOŚCI & TERMIN */}
+                      <div
+                        className={`p-2.5 rounded-xl border transition-all text-xs min-w-[210px] ${
+                          isPaid
+                            ? 'bg-emerald-50/80 border-emerald-200'
+                            : isOverdue
+                            ? 'bg-rose-50/90 border-rose-300 ring-1 ring-rose-200'
+                            : 'bg-amber-50/70 border-amber-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1">
+                            <CreditCard
+                              className={`w-3.5 h-3.5 ${
+                                isPaid ? 'text-emerald-600' : isOverdue ? 'text-rose-600' : 'text-amber-600'
+                              }`}
+                            />
+                            <span>Płatność</span>
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePaymentStatus(ord)}
+                            className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition-colors cursor-pointer border ${
+                              isPaid
+                                ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-2xs'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-2xs'
+                            }`}
+                            title={isPaid ? 'Oznacz fakturę jako oczekującą na wpłatę' : 'Oznacz fakturę jako opłaconą'}
+                          >
+                            {isPaid ? 'Cofnij' : '✓ Opłacona'}
+                          </button>
+                        </div>
+
+                        <div className="mt-1 flex items-center gap-1.5">
+                          {isPaid ? (
+                            <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>Opłacona {ord.paidAt ? `(${ord.paidAt})` : ''}</span>
+                            </span>
+                          ) : isOverdue ? (
+                            <span className="text-[11px] font-bold text-rose-800 flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                              <span>
+                                Po terminie ({daysDiff !== null ? `${Math.abs(daysDiff)} dni` : 'zaległość'})
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-amber-800 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>
+                                Do zapłaty {daysDiff !== null ? `(za ${daysDiff} dni)` : ''}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-1.5 pt-1 border-t border-slate-200/60 flex items-center justify-between gap-1.5 text-[10px] text-slate-500">
+                          <span className="font-medium">Termin:</span>
+                          <input
+                            type="date"
+                            value={effectiveDueDate}
+                            onChange={(e) => handleUpdatePaymentDueDate(ord.id, e.target.value)}
+                            className="px-1.5 py-0.5 text-[10px] font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-700 cursor-pointer"
+                            title="Kliknij, aby zmienić termin płatności dla tej faktury"
+                          />
+                        </div>
+                      </div>
+
                       {/* CHECKBOX: TOWAR DOTARŁ DO ODBIORCY */}
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 min-w-[180px]">
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                           <input
                             type="checkbox"

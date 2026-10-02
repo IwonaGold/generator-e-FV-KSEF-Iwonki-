@@ -23,6 +23,7 @@ import {
   formatDateToDisplay,
   normalizeManualDate,
 } from '../utils/twoStageOcrService';
+import { evaluateShelfLife } from '../utils/expiryDateValidator';
 import { PhotoZoomCropModal } from './PhotoZoomCropModal';
 
 interface Step3PhotosAndBatchesProps {
@@ -909,9 +910,36 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                         />
                                       </div>
                                       {hasMhdValue ? (
-                                        <span className="text-[10px] text-emerald-800 font-medium mt-0.5 block">
-                                          W fakturze KSeF: <strong>{batch.mhd}</strong> (ostatni dzień)
-                                        </span>
+                                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                                          <span className="text-[10px] text-emerald-800 font-medium">
+                                            W fakturze KSeF: <strong>{batch.mhd}</strong>
+                                          </span>
+                                          {(() => {
+                                            const evalRes = evaluateShelfLife(batch.mhd);
+                                            if (evalRes.status === 'valid') {
+                                              return (
+                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                                  ✓ {evalRes.formattedMonths} (OK)
+                                                </span>
+                                              );
+                                            }
+                                            if (evalRes.status === 'short_warning') {
+                                              return (
+                                                <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 shadow-2xs" title={evalRes.warningMessage}>
+                                                  ⚠️ &lt; 12 msc ({evalRes.formattedMonths})
+                                                </span>
+                                              );
+                                            }
+                                            if (evalRes.status === 'expired') {
+                                              return (
+                                                <span className="text-[10px] font-bold text-red-800 bg-red-100 px-1.5 py-0.5 rounded border border-red-300">
+                                                  🚨 Przeterminowany!
+                                                </span>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
+                                        </div>
                                       ) : (
                                         <span className="text-[10px] text-slate-500 mt-0.5 block">
                                           Wpisz np. 11/2027 (przeliczy na ostatni dzień m-ca)

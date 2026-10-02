@@ -2,7 +2,8 @@ import React from 'react';
 import { InvoiceItem, LogisticsFormat, VatRate } from '../types/ksef';
 import { formatGS1CompositeString } from '../utils/ksefGenerator';
 import { PriceComparisonItem } from '../types/priceList';
-import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus } from 'lucide-react';
+import { evaluateShelfLife } from '../utils/expiryDateValidator';
+import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus, Clock } from 'lucide-react';
 
 interface ItemsPreviewTableProps {
   items: InvoiceItem[];
@@ -16,6 +17,7 @@ interface ItemsPreviewTableProps {
   priceComparisons?: Map<string, PriceComparisonItem>;
   isVerificationEnabled?: boolean;
   onApplySinglePrice?: (itemId: string, newPrice: number) => void;
+  onApplySingleGtin?: (itemId: string, newGtin: string) => void;
   onOpenXmlModal?: () => void;
   onSaveToHistory?: () => void;
 }
@@ -32,9 +34,17 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   priceComparisons,
   isVerificationEnabled,
   onApplySinglePrice,
+  onApplySingleGtin,
   onOpenXmlModal,
   onSaveToHistory,
 }) => {
+  // Weryfikacja dat ważności pod kątem wymogu min. 12 miesięcy w sieciach aptecznych
+  const shelfLifeWarnings = items.filter((it) => {
+    if (!it.expiryDate) return false;
+    const res = evaluateShelfLife(it.expiryDate);
+    return res.status === 'short_warning' || res.status === 'expired';
+  });
+
   // Obliczenia finansowe zgodne w 100% z ustawą o VAT i KSeF FA(3)
   const calculateTotals = () => {
     const vatBreakdown: Record<string, { net: number; vat: number }> = {
@@ -181,6 +191,27 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
         </div>
       </div>
 
+      {/* ALERT KRÓTKICH DAT WAŻNOŚCI (WYMÓG MIN. 12 MSC) */}
+      {shelfLifeWarnings.length > 0 && (
+        <div className="mx-4 sm:mx-5 my-3 p-3.5 rounded-xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-900">
+                ⚠️ Uwaga logistyczna: Wykryto {shelfLifeWarnings.length}{' '}
+                {shelfLifeWarnings.length === 1 ? 'pozycję' : 'pozycji'} z terminem ważności krótszym niż 12 miesięcy!
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                Wymóg sieci: min. 12 msc
+              </span>
+            </div>
+            <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+              Sieci farmaceutyczne (DOZ, Dr. Max, Super-Pharm, Gemini) odrzucają na magazynie centralnym dostawy z terminem ważności krótszym niż 1 rok. Sprawdź pozycje oznaczone poniżej czerwoną lub żółtą etykietą.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Table View */}
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
@@ -188,10 +219,10 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
             <tr className="border-b border-slate-200 bg-slate-100/70 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
               <th className="py-2.5 px-3 w-10 text-center">Lp.</th>
               <th className="py-2.5 px-3 min-w-[200px]">Nazwa towaru lub usługi</th>
-              <th className="py-2.5 px-3 min-w-[130px]">
+              <th className="py-2.5 px-3 min-w-[140px]">
                 <div className="flex items-center gap-1">
                   <Barcode className="w-3.5 h-3.5 text-slate-500" />
-                  <span>GTIN</span>
+                  <span>GTIN (EAN)</span>
                 </div>
               </th>
               <th className="py-2.5 px-3 min-w-[140px] bg-emerald-50/70 text-emerald-900 border-x border-emerald-100">
@@ -200,7 +231,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                   <span>Nr Serii (LOT)</span>
                 </div>
               </th>
-              <th className="py-2.5 px-3 min-w-[130px] bg-emerald-50/70 text-emerald-900 border-r border-emerald-100">
+              <th className="py-2.5 px-3 min-w-[140px] bg-emerald-50/70 text-emerald-900 border-r border-emerald-100">
                 <div className="flex items-center gap-1">
                   <Calendar className="w-3 h-3 text-emerald-700" />
                   <span>Data Ważności (MHD)</span>
@@ -242,6 +273,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                 );
 
                 const comparison = priceComparisons?.get(item.id);
+                const shelfLife = evaluateShelfLife(item.expiryDate);
 
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
@@ -261,16 +293,75 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                       />
                     </td>
 
-                    {/* GTIN Field */}
+                    {/* GTIN / EAN Field (Z WERYFIKACJĄ Z CENNIKIEM) */}
                     <td className="py-3 px-3 font-mono">
                       <input
                         type="text"
                         value={item.gtin}
                         maxLength={14}
                         onChange={(e) => onUpdateItem(item.id, { gtin: e.target.value })}
-                        className="w-full font-mono text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-1 py-0.5 text-xs"
+                        className={`w-full font-mono text-xs rounded px-1.5 py-0.5 transition-colors ${
+                          isVerificationEnabled && comparison?.gtinStatus === 'discrepancy'
+                            ? 'border-amber-400 bg-amber-50/70 text-amber-950 font-bold focus:border-amber-600'
+                            : isVerificationEnabled && comparison?.gtinStatus === 'match'
+                            ? 'border-emerald-300 text-emerald-950 bg-emerald-50/30'
+                            : 'bg-transparent hover:bg-white focus:bg-white border-transparent hover:border-slate-300 focus:border-emerald-600 text-slate-800'
+                        }`}
                         placeholder="np. 9120117912773"
                       />
+                      {isVerificationEnabled && comparison && (
+                        <div className="mt-1 flex flex-col items-start gap-0.5">
+                          {comparison.gtinStatus === 'match' && (
+                            <span
+                              className="text-[10px] text-emerald-700 font-mono flex items-center gap-0.5"
+                              title={`Kod EAN zgodny z cennikiem (${comparison.priceListGtin})`}
+                            >
+                              <Check className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>EAN: OK</span>
+                            </span>
+                          )}
+                          {comparison.gtinStatus === 'discrepancy' && comparison.priceListGtin && (
+                            <div className="flex flex-col items-start gap-1">
+                              <span
+                                className="text-[10px] font-mono text-amber-800 bg-amber-50 px-1 py-0.5 rounded border border-amber-300 whitespace-nowrap"
+                                title={`W zamówieniu: ${item.gtin || 'Brak'} | W cenniku: ${comparison.priceListGtin}`}
+                              >
+                                Cennik: {comparison.priceListGtin}
+                              </span>
+                              {onApplySingleGtin && (
+                                <button
+                                  type="button"
+                                  onClick={() => onApplySingleGtin(item.id, comparison.priceListGtin!)}
+                                  className="text-[9px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                  title="Wstaw kod EAN z cennika"
+                                >
+                                  ⚡ Wstaw EAN
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {comparison.gtinStatus === 'missing_in_order' && comparison.priceListGtin && (
+                            <div className="flex flex-col items-start gap-1">
+                              <span
+                                className="text-[10px] font-mono text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 whitespace-nowrap"
+                                title={`Brak EAN w zamówieniu. W cenniku: ${comparison.priceListGtin}`}
+                              >
+                                Brak EAN ({comparison.priceListGtin})
+                              </span>
+                              {onApplySingleGtin && (
+                                <button
+                                  type="button"
+                                  onClick={() => onApplySingleGtin(item.id, comparison.priceListGtin!)}
+                                  className="text-[9px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                  title="Wstaw kod EAN z cennika"
+                                >
+                                  ⚡ Wstaw EAN
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
 
                     {/* Batch / Lot */}
@@ -306,7 +397,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                       </div>
                     </td>
 
-                    {/* Expiry Date */}
+                    {/* Expiry Date (Z WERYFIKACJĄ MINIMUM 12 MIESIĘCY) */}
                     <td className="py-3 px-3 bg-emerald-50/30 border-r border-emerald-100">
                       <input
                         type="date"
@@ -315,9 +406,43 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                         className={`w-full font-mono text-xs px-2 py-1 rounded border transition-colors ${
                           hasExpMissing
                             ? 'bg-amber-50 border-amber-300 text-amber-900'
+                            : shelfLife.status === 'short_warning'
+                            ? 'bg-amber-50/90 border-amber-400 text-amber-950 font-semibold'
+                            : shelfLife.status === 'expired'
+                            ? 'bg-red-50 border-red-400 text-red-950 font-bold'
                             : 'bg-white border-slate-300 text-slate-900 focus:border-emerald-600'
                         }`}
                       />
+                      {item.expiryDate && (
+                        <div className="mt-1">
+                          {shelfLife.status === 'valid' && (
+                            <span
+                              className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-0.5"
+                              title={shelfLife.warningMessage}
+                            >
+                              <Check className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>{shelfLife.formattedMonths} (OK)</span>
+                            </span>
+                          )}
+                          {shelfLife.status === 'short_warning' && (
+                            <span
+                              className="text-[10px] font-bold text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-400 inline-flex items-center gap-0.5 shadow-2xs"
+                              title={shelfLife.warningMessage}
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
+                              <span>&lt; 12 msc ({shelfLife.formattedMonths})</span>
+                            </span>
+                          )}
+                          {shelfLife.status === 'expired' && (
+                            <span
+                              className="text-[10px] font-bold text-red-800 bg-red-100 px-1.5 py-0.5 rounded border border-red-300 inline-flex items-center gap-0.5"
+                              title={shelfLife.warningMessage}
+                            >
+                              <span>🚨 Przeterminowany!</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
 
                     {/* Live KSeF XML Payload Preview */}

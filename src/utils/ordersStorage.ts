@@ -6,9 +6,11 @@ import { extractInvoiceNumberFromXml } from './ksefXmlParser';
 const LOCAL_STORAGE_KEY = 'iwonka_ksef_orders_history_v1';
 
 /**
- * Normalizuje przypisanie sieci dla każdego zamówienia/korekty i wyciąga numer faktury z XML jeśli brak
+ * Normalizuje przypisanie sieci dla każdego zamówienia/korekty, wyciąga numer faktury z XML oraz inicjalizuje status płatności
  */
 function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   return list.map((ord) => {
     const xmlInv = extractInvoiceNumberFromXml(ord.xmlContent);
     const invoiceNumber =
@@ -16,10 +18,36 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
         ? ord.invoiceNumber
         : xmlInv || ord.invoiceNumber || 'FAKTURA';
 
+    // Domyślny termin płatności: jeśli brak, data dueDate lub issueDate + 30 dni
+    let effectiveDueDate = ord.paymentDueDate || ord.dueDate;
+    if (!effectiveDueDate && ord.issueDate) {
+      try {
+        const d = new Date(ord.issueDate);
+        d.setDate(d.getDate() + (ord.paymentTermDays || 30));
+        effectiveDueDate = d.toISOString().slice(0, 10);
+      } catch {
+        effectiveDueDate = ord.issueDate;
+      }
+    }
+
+    // Inicjalizacja statusu płatności
+    let effectivePaymentStatus = ord.paymentStatus;
+    if (!effectivePaymentStatus) {
+      if (effectiveDueDate && effectiveDueDate < todayStr) {
+        effectivePaymentStatus = 'overdue';
+      } else {
+        effectivePaymentStatus = 'pending';
+      }
+    } else if (effectivePaymentStatus === 'pending' && effectiveDueDate && effectiveDueDate < todayStr) {
+      effectivePaymentStatus = 'overdue';
+    }
+
     return {
       ...ord,
       chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
       invoiceNumber,
+      paymentDueDate: effectiveDueDate,
+      paymentStatus: effectivePaymentStatus,
     };
   });
 }
@@ -109,7 +137,7 @@ export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedO
  */
 export async function updateArchivedOrderFields(
   id: string,
-  fields: Partial<Pick<ArchivedOrder, 'isDelivered' | 'deliveredAt' | 'notes' | 'invoiceNumber' | 'xmlContent'>>
+  fields: Partial<Pick<ArchivedOrder, 'isDelivered' | 'deliveredAt' | 'notes' | 'invoiceNumber' | 'xmlContent' | 'paymentStatus' | 'paymentDueDate' | 'paidAt' | 'paymentTermDays'>>
 ): Promise<boolean> {
   // Próba na serwerze
   try {
