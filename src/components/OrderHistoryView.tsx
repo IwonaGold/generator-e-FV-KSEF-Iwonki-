@@ -69,12 +69,15 @@ interface OrderHistoryViewProps {
   onNavigateToInvoiceCreation: () => void;
 }
 
+export type OrderLifecycleTab = 'in_progress' | 'completed' | 'all';
+
 export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   orders,
   onRefreshOrders,
   onCreateCorrectionForOrder,
   onNavigateToInvoiceCreation,
 }) => {
+  const [lifecycleTab, setLifecycleTab] = useState<OrderLifecycleTab>('in_progress');
   const [chainFilter, setChainFilter] = useState<OrderChainFilter>('Wszystkie');
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
   const [paymentFilter, setPaymentFilter] = useState<OrderPaymentFilter>('all');
@@ -143,10 +146,25 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxPhoto]);
 
-  // Obliczenia liczników dla sieci
+  // Liczniki dla 3 głównych kafelków cyklu życia: W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE
+  const inProgressCount = useMemo(() => {
+    return orders.filter((ord) => {
+      const st = getOrderEffectiveShippingStatus(ord);
+      return !ord.isDelivered && st !== 'delivered';
+    }).length;
+  }, [orders]);
+
+  const completedCount = useMemo(() => {
+    return orders.filter((ord) => {
+      const st = getOrderEffectiveShippingStatus(ord);
+      return ord.isDelivered || st === 'delivered';
+    }).length;
+  }, [orders]);
+
+  // Obliczenia liczników dla sieci w ramach aktywnego kafelka cyklu życia
   const chainCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      Wszystkie: orders.length,
+      Wszystkie: 0,
       DOZ: 0,
       'Dr. Max': 0,
       'Super-Pharm': 0,
@@ -154,7 +172,15 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       Inne: 0,
     };
 
-    orders.forEach((ord) => {
+    const targetOrders = orders.filter((ord) => {
+      const isCompleted = ord.isDelivered || getOrderEffectiveShippingStatus(ord) === 'delivered';
+      if (lifecycleTab === 'in_progress') return !isCompleted;
+      if (lifecycleTab === 'completed') return isCompleted;
+      return true;
+    });
+
+    counts.Wszystkie = targetOrders.length;
+    targetOrders.forEach((ord) => {
       const resolved = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
       if (counts[resolved] !== undefined) {
         counts[resolved]++;
@@ -164,7 +190,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     });
 
     return counts;
-  }, [orders]);
+  }, [orders, lifecycleTab]);
 
   // Obliczenia liczników dla statusów dostawy
   const deliveryCounts = useMemo(() => {
@@ -244,15 +270,24 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
     return orders.filter((ord) => {
       const resolvedChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
+      const effectiveShipping = getOrderEffectiveShippingStatus(ord);
+      const isCompleted = ord.isDelivered || effectiveShipping === 'delivered';
+
+      // 0. Główny kafelek cyklu życia: W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE
+      if (lifecycleTab === 'in_progress' && isCompleted) {
+        return false;
+      }
+      if (lifecycleTab === 'completed' && !isCompleted) {
+        return false;
+      }
 
       // 1. Filtr sieci
       if (chainFilter !== 'Wszystkie' && resolvedChain !== chainFilter) {
         return false;
       }
 
-      // 2. Filtr statusu dostawy
+      // 2. Filtr statusu dostawy (sub-filtr)
       if (statusFilter !== 'all') {
-        const effectiveShipping = getOrderEffectiveShippingStatus(ord);
         if (effectiveShipping !== statusFilter) {
           return false;
         }
@@ -314,7 +349,18 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
       return true;
     });
-  }, [orders, chainFilter, statusFilter, paymentFilter, periodFilter, customDateFrom, customDateTo, searchQuery]);
+  }, [
+    orders,
+    lifecycleTab,
+    chainFilter,
+    statusFilter,
+    paymentFilter,
+    periodFilter,
+    customDateFrom,
+    customDateTo,
+    searchQuery,
+    dateFilterField,
+  ]);
 
   // Obsługa wgrywania zdjęć przesyłki (z kompresją do lekkiego formatu JPEG)
   const handleAddParcelPhotos = async (order: ArchivedOrder, files: FileList | File[]) => {
@@ -950,18 +996,209 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* ==================================================================== */}
+      {/* 3 GŁÓWNE KAFELKI NA SAMEJ GÓRZE: W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE */}
+      {/* ==================================================================== */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* KAFELEK 1: W REALIZACJI */}
+        <button
+          type="button"
+          onClick={() => {
+            setLifecycleTab('in_progress');
+            setStatusFilter('all');
+          }}
+          className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
+            lifecycleTab === 'in_progress'
+              ? 'bg-gradient-to-br from-amber-50/95 via-orange-50/40 to-white border-amber-500 ring-2 ring-amber-400/30 shadow-amber-100 scale-[1.01]'
+              : 'bg-white hover:bg-amber-50/40 border-slate-200 hover:border-amber-300'
+          }`}
+        >
+          {lifecycleTab === 'in_progress' && (
+            <span className="absolute top-3.5 right-3.5 flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100/90 px-2.5 py-0.5 rounded-full border border-amber-300 shadow-2xs">
+              <CheckCircle2 className="w-3 h-3 text-amber-600" /> Aktywny
+            </span>
+          )}
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 transition-colors shadow-xs ${
+                lifecycleTab === 'in_progress'
+                  ? 'bg-gradient-to-tr from-amber-500 to-orange-500 text-white shadow-amber-300'
+                  : 'bg-amber-100 text-amber-600'
+              }`}
+            >
+              🚚
+            </div>
+            <div className="pr-10 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
+                  W REALIZACJI
+                </h3>
+                <span
+                  className={`px-2 py-0.5 text-xs font-black rounded-lg ${
+                    lifecycleTab === 'in_progress'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'bg-amber-100 text-amber-900'
+                  }`}
+                >
+                  {inProgressCount}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-amber-800/80 mt-0.5">
+                Do wysłania · w drodze · w doręczeniu
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2.5 text-[11px]">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200/60">
+                  📦 Do wysyłki: <strong className="ml-1 text-slate-900">{deliveryCounts.registered}</strong>
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-semibold border border-amber-200/60">
+                  🚚 W drodze: <strong className="ml-1 text-amber-950">{deliveryCounts.in_transit}</strong>
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 font-semibold border border-blue-200/60">
+                  ⚡ W doręczeniu: <strong className="ml-1 text-blue-950">{deliveryCounts.out_for_delivery}</strong>
+                </span>
+                {deliveryCounts.exception > 0 && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 font-semibold border border-rose-200/60">
+                    ⚠️ Awizo: <strong className="ml-1 text-rose-950">{deliveryCounts.exception}</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </button>
+
+        {/* KAFELEK 2: ZAKOŃCZONE */}
+        <button
+          type="button"
+          onClick={() => {
+            setLifecycleTab('completed');
+            setStatusFilter('all');
+          }}
+          className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
+            lifecycleTab === 'completed'
+              ? 'bg-gradient-to-br from-emerald-50/95 via-teal-50/40 to-white border-emerald-500 ring-2 ring-emerald-400/30 shadow-emerald-100 scale-[1.01]'
+              : 'bg-white hover:bg-emerald-50/40 border-slate-200 hover:border-emerald-300'
+          }`}
+        >
+          {lifecycleTab === 'completed' && (
+            <span className="absolute top-3.5 right-3.5 flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Aktywny
+            </span>
+          )}
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 transition-colors shadow-xs ${
+                lifecycleTab === 'completed'
+                  ? 'bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-emerald-300'
+                  : 'bg-emerald-100 text-emerald-600'
+              }`}
+            >
+              ✅
+            </div>
+            <div className="pr-10 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
+                  ZAKOŃCZONE
+                </h3>
+                <span
+                  className={`px-2 py-0.5 text-xs font-black rounded-lg ${
+                    lifecycleTab === 'completed'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'bg-emerald-100 text-emerald-900'
+                  }`}
+                >
+                  {completedCount}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-emerald-800/80 mt-0.5">
+                Dostarczone do apteki (doręczone)
+              </p>
+              <div className="mt-2.5 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-100/80 text-emerald-900 font-semibold border border-emerald-200/60">
+                  ✅ Pomyślnie doręczone i odebrane przez apteki
+                </span>
+              </div>
+            </div>
+          </div>
+        </button>
+
+        {/* KAFELEK 3: WSZYSTKIE */}
+        <button
+          type="button"
+          onClick={() => {
+            setLifecycleTab('all');
+            setStatusFilter('all');
+          }}
+          className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
+            lifecycleTab === 'all'
+              ? 'bg-gradient-to-br from-rose-50/95 via-fuchsia-50/40 to-white border-rose-500 ring-2 ring-rose-400/30 shadow-rose-100 scale-[1.01]'
+              : 'bg-white hover:bg-rose-50/40 border-slate-200 hover:border-rose-300'
+          }`}
+        >
+          {lifecycleTab === 'all' && (
+            <span className="absolute top-3.5 right-3.5 flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-300 shadow-2xs">
+              <CheckCircle2 className="w-3 h-3 text-rose-600" /> Aktywny
+            </span>
+          )}
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 transition-colors shadow-xs ${
+                lifecycleTab === 'all'
+                  ? 'bg-gradient-to-tr from-pink-500 to-rose-600 text-white shadow-rose-300'
+                  : 'bg-rose-100 text-rose-600'
+              }`}
+            >
+              📚
+            </div>
+            <div className="pr-10 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
+                  WSZYSTKIE
+                </h3>
+                <span
+                  className={`px-2 py-0.5 text-xs font-black rounded-lg ${
+                    lifecycleTab === 'all'
+                      ? 'bg-rose-600 text-white shadow-2xs'
+                      : 'bg-rose-100 text-rose-900'
+                  }`}
+                >
+                  {orders.length}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-rose-800/80 mt-0.5">
+                Pełny rejestr zamówień i e-faktur KSeF
+              </p>
+              <div className="mt-2.5 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200/60">
+                  Wszystkie sieci: DOZ, Dr. Max, SP, Gemini
+                </span>
+              </div>
+            </div>
+          </div>
+        </button>
+      </div>
+
       {/* NAGŁÓWEK MODUŁU I FILTRY SIECIOWE */}
       <div className="bg-white rounded-2xl border border-rose-200/80 p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">📚</span>
+              <span className="text-xl">
+                {lifecycleTab === 'in_progress' ? '🚚' : lifecycleTab === 'completed' ? '✅' : '📚'}
+              </span>
               <h2 className="text-lg font-black text-slate-900 tracking-tight">
-                HISTORIA ZAMÓWIEŃ SIECIOWYCH
+                {lifecycleTab === 'in_progress'
+                  ? 'ZAMÓWIENIA W REALIZACJI'
+                  : lifecycleTab === 'completed'
+                  ? 'ZAMÓWIENIA ZAKOŃCZONE (DORĘCZONE)'
+                  : 'WSZYSTKIE ZAMÓWIENIA SIECIOWE'}
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Rejestr wszystkich zamówień i wygenerowanych faktur KSeF dla sieci farmaceutycznych: DOZ, Dr. Max, Super-Pharm, Gemini.
+              {lifecycleTab === 'in_progress'
+                ? 'Przesyłki przygotowywane do wysyłki, przekazane kurierom lub będące w trakcie doręczania do aptek.'
+                : lifecycleTab === 'completed'
+                ? 'Archiwum zamówień pomyślnie zrealizowanych i potwierdzonych jako doręczone do odbiorcy.'
+                : 'Rejestr wszystkich zamówień i wygenerowanych faktur KSeF dla sieci farmaceutycznych: DOZ, Dr. Max, Super-Pharm, Gemini.'}
             </p>
           </div>
 
@@ -1065,74 +1302,146 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-slate-500 font-medium text-[11px]">Dostawa:</span>
               <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'all'
-                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Wszystkie zamówienia bez względu na status dostawy"
-                >
-                  Wszystkie ({deliveryCounts.all})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('registered')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'registered'
-                      ? 'bg-slate-700 text-white shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
-                >
-                  📦 Do wysyłki ({deliveryCounts.registered})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('in_transit')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'in_transit'
-                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
-                >
-                  🚚 W drodze ({deliveryCounts.in_transit})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('out_for_delivery')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'out_for_delivery'
-                      ? 'bg-blue-600 text-white shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="Wydane kurierowi do doręczenia dzisiaj do apteki"
-                >
-                  ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('delivered')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    statusFilter === 'delivered'
-                      ? 'bg-emerald-600 text-white shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="Doręczone i odebrane przez aptekę"
-                >
-                  ✅ Doręczone ({deliveryCounts.delivered})
-                </button>
-                {deliveryCounts.exception > 0 ? (
+                {lifecycleTab === 'in_progress' ? (
+                  <>
+                    <button
+                      onClick={() => setStatusFilter('all')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'all'
+                          ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Wszystkie zamówienia będące w toku realizacji"
+                    >
+                      Wszystkie w toku ({inProgressCount})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('registered')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'registered'
+                          ? 'bg-slate-700 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
+                    >
+                      📦 Do wysyłki ({deliveryCounts.registered})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('in_transit')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'in_transit'
+                          ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
+                    >
+                      🚚 W drodze ({deliveryCounts.in_transit})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('out_for_delivery')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'out_for_delivery'
+                          ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Wydane kurierowi do doręczenia dzisiaj do apteki"
+                    >
+                      ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
+                    </button>
+                    {deliveryCounts.exception > 0 ? (
+                      <button
+                        onClick={() => setStatusFilter('exception')}
+                        className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          statusFilter === 'exception'
+                            ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                            : 'text-rose-600 hover:text-rose-800'
+                        }`}
+                        title="Awizo lub problem z doręczeniem przesyłki"
+                      >
+                        ⚠️ Awizo ({deliveryCounts.exception})
+                      </button>
+                    ) : null}
+                  </>
+                ) : lifecycleTab === 'completed' ? (
                   <button
-                    onClick={() => setStatusFilter('exception')}
-                    className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      statusFilter === 'exception'
-                        ? 'bg-rose-600 text-white shadow-2xs font-bold'
-                        : 'text-rose-600 hover:text-rose-800'
-                    }`}
-                    title="Awizo lub problem z doręczeniem przesyłki"
+                    onClick={() => setStatusFilter('all')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-2xs cursor-pointer"
+                    title="Wszystkie zamówienia pomyślnie doręczone do odbiorcy"
                   >
-                    ⚠️ Awizo ({deliveryCounts.exception})
+                    ✅ Wszystkie doręczone ({completedCount})
                   </button>
-                ) : null}
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setStatusFilter('all')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'all'
+                          ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                      title="Wszystkie zamówienia bez względu na status dostawy"
+                    >
+                      Wszystkie ({deliveryCounts.all})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('registered')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'registered'
+                          ? 'bg-slate-700 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
+                    >
+                      📦 Do wysyłki ({deliveryCounts.registered})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('in_transit')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'in_transit'
+                          ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
+                    >
+                      🚚 W drodze ({deliveryCounts.in_transit})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('out_for_delivery')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'out_for_delivery'
+                          ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Wydane kurierowi do doręczenia dzisiaj do apteki"
+                    >
+                      ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('delivered')}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'delivered'
+                          ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Doręczone i odebrane przez aptekę"
+                    >
+                      ✅ Doręczone ({deliveryCounts.delivered})
+                    </button>
+                    {deliveryCounts.exception > 0 ? (
+                      <button
+                        onClick={() => setStatusFilter('exception')}
+                        className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          statusFilter === 'exception'
+                            ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                            : 'text-rose-600 hover:text-rose-800'
+                        }`}
+                        title="Awizo lub problem z doręczeniem przesyłki"
+                      >
+                        ⚠️ Awizo ({deliveryCounts.exception})
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
 
@@ -1406,14 +1715,54 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
       {/* LISTA ZAMÓWIEŃ */}
       {filteredOrders.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 mx-auto flex items-center justify-center text-xl mb-3">
-            🌸
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-xs">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 mx-auto flex items-center justify-center text-2xl mb-3 shadow-2xs">
+            {lifecycleTab === 'in_progress' ? '🎉' : lifecycleTab === 'completed' ? '📦' : '🌸'}
           </div>
-          <h3 className="text-sm font-bold text-slate-800">Brak zamówień spełniających kryteria</h3>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Zmień filtry lub wygeneruj nowe zamówienie w module &quot;Centrum Faktur → 1. Wygeneruj FV&quot;.
+          <h3 className="text-base font-bold text-slate-800">
+            {lifecycleTab === 'in_progress'
+              ? 'Brak zamówień w realizacji!'
+              : lifecycleTab === 'completed'
+              ? 'Brak zamówień zakończonych'
+              : 'Brak zamówień spełniających kryteria'}
+          </h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+            {lifecycleTab === 'in_progress'
+              ? 'Wszystkie bieżące zamówienia zostały pomyślnie zrealizowane i doręczone do aptek.'
+              : lifecycleTab === 'completed'
+              ? 'Żadne zamówienie nie zostało jeszcze oznaczone jako doręczone do odbiorcy.'
+              : 'Zmień wybrane filtry wyszukiwania lub wystaw nową fakturę w module Centrum Faktur.'}
           </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {lifecycleTab === 'in_progress' && completedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLifecycleTab('completed');
+                  setStatusFilter('all');
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl cursor-pointer transition-colors shadow-2xs"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Zobacz zakończone ({completedCount})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setLifecycleTab('all');
+                setStatusFilter('all');
+                setChainFilter('Wszystkie');
+                setPaymentFilter('all');
+                setPeriodFilter('all');
+                setSearchQuery('');
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl cursor-pointer transition-colors shadow-2xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+              <span>Wyczyść filtry i pokaż wszystkie ({orders.length})</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
