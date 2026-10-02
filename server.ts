@@ -328,6 +328,159 @@ app.post('/api/parse-order-pdf', async (req: Request, res: Response) => {
 });
 
 /**
+ * PARSOWANIE FAKTURY PIERWOTNEJ Z PDF DLA KOREKTY KSEF
+ * Odczytuje numer KSeF (35-36 znaków), numer faktury, daty, strony i pozycje towarowe
+ */
+app.post('/api/parse-invoice-pdf', async (req: Request, res: Response) => {
+  const { pdfBase64, fileName } = req.body;
+  if (!pdfBase64) {
+    return res.status(400).json({ error: 'Brak danych pliku PDF (base64)' });
+  }
+
+  try {
+    const buffer = Buffer.from(pdfBase64, 'base64');
+    const pdfModule: any = await import('pdf-parse');
+    let rawText = '';
+
+    if (typeof pdfModule.PDFParse === 'function') {
+      const parser = new pdfModule.PDFParse({ data: buffer });
+      const r = await parser.getText();
+      rawText = r.text || '';
+    } else {
+      const pdfFn = typeof pdfModule === 'function' ? pdfModule : (pdfModule.default || pdfModule);
+      const data = await pdfFn(buffer);
+      rawText = data.text || '';
+    }
+
+    // Ekstrakcja wyrażeniami regularnymi z tekstu PDF
+    let extractedKsefNumber = '';
+    const ksefRegexStrict = /\b([1-9]\d{9}-20[2-9]\d{5}-[0-9A-Fa-f]{6}-?[0-9A-Fa-f]{6}-[0-9A-Fa-f]{2})\b/;
+    const ksefRegexNamed = /(?:ksef|nr\s*ksef|id\s*ksef|numer\s*ksef|referencyjny)[:\s]*([0-9A-Za-z-]{32,40})/i;
+    const matchStrict = rawText.match(ksefRegexStrict);
+    if (matchStrict) {
+      extractedKsefNumber = matchStrict[1].trim();
+    } else {
+      const matchNamed = rawText.match(ksefRegexNamed);
+      if (matchNamed) {
+        extractedKsefNumber = matchNamed[1].trim();
+      }
+    }
+
+    let invoiceNumber = '';
+    const invNoMatch =
+      rawText.match(/(?:faktura\s*(?:vat)?\s*(?:nr|numer)?|nr\s*faktury)[:\s]*([0-9a-zA-Z_\/\-]+)/i) ||
+      rawText.match(/\b(\d{1,4}\/202[5-9]\/(?:KSEF|VAT|FV|FA))\b/i);
+    if (invNoMatch) {
+      invoiceNumber = invNoMatch[1].trim();
+    }
+
+    let issueDate = '';
+    const dateMatch = rawText.match(/(?:data\s*wystawienia|wystawiono)[:\s]*(\d{4}[-./]\d{2}[-./]\d{2}|\d{2}[-./]\d{2}[-./]\d{4})/i);
+    if (dateMatch) {
+      const rawD = dateMatch[1].replace(/[./]/g, '-');
+      if (/^\d{2}-\d{2}-\d{4}$/.test(rawD)) {
+        const [d, m, y] = rawD.split('-');
+        issueDate = `${y}-${m}-${d}`;
+      } else {
+        issueDate = rawD;
+      }
+    }
+
+    // Próba inteligentnej analizy Gemini 2.5 Flash dla pełnej tabeli pozycji i danych kontrahenta
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
+      try {
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey });
+
+        const promptText = `Przeanalizuj tę fakturę VAT.
+Wyodrębnij dokładnie następujące informacje:
+1. ksefNumber: 35-36 znakowy numer identyfikacyjny KSeF (np. 5833446059-20260928-123456-ABCDEF-01). Szukaj słów: KSeF, Numer referencyjny KSeF, Identyfikator KSeF, Nr KSeF.
+2. invoiceNumber: Numer faktury pierwotnej (np. 41/2026/KSEF)
+3. issueDate: Data wystawienia (YYYY-MM-DD)
+4. buyer: { name, nip, addressLine1, postalCode, city, gln }
+5. seller: { name, nip, addressLine1, postalCode, city }
+6. thirdParty: { name, nip, gln, idWew, addressLine1 } (jeśli występuje odbiorca/apteka)
+7. items: [
+     {
+       name: nazwa towaru (np. OMNi-BiOTiC...),
+       gtin: kod EAN/GTIN,
+       quantity: ilość (liczba),
+       unit: jednostka (np. szt.),
+       netPrice: cena jednostkowa netto,
+       vatRate: stawka VAT (np. "8%" lub "23%"),
+       batchNumber: numer serii (jeśli podano),
+       expiryDate: data ważności YYYY-MM-DD (jeśli podano)
+     }
+   ]
+8. totalGross: łączna kwota brutto (liczba)
+9. totalNet: łączna kwota netto (liczba)
+10. currency: waluta (domyślnie "PLN")
+
+Zwróć wynik jako czysty obiekt JSON.`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: promptText },
+                {
+                  inlineData: {
+                    mimeType: 'application/pdf',
+                    data: pdfBase64,
+                  },
+                },
+              ],
+            },
+          ],
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+
+        const parsed = JSON.parse(response.text || '{}');
+        const finalKsef = parsed.ksefNumber || extractedKsefNumber;
+
+        return res.json({
+          success: true,
+          method: 'gemini-pdf',
+          ksefNumber: finalKsef || '',
+          hasKsefNumber: Boolean(finalKsef && finalKsef.length >= 30),
+          invoiceNumber: parsed.invoiceNumber || invoiceNumber || 'FAKTURA',
+          issueDate: parsed.issueDate || issueDate || new Date().toISOString().slice(0, 10),
+          buyer: parsed.buyer || null,
+          seller: parsed.seller || null,
+          thirdParty: parsed.thirdParty || null,
+          items: Array.isArray(parsed.items) ? parsed.items : [],
+          totalGross: parsed.totalGross || 0,
+          totalNet: parsed.totalNet || 0,
+          currency: parsed.currency || 'PLN',
+          rawText: rawText.slice(0, 500),
+        });
+      } catch (geminiErr) {
+        console.warn('Błąd analizy Gemini PDF dla faktury, fallback do tekstu:', geminiErr);
+      }
+    }
+
+    // Fallback gdy brak Gemini lub błąd: zwróć odczytane pola tekstowe
+    return res.json({
+      success: true,
+      method: 'regex-text',
+      ksefNumber: extractedKsefNumber,
+      hasKsefNumber: Boolean(extractedKsefNumber && extractedKsefNumber.length >= 30),
+      invoiceNumber: invoiceNumber || 'FAKTURA',
+      issueDate: issueDate || new Date().toISOString().slice(0, 10),
+      rawText,
+    });
+  } catch (error: any) {
+    console.error('Błąd parsowania PDF faktury:', error);
+    return res.status(500).json({ error: error.message || 'Błąd odczytu pliku PDF' });
+  }
+});
+
+/**
  * ARCHIWUM ZAMÓWIEŃ SIECIOWYCH I FAKTUR (HISTORIA ZAMÓWIEŃ)
  */
 const dataDir = path.join(process.cwd(), 'data');

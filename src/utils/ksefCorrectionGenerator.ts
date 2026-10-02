@@ -43,38 +43,43 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
   const modifiedItems = items.filter((it) => it.isModified);
   const itemsToProcess = modifiedItems.length > 0 ? modifiedItems : items;
 
-  itemsToProcess.forEach((item) => {
-    const dNet = Math.round((item.correctedNetTotal - item.originalNetTotal) * 100) / 100;
-    const dVat = Math.round((item.correctedVatTotal - item.originalVatTotal) * 100) / 100;
+  // Jeśli wybrano korektę formalną (TypKorekty: 2 - wyłącznie dane podatnika bez wpływu na kwoty)
+  const isFormalCorrection = typKorekty === '2';
 
-    if (item.vatRate === '23%') {
-      deltaNet23 += dNet;
-      deltaVat23 += dVat;
-    } else if (item.vatRate === '8%') {
-      deltaNet8 += dNet;
-      deltaVat8 += dVat;
-    } else if (item.vatRate === '5%') {
-      deltaNet5 += dNet;
-      deltaVat5 += dVat;
-    } else if (item.vatRate === '0%') {
-      deltaNet0 += dNet;
-    } else if (item.vatRate === 'zw') {
-      deltaNetZw += dNet;
-    }
-  });
+  if (!isFormalCorrection) {
+    itemsToProcess.forEach((item) => {
+      const dNet = Math.round((item.correctedNetTotal - item.originalNetTotal) * 100) / 100;
+      const dVat = Math.round((item.correctedVatTotal - item.originalVatTotal) * 100) / 100;
 
-  deltaNet23 = Math.round(deltaNet23 * 100) / 100;
-  deltaVat23 = Math.round(deltaVat23 * 100) / 100;
-  deltaNet8 = Math.round(deltaNet8 * 100) / 100;
-  deltaVat8 = Math.round(deltaVat8 * 100) / 100;
-  deltaNet5 = Math.round(deltaNet5 * 100) / 100;
-  deltaVat5 = Math.round(deltaVat5 * 100) / 100;
-  deltaNet0 = Math.round(deltaNet0 * 100) / 100;
-  deltaNetZw = Math.round(deltaNetZw * 100) / 100;
+      if (item.vatRate === '23%') {
+        deltaNet23 += dNet;
+        deltaVat23 += dVat;
+      } else if (item.vatRate === '8%') {
+        deltaNet8 += dNet;
+        deltaVat8 += dVat;
+      } else if (item.vatRate === '5%') {
+        deltaNet5 += dNet;
+        deltaVat5 += dVat;
+      } else if (item.vatRate === '0%') {
+        deltaNet0 += dNet;
+      } else if (item.vatRate === 'zw') {
+        deltaNetZw += dNet;
+      }
+    });
 
-  const totalDeltaNet = Math.round((deltaNet23 + deltaNet8 + deltaNet5 + deltaNet0 + deltaNetZw) * 100) / 100;
-  const totalDeltaVat = Math.round((deltaVat23 + deltaVat8 + deltaVat5) * 100) / 100;
-  const totalDeltaGross = Math.round((totalDeltaNet + totalDeltaVat) * 100) / 100;
+    deltaNet23 = Math.round(deltaNet23 * 100) / 100;
+    deltaVat23 = Math.round(deltaVat23 * 100) / 100;
+    deltaNet8 = Math.round(deltaNet8 * 100) / 100;
+    deltaVat8 = Math.round(deltaVat8 * 100) / 100;
+    deltaNet5 = Math.round(deltaNet5 * 100) / 100;
+    deltaVat5 = Math.round(deltaVat5 * 100) / 100;
+    deltaNet0 = Math.round(deltaNet0 * 100) / 100;
+    deltaNetZw = Math.round(deltaNetZw * 100) / 100;
+  }
+
+  const totalDeltaNet = isFormalCorrection ? 0 : Math.round((deltaNet23 + deltaNet8 + deltaNet5 + deltaNet0 + deltaNetZw) * 100) / 100;
+  const totalDeltaVat = isFormalCorrection ? 0 : Math.round((deltaVat23 + deltaVat8 + deltaVat5) * 100) / 100;
+  const totalDeltaGross = isFormalCorrection ? 0 : Math.round((totalDeltaNet + totalDeltaVat) * 100) / 100;
 
   // Budowa wierszy <FaWiersz> (zgodnie ze schematem FA(3) dla korekt):
   // 1. Wiersz ze statusem <StanPrzed>1</StanPrzed> (stan pierwotny)
@@ -118,33 +123,40 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
 
   // Podsumowanie stawek podatku VAT (kwoty różnicowe P_13_x i P_14_x)
   let vatSummaryXml = '';
-  if (deltaNet23 !== 0 || deltaVat23 !== 0) {
-    vatSummaryXml += `\n        <P_13_1>${deltaNet23.toFixed(2)}</P_13_1>\n        <P_14_1>${deltaVat23.toFixed(2)}</P_14_1>`;
-  }
-  if (deltaNet8 !== 0 || deltaVat8 !== 0) {
-    vatSummaryXml += `\n        <P_13_2>${deltaNet8.toFixed(2)}</P_13_2>\n        <P_14_2>${deltaVat8.toFixed(2)}</P_14_2>`;
-  }
-  if (deltaNet5 !== 0 || deltaVat5 !== 0) {
-    vatSummaryXml += `\n        <P_13_3>${deltaNet5.toFixed(2)}</P_13_3>\n        <P_14_3>${deltaVat5.toFixed(2)}</P_14_3>`;
-  }
-  if (deltaNet0 !== 0) {
-    vatSummaryXml += `\n        <P_13_6_1>${deltaNet0.toFixed(2)}</P_13_6_1>`;
-  }
-  if (deltaNetZw !== 0) {
-    vatSummaryXml += `\n        <P_13_7>${deltaNetZw.toFixed(2)}</P_13_7>`;
+  if (!isFormalCorrection) {
+    if (deltaNet23 !== 0 || deltaVat23 !== 0) {
+      vatSummaryXml += `\n        <P_13_1>${deltaNet23.toFixed(2)}</P_13_1>\n        <P_14_1>${deltaVat23.toFixed(2)}</P_14_1>`;
+    }
+    if (deltaNet8 !== 0 || deltaVat8 !== 0) {
+      vatSummaryXml += `\n        <P_13_2>${deltaNet8.toFixed(2)}</P_13_2>\n        <P_14_2>${deltaVat8.toFixed(2)}</P_14_2>`;
+    }
+    if (deltaNet5 !== 0 || deltaVat5 !== 0) {
+      vatSummaryXml += `\n        <P_13_3>${deltaNet5.toFixed(2)}</P_13_3>\n        <P_14_3>${deltaVat5.toFixed(2)}</P_14_3>`;
+    }
+    if (deltaNet0 !== 0) {
+      vatSummaryXml += `\n        <P_13_6_1>${deltaNet0.toFixed(2)}</P_13_6_1>`;
+    }
+    if (deltaNetZw !== 0) {
+      vatSummaryXml += `\n        <P_13_7>${deltaNetZw.toFixed(2)}</P_13_7>`;
+    }
   }
 
   // Węzeł DaneFaKorygowanej
   let ksefTag = '<NrKSeFN>1</NrKSeFN>';
-  if (hasOriginalKsefNumber && originalKsefNumber && originalKsefNumber.trim()) {
-    ksefTag = `<NrKSeF>1</NrKSeF>\n                <NrKSeFFaKorygowanej>${escapeXml(originalKsefNumber.trim())}</NrKSeFFaKorygowanej>`;
+  const cleanKsef = (originalKsefNumber || '').trim().replace(/\s+/g, '');
+  if (hasOriginalKsefNumber && cleanKsef) {
+    ksefTag = `<NrKSeF>1</NrKSeF>\n                <NrKSeFFaKorygowanej>${escapeXml(cleanKsef)}</NrKSeFFaKorygowanej>`;
   }
+
+  const okresXml = data.okresFaKorygowanej?.trim()
+    ? `\n        <OkresFaKorygowanej>${escapeXml(data.okresFaKorygowanej.trim())}</OkresFaKorygowanej>`
+    : '';
 
   const daneFaKorygowanejXml = `        <DaneFaKorygowanej>
             <DataWystFaKorygowanej>${originalInvoiceDate}</DataWystFaKorygowanej>
             <NrFaKorygowanej>${escapeXml(originalInvoiceNumber)}</NrFaKorygowanej>
             ${ksefTag}
-        </DaneFaKorygowanej>`;
+        </DaneFaKorygowanej>${okresXml}`;
 
   // Podmiot 3 (Odbiorca / Apteka)
   let podmiot3Xml = '';
