@@ -81,11 +81,6 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
                 🧾
               </div>
               <div className="pr-12">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-600">
-                    Opcja 1
-                  </span>
-                </div>
                 <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
                   1. WYGENERUJ FAKTURĘ XML
                 </h3>
@@ -122,11 +117,6 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
                 📝
               </div>
               <div className="pr-12">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-pink-600">
-                    Opcja 2
-                  </span>
-                </div>
                 <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
                   2. WYGENERUJ KOREKTĘ FAKTURY XML
                 </h3>
