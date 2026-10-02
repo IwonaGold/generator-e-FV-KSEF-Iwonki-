@@ -460,13 +460,13 @@ Numer zamówienia: ZAM/2026/10/01
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-bold text-slate-900 truncate">
-                    🌸 {orderFile.name}
+                    {orderFile.name}
                   </span>
                   <span className="text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
                     {orderFile.size}
                   </span>
                   <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                    Zaczytano {itemsCount} {itemsCount === 1 ? 'pozycję' : itemsCount < 5 ? 'pozycje' : 'pozycji'} ✨
+                    Zaczytano {itemsCount} {itemsCount === 1 ? 'pozycję' : itemsCount < 5 ? 'pozycje' : 'pozycji'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5">
@@ -572,9 +572,6 @@ Numer zamówienia: ZAM/2026/10/01
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <FileCheck2 className="w-4 h-4 text-fuchsia-600" />
                 <span>Dane E-Faktury KSeF i Weryfikacja Nagłówka</span>
-                <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                  Krok 2 🌸
-                </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Sprawdź i zatwierdź dane kontrahenta, daty transakcji, termin płatności oraz numer faktury zgodny z ustawą o VAT.

@@ -260,7 +260,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Nowe Zamówienie 🌸</span>
+              <span>Nowe Zamówienie</span>
             </button>
           </div>
         </div>
@@ -391,7 +391,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                               : 'bg-rose-100 text-rose-800 border-rose-200'
                           }`}
                         >
-                          {ord.documentType === 'KOR' ? '📝 Korekta KOR' : '🌸 Faktura VAT FA(3)'}
+                          {ord.documentType === 'KOR' ? '📝 Korekta KOR' : '📄 Faktura VAT FA(3)'}
                         </span>
 
                         <span className="text-sm font-black text-slate-900 font-mono tracking-tight">

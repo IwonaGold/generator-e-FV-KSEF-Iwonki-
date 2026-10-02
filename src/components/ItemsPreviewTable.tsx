@@ -96,9 +96,6 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <span>Pozycje Towarowe i Podsumowanie E-Faktury</span>
-                <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                  Krok 5 🌸
-                </span>
                 <span className="text-xs text-fuchsia-700 font-mono font-medium">
                   ({items.length} {items.length === 1 ? 'pozycja' : 'pozycji'})
                 </span>
@@ -123,7 +120,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                 }`}
                 title="Format GS1 z kluczem NumerSeriiDataPrzydatnosciIlosc"
               >
-                GS1 🌸
+                GS1
               </button>
               <button
                 type="button"
@@ -542,7 +539,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-600 hover:to-pink-600 rounded-xl shadow-xs shadow-fuchsia-200 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
             >
               <FileCode className="w-4 h-4" />
-              <span>🌸 Podgląd i Pobranie XML</span>
+              <span>Podgląd i Pobranie XML</span>
             </button>
           )}
         </div>

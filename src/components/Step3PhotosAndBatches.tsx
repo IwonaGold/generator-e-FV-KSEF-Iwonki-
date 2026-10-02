@@ -376,9 +376,6 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Camera className="w-4 h-4 text-fuchsia-600" />
                 <span>Zdjęcia Opakowań – Weryfikacja Produktu i Odczyt LOT/MHD (OCR)</span>
-                <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                  Krok 3 🌸
-                </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Etap 1: Zatwierdzenie produktu ➔ Etap 2: Rzeczywista analiza wizualna nadruków (inkjet / etykiety / GS1)
@@ -398,7 +395,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-600 hover:to-pink-600 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Camera className="w-4 h-4" />
-              <span>🌸 Dodaj zdjęcie produktu</span>
+              <span>Dodaj zdjęcie produktu</span>
             </button>
           )}
         </div>

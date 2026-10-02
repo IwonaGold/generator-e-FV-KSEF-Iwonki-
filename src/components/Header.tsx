@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           <span className="text-rose-200">·</span>
           <span className="bg-rose-50/80 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 text-xs">
-            Pozycji: <strong className="text-rose-950 font-mono tabular-nums font-bold">{itemCount}</strong> 🌸
+            Pozycji: <strong className="text-rose-950 font-mono tabular-nums font-bold">{itemCount}</strong>
           </span>
           <span className="text-rose-200">·</span>
           <button
@@ -78,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-sm shadow-pink-200 transition-all whitespace-nowrap cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
           >
             <FileCode className="w-4 h-4" />
-            <span>Generuj KSeF XML 🌸</span>
+            <span>Generuj KSeF XML</span>
           </button>
           {onLogout && (
             <button

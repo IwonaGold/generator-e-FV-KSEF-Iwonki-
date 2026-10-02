@@ -212,9 +212,6 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-fuchsia-600" />
                 <span>Weryfikacja z Cennikiem (Plik XLSX / Schowek)</span>
-                <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                  Krok 4 🌸
-                </span>
                 <span className="text-[11px] font-mono text-fuchsia-700 bg-fuchsia-50 px-2 py-0.5 rounded-full border border-fuchsia-200">
                   Ceny netto po rabacie
                 </span>

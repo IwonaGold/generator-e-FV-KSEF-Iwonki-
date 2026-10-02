@@ -2579,7 +2579,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-600 via-pink-600 to-rose-600 hover:from-fuchsia-700 hover:to-pink-700 rounded-xl shadow-sm shadow-fuchsia-300 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
           >
             <FileCode className="w-4 h-4" />
-            <span>🌸 Generuj KSeF XML Korekty (FA3 UTF-8)</span>
+            <span>Generuj KSeF XML Korekty (FA3 UTF-8)</span>
           </button>
         </div>
       </div>
