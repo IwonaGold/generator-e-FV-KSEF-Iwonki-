@@ -117,6 +117,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const [uploadingPhotosOrderId, setUploadingPhotosOrderId] = useState<string | null>(null);
   const [lightboxPhoto, setLightboxPhoto] = useState<{ order: ArchivedOrder; photoIndex: number } | null>(null);
 
+  // Stan zbiorczego sprawdzania statusów przesyłek w drodze
+  const [isBulkChecking, setIsBulkChecking] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+
   // Klawiatura dla lightboxa zdjęć przesyłki (Esc, Strzałki Lewo/Prawo)
   useEffect(() => {
     if (!lightboxPhoto) return;
@@ -181,6 +185,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     });
 
     return counts;
+  }, [orders]);
+
+  // Lista przesyłek będących wyłącznie w drodze (posiadają list przewozowy i NIE są jeszcze doręczone)
+  const inTransitOrders = useMemo(() => {
+    return orders.filter((ord) => {
+      if (!ord.trackingNumber || !ord.trackingNumber.trim()) return false;
+      if (ord.isDelivered) return false;
+      if (ord.shippingStatus === 'delivered') return false;
+      return true;
+    });
   }, [orders]);
 
   // Obliczenia liczników dla statusów płatności
@@ -554,6 +568,106 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     setTimeout(() => setInvoiceNotice(null), 3000);
   };
 
+  // Zbiorcze sprawdzenie statusów przesyłek w drodze (wyłącznie niedoręczonych)
+  const handleBulkCheckTransitShipments = async () => {
+    if (inTransitOrders.length === 0) {
+      setInvoiceNotice('Brak przesyłek w drodze do weryfikacji. Wszystkie zarejestrowane zamówienia zostały już doręczone!');
+      setTimeout(() => setInvoiceNotice(null), 4000);
+      return;
+    }
+
+    setIsBulkChecking(true);
+    setBulkModalOpen(true);
+
+    let inpostDeliveredCount = 0;
+    const nowStr = new Date().toLocaleString('pl-PL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    for (const ord of inTransitOrders) {
+      const courier = ord.courierName || detectCourierFromTrackingNumber(ord.trackingNumber || '');
+      const cleanNo = (ord.trackingNumber || '').trim().replace(/\s+/g, '');
+
+      // Automatyczna weryfikacja InPost przez oficjalne API
+      if (courier === 'InPost' && cleanNo.length >= 20) {
+        try {
+          const res = await fetch(`https://api-shipx-pl.easypack24.net/v1/tracking/${encodeURIComponent(cleanNo)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const rawStatus = (data.status || '').toLowerCase();
+
+            if (rawStatus === 'delivered') {
+              await updateArchivedOrderFields(ord.id, {
+                shippingStatus: 'delivered',
+                shippingStatusUpdatedAt: nowStr,
+                isDelivered: true,
+                deliveredAt: ord.deliveredAt || nowStr,
+              });
+              ord.shippingStatus = 'delivered';
+              ord.isDelivered = true;
+              ord.deliveredAt = ord.deliveredAt || nowStr;
+              inpostDeliveredCount++;
+            } else if (rawStatus.includes('out_for_delivery') || rawStatus === 'ready_to_pickup') {
+              await updateArchivedOrderFields(ord.id, {
+                shippingStatus: 'out_for_delivery',
+                shippingStatusUpdatedAt: nowStr,
+              });
+              ord.shippingStatus = 'out_for_delivery';
+            }
+          }
+        } catch (e) {
+          console.warn('Błąd weryfikacji API InPost w zbiorczym sprawdzeniu:', e);
+        }
+      }
+    }
+
+    setIsBulkChecking(false);
+    onRefreshOrders();
+
+    if (inpostDeliveredCount > 0) {
+      setInvoiceNotice(`✅ Automatycznie zaktualizowano ${inpostDeliveredCount} przesyłek InPost jako doręczone!`);
+      setTimeout(() => setInvoiceNotice(null), 5000);
+    }
+  };
+
+  // Zbiorcze oznaczenie wszystkich przesyłek w drodze jako doręczone
+  const handleMarkAllInTransitAsDelivered = async () => {
+    if (inTransitOrders.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Czy na pewno chcesz oznaczyć wszystkie (${inTransitOrders.length}) przesyłek w drodze jako DORĘCZONE do aptek?`
+    );
+    if (!confirmed) return;
+
+    const nowStr = new Date().toLocaleString('pl-PL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    for (const ord of inTransitOrders) {
+      await updateArchivedOrderFields(ord.id, {
+        shippingStatus: 'delivered',
+        shippingStatusUpdatedAt: nowStr,
+        isDelivered: true,
+        deliveredAt: ord.deliveredAt || nowStr,
+      });
+      ord.shippingStatus = 'delivered';
+      ord.isDelivered = true;
+      ord.deliveredAt = ord.deliveredAt || nowStr;
+    }
+
+    onRefreshOrders();
+    setInvoiceNotice(`✅ Pomyślnie oznaczono ${inTransitOrders.length} przesyłek jako DORĘCZONE!`);
+    setTimeout(() => setInvoiceNotice(null), 4500);
+  };
+
   // Obsługa wpisywania notatki
   const handleNoteChange = (orderId: string, value: string) => {
     setNotesState((prev) => ({ ...prev, [orderId]: value }));
@@ -852,6 +966,30 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* PRZYCISK: ZBIORCZA WERYFIKACJA PRZESYŁEK W DRODZE */}
+            <button
+              type="button"
+              onClick={handleBulkCheckTransitShipments}
+              disabled={isBulkChecking || inTransitOrders.length === 0}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl cursor-pointer transition-all shadow-2xs ${
+                inTransitOrders.length > 0
+                  ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 hover:scale-[1.02]'
+                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+              }`}
+              title={
+                inTransitOrders.length > 0
+                  ? `Sprawdź statusy wszystkich (${inTransitOrders.length}) przesyłek kurierskich będących w drodze (wyłącznie niedoręczonych)`
+                  : 'Brak przesyłek w drodze do weryfikacji'
+              }
+            >
+              <Truck className={`w-3.5 h-3.5 text-amber-700 ${isBulkChecking ? 'animate-bounce' : ''}`} />
+              <span>
+                {isBulkChecking
+                  ? 'Sprawdzam...'
+                  : `Sprawdź statusy w drodze (${inTransitOrders.length})`}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={handleExportCsv}
@@ -2329,6 +2467,175 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               <span className="font-mono text-slate-300">
                 {lightboxPhoto.photoIndex + 1} / {lightboxPhoto.order.parcelPhotos?.length || 1}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ZBIORCZEJ WERYFIKACJI PRZESYŁEK W DRODZE */}
+      {bulkModalOpen && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+          onClick={() => setBulkModalOpen(false)}
+        >
+          <div
+            className="relative bg-white border border-slate-200 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* PASEK GÓRNY MODALU */}
+            <div className="px-6 py-4 bg-gradient-to-r from-amber-50 via-white to-amber-50/50 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 shadow-2xs">
+                  <Truck className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>Przesyłki w drodze</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-bold">
+                      {inTransitOrders.length} {inTransitOrders.length === 1 ? 'paczka' : 'paczek'}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Tylko przesyłki z nadanym numerem listu, które nie zostały jeszcze doręczone
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {inTransitOrders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllInTransitAsDelivered}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shadow-xs hover:scale-[1.02]"
+                    title="Oznacz wszystkie widoczne przesyłki jako doręczone do aptek"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>⚡ Oznacz wszystkie jako DORĘCZONE</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setBulkModalOpen(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Zamknij (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* LISTA PRZESYŁEK W DRODZE */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50/50">
+              {inTransitOrders.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center text-xl mb-3">
+                    ✅
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800">Wszystkie przesyłki zostały doręczone!</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                    W rejestrze nie ma obecnie żadnych przesyłek o statusie „W drodze”.
+                  </p>
+                </div>
+              ) : (
+                inTransitOrders.map((ord) => {
+                  const courier = ord.courierName || detectCourierFromTrackingNumber(ord.trackingNumber || '');
+                  const currentShippingCfg = getShippingStatusConfig(
+                    ord.shippingStatus || (ord.isDelivered ? 'delivered' : 'in_transit')
+                  );
+                  const isGlobkurier = courier === 'Globkurier' || /^GK/i.test(ord.trackingNumber || '');
+
+                  return (
+                    <div
+                      key={ord.id}
+                      className="bg-white rounded-2xl border border-slate-200 hover:border-amber-300 p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-3"
+                    >
+                      {/* DANE FAKTURY, NABYWCY I PRZESYŁKI */}
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                            {ord.invoiceNumber}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-600 px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200">
+                            {ord.chain}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-700">
+                            {ord.buyer?.name}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            {courier}
+                          </span>
+                          <span className="font-mono font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 select-all">
+                            {ord.trackingNumber}
+                          </span>
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border ${currentShippingCfg.badgeClass}`}>
+                            {currentShippingCfg.label}
+                          </span>
+                          {ord.orderDate && (
+                            <span className="text-slate-400 text-[11px]">
+                              Data zam: {ord.orderDate}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* AKCJE DLA TEJ PRZESYŁKI */}
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {/* PRZYCISK: ŚLEDŹ U KURIERA */}
+                        <a
+                          href={getTrackingUrl(ord.trackingNumber || '', ord.courierName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => {
+                            if (ord.trackingNumber) {
+                              navigator.clipboard.writeText(ord.trackingNumber.trim());
+                              setInvoiceNotice(
+                                isGlobkurier
+                                  ? `📋 Skopiowano numer ${ord.trackingNumber} do schowka! Wklej go (Ctrl+V) na otwartej stronie Globkurier.pl`
+                                  : `Skopiowano nr listu (${ord.trackingNumber}) i otwarto stronę kuriera.`
+                              );
+                              setTimeout(() => setInvoiceNotice(null), 4000);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                          title={isGlobkurier ? 'Kopiuj numer GK i otwórz Globkurier.pl' : 'Otwórz stronę śledzenia kuriera'}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Śledź ↗</span>
+                        </a>
+
+                        {/* PRZYCISK: OZNACZ JAKO DORĘCZONE */}
+                        <button
+                          type="button"
+                          onClick={() => handleShippingStatusChange(ord, 'delivered')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl transition-colors cursor-pointer shadow-2xs hover:scale-[1.02]"
+                          title="Potwierdź doręczenie tej przesyłki do apteki"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>⚡ Doręczono</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* DOLNY PASEK PODSUMOWANIA */}
+            <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600">
+              <span>
+                💡 <strong>Wskazówka:</strong> Po oznaczeniu przesyłki jako „Doręczona” znika ona z tej listy i automatycznie aktualizuje się w historii zamówień.
+              </span>
+              <button
+                type="button"
+                onClick={() => setBulkModalOpen(false)}
+                className="px-4 py-1.5 bg-white hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-300 transition-colors cursor-pointer self-end sm:self-auto"
+              >
+                Zamknij
+              </button>
             </div>
           </div>
         </div>
