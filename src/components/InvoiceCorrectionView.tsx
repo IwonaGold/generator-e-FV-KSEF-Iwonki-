@@ -904,14 +904,15 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     if (!file) return;
     setIsPriceListLoading(true);
     try {
-      const buffer = await file.arrayBuffer();
-      const loaded = await parsePriceListFile(buffer);
+      const res = await parsePriceListFile(file);
+      const loaded = res.items;
       if (!loaded || loaded.length === 0) {
-        throw new Error('Nie znaleziono pozycji w pliku cennika.');
+        throw new Error('Nie znaleziono pozycji w pliku cennika (brak arkusza z danymi lub cen).');
       }
       setPriceList(loaded);
-      setPriceListFileName(file.name);
-      setNotification(`✅ Wczytano cennik "${file.name}" (${loaded.length} pozycji). Kliknij "Skoryguj ceny 1-kliknięciem"!`);
+      const displayName = res.fileName || file.name || 'Cennik';
+      setPriceListFileName(displayName);
+      setNotification(`✅ Wczytano cennik "${displayName}" (${loaded.length} pozycji). Kliknij "Skoryguj ceny 1-kliknięciem"!`);
       setTimeout(() => setNotification(null), 6000);
     } catch (err: any) {
       alert('Błąd odczytu cennika: ' + (err.message || 'Nieznany błąd'));

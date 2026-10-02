@@ -419,15 +419,35 @@ export function parsePastedExcelText(pastedText: string): PriceListItem[] {
 }
 
 /**
- * Główna funkcja parsująca plik File
+ * Główna funkcja parsująca plik File lub ArrayBuffer
  */
 export async function parsePriceListFile(
-  file: File
+  fileOrBuffer: File | ArrayBuffer,
+  optionalFileName?: string
 ): Promise<{ fileName: string; items: PriceListItem[]; rawSheetInfo?: RawSheetInfo }> {
-  const buffer = await file.arrayBuffer();
-  const { rawSheetInfo, items } = await inspectAndParseWorkbook(buffer, file.name);
+  let buffer: ArrayBuffer;
+  let fileName = optionalFileName || 'cennik.xlsx';
+
+  if (fileOrBuffer instanceof ArrayBuffer) {
+    buffer = fileOrBuffer;
+  } else if (fileOrBuffer && typeof (fileOrBuffer as any).arrayBuffer === 'function') {
+    buffer = await (fileOrBuffer as File).arrayBuffer();
+    fileName = (fileOrBuffer as File).name || fileName;
+  } else if (fileOrBuffer) {
+    fileName = (fileOrBuffer as any).name || fileName;
+    buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(fileOrBuffer as Blob);
+    });
+  } else {
+    throw new Error('Brak danych pliku cennika');
+  }
+
+  const { rawSheetInfo, items } = await inspectAndParseWorkbook(buffer, fileName);
   return {
-    fileName: file.name,
+    fileName,
     items,
     rawSheetInfo,
   };
