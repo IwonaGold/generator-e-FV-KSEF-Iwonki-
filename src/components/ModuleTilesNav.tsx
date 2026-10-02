@@ -47,7 +47,7 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
                 Krok 1 / Moduł Główny
               </div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
-                1. WYSTAW FAKTURĘ XML
+                1. WYGENERUJ FAKTURĘ XML
               </h2>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                 Wczytaj zamówienie sieciowe, odczytaj serie i daty OCR, zweryfikuj z cennikiem XLSX i wygeneruj oficjalny XML FA(3).
@@ -56,7 +56,7 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
           </div>
         </button>
 
-        {/* KAFELEK 2: WYSTAW KOREKTĘ FAKTURY XML */}
+        {/* KAFELEK 2: WYGENERUJ KOREKTĘ FAKTURY XML */}
         <button
           type="button"
           onClick={() => onSelectModule('correction')}
@@ -86,7 +86,7 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
                 KSeF Rodzaj: KOR
               </div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
-                2. WYSTAW KOREKTĘ FAKTURY XML
+                2. WYGENERUJ KOREKTĘ FAKTURY XML
               </h2>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                 Zaczytaj fakturę pierwotną z historii lub XML, podaj przyczynę (zwrot, rabat, ilość) i wygeneruj oficjalną e-korektę KSeF.

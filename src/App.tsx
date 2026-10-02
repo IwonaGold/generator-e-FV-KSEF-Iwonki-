@@ -541,7 +541,7 @@ export default function App() {
         />
 
         {/* ==================================================================== */}
-        {/* MODUŁ 1: 1. WYSTAW FAKTURĘ XML                                       */}
+        {/* MODUŁ 1: 1. WYGENERUJ FAKTURĘ XML                                    */}
         {/* ==================================================================== */}
         {activeModule === 'invoice' && (
           <div className="space-y-6">
@@ -677,7 +677,7 @@ export default function App() {
         )}
 
         {/* ==================================================================== */}
-        {/* MODUŁ 2: 2. WYSTAW KOREKTĘ FAKTURY XML                               */}
+        {/* MODUŁ 2: 2. WYGENERUJ KOREKTĘ FAKTURY XML                             */}
         {/* ==================================================================== */}
         {activeModule === 'correction' && (
           <InvoiceCorrectionView
@@ -741,7 +741,7 @@ export default function App() {
             <span>·</span>
             <span>Wariant FA(3) wersja 1-0E</span>
             <span>·</span>
-            <span className="text-rose-500 font-medium">Wystawiaj faktury z uśmiechem ✨</span>
+            <span className="text-rose-500 font-medium">Generuj e-faktury z uśmiechem ✨</span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
             <span>Eubiosis Sp. z o.o. · BDO: 000585744</span>

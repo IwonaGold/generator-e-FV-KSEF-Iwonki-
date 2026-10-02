@@ -357,7 +357,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
           <h3 className="text-sm font-bold text-slate-800">Brak zamówień spełniających kryteria</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Zmień filtry lub wystaw nowe zamówienie za pomocą kafelka &quot;1. WYSTAW FAKTURĘ XML&quot;.
+            Zmień filtry lub wygeneruj nowe zamówienie za pomocą kafelka &quot;1. WYGENERUJ FAKTURĘ XML&quot;.
           </p>
         </div>
       ) : (
@@ -513,15 +513,15 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     </button>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* WYSTAW KOREKTĘ */}
+                      {/* WYGENERUJ KOREKTĘ */}
                       <button
                         type="button"
                         onClick={() => onCreateCorrectionForOrder(ord)}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100 border border-fuchsia-200 rounded-xl transition-colors cursor-pointer"
-                        title="Wystaw oficjalną fakturę korygującą (KOR) do tej faktury"
+                        title="Wygeneruj oficjalną fakturę korygującą (KOR) do tej faktury"
                       >
                         <FileEdit className="w-3.5 h-3.5 text-fuchsia-600" />
-                        <span>Wystaw Korektę</span>
+                        <span>Wygeneruj Korektę</span>
                       </button>
 
                       {/* PODGLĄD XML */}

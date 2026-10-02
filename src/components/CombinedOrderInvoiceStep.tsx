@@ -85,6 +85,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   onUpdateThirdParty,
   meta,
   onUpdateMeta,
+  onLoadPresetDrMax,
+  onLoadPresetDoz,
+  onLoadPresetSuperPharm,
+  onLoadPresetNoBatches,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [showAddressDetails, setShowAddressDetails] = useState(false);
@@ -247,76 +251,75 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   };
 
   return (
-    <div className="bg-white/95 border border-rose-200/80 rounded-2xl p-5 mb-6 shadow-xs">
-      {/* Header & Status weryfikacji */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-rose-100">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center text-xs font-bold shadow-xs">
-              1 & 2
-            </span>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <FileCheck2 className="w-5 h-5 text-rose-500" />
-              Krok 1 & 2: Panel Zamówienia & Danych Faktury KSeF 🌸
-            </h2>
+    <div className="space-y-6 mb-6">
+      {/* ===================================================================== */}
+      {/* KROK 1: WCZYTAJ ZAMÓWIENIE SIECIOWE (DUŻY I WIDOCZNY DROPZONE)        */}
+      {/* ===================================================================== */}
+      <div className="bg-white rounded-2xl border border-rose-200/80 p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
+              1
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>Wczytaj Zamówienie Sieciowe (PDF / Excel .XLSX / TXT / CSV)</span>
+                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                  Krok 1 🌸
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                Wgraj plik zamówienia aptecznego od DOZ, Dr. Max, Super-Pharm, Gemini lub innego odbiorcy.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Wgraj zamówienie apteczne. Wszystkie dane nabywcy, odbiorcy, daty, termin płatności i pozycje są automatycznie zaczytywane.
-          </p>
-        </div>
 
-        {/* Akcja zatwierdzenia */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleVerifyAll}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
-              allVerified
-                ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 text-white shadow-pink-200'
-                : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
-            }`}
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>{allVerified ? 'Wszystko zatwierdzone ✓' : 'Zatwierdź wszystkie dane jako OK'}</span>
-          </button>
-        </div>
-      </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsPasteOpen(!isPasteOpen)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl cursor-pointer transition-colors shadow-2xs"
+              title="Wklej treść zamówienia ze schowka (np. z maila)"
+            >
+              <span>📋 Wklej ze schowka</span>
+            </button>
 
+            {onLoadPresetDrMax && (
+              <button
+                type="button"
+                onClick={onLoadPresetDrMax}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                title="Wczytaj przykładowe zamówienie Dr. Max"
+              >
+                <span>Wzorzec Dr. Max</span>
+              </button>
+            )}
 
-      {/* Belka postępu zatwierdzenia danych */}
-      <div className="mt-3 px-3.5 py-2 rounded-xl bg-rose-50/40 border border-rose-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          {allVerified ? (
-            <CheckCircle2 className="w-4 h-4 text-rose-600" />
-          ) : (
-            <ShieldCheck className="w-4 h-4 text-pink-600" />
-          )}
-          <span className="font-semibold text-slate-800">
-            Stan weryfikacji nagłówka:{' '}
-            <strong className="text-rose-700">
-              {verifiedCount} z {totalRequired} zatwierdzonych
-            </strong>
-          </span>
-          <span className="text-rose-200">|</span>
-          <span className="text-slate-500 text-[11px]">
-            Każdy kafelek posiada niezależne pole zatwierdzenia (✓ OK)
-          </span>
-        </div>
+            {onLoadPresetDoz && (
+              <button
+                type="button"
+                onClick={onLoadPresetDoz}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                title="Wczytaj przykładowe zamówienie DOZ"
+              >
+                <span>Wzorzec DOZ</span>
+              </button>
+            )}
 
-        <div className="flex items-center gap-1.5">
-          <div className="w-24 bg-rose-100 rounded-full h-2 overflow-hidden">
-            <div
-              className="h-full transition-all duration-300 bg-gradient-to-r from-pink-400 via-rose-500 to-pink-600"
-              style={{ width: `${(verifiedCount / totalRequired) * 100}%` }}
-            />
+            {onLoadPresetSuperPharm && (
+              <button
+                type="button"
+                onClick={onLoadPresetSuperPharm}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                title="Wczytaj przykładowe zamówienie Super-Pharm"
+              >
+                <span>Super-Pharm</span>
+              </button>
+            )}
           </div>
-          <span className="font-mono text-[11px] font-bold text-slate-700">
-            {Math.round((verifiedCount / totalRequired) * 100)}%
-          </span>
         </div>
-      </div>
 
-      {/* Kompaktowy Dropzone do wczytania zamówienia */}
-      <div className="mt-3.5">
+        {/* DUŻY, PROMINENTNY DROPZONE DLA PLIKU ZAMÓWIENIA */}
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -325,10 +328,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleOrderDrop}
           onClick={() => orderInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-3.5 text-center transition-all cursor-pointer ${
+          className={`border-2 border-dashed rounded-2xl p-7 sm:p-9 text-center transition-all cursor-pointer ${
             isDragging
-              ? 'border-pink-500 bg-pink-50/60'
-              : 'border-rose-200/80 hover:border-pink-300 bg-rose-50/20 hover:bg-rose-50/50'
+              ? 'border-pink-500 bg-pink-50/80 scale-[1.01]'
+              : 'border-pink-200 hover:border-pink-400 bg-gradient-to-b from-rose-50/40 via-white to-pink-50/30 hover:bg-rose-50/50'
           }`}
         >
           <input
@@ -338,38 +341,43 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
             onChange={handleOrderChange}
             className="hidden"
           />
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-white shadow-2xs border border-rose-200 flex items-center justify-center text-pink-500 text-base shrink-0">
-                🌸
+
+          <div className="flex flex-col items-center justify-center gap-2.5">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-500 text-white flex items-center justify-center text-2xl shadow-sm shadow-pink-200">
+              🌸
+            </div>
+            <div>
+              <div className="text-base font-bold text-slate-900 flex flex-wrap items-center justify-center gap-2">
+                <span>Przeciągnij i upuść tutaj plik zamówienia</span>
+                <span className="text-xs font-semibold text-rose-600 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-200">
+                  lub kliknij, aby wybrać plik z dysku ✨
+                </span>
               </div>
-              <div className="text-left">
-                <p className="text-xs font-bold text-slate-800">
-                  Kliknij lub upuść plik zamówienia (PDF / Excel .XLSX / TXT / CSV)
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Wszystkie dane zamówienia (nabywca, odbiorca, daty, termin 30/45/60 dni, ceny i pozycje) zostaną automatycznie zaczytane.
-                </p>
-              </div>
+              <p className="text-xs text-slate-500 mt-1 max-w-xl mx-auto">
+                Obsługuje zamówienia PDF (Dr. Max, Gemini, Subiekt), arkusze Excel (.XLSX / .XLS) oraz pliki tekstowe (DOZ, Super-Pharm). System automatycznie odczyta kontrahenta, odbiorcę (aptekę), daty, termin 30/45/60 dni, ceny i pozycje.
+              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsPasteOpen(!isPasteOpen);
-              }}
-              className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 self-start sm:self-auto"
-              title="Wklej tekst zamówienia ze schowka (np. z treści maila)"
-            >
-              <span>📋 Wklej tekst ze schowka</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-rose-200 text-slate-700 shadow-2xs">
+                📄 PDF apteczny
+              </span>
+              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-rose-200 text-slate-700 shadow-2xs">
+                📊 Excel .XLSX / .XLS
+              </span>
+              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-rose-200 text-slate-700 shadow-2xs">
+                📝 TXT / CSV (EDI)
+              </span>
+              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-pink-100 text-pink-800 border border-pink-200">
+                ✨ Auto-detekcja DOZ / Dr. Max / Super-Pharm / Gemini
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Rozwijany panel wklejania treści zamówienia ze schowka */}
         {isPasteOpen && (
-          <div className="mt-2.5 p-4 rounded-xl bg-pink-50/70 border border-pink-200 animate-in fade-in duration-150">
+          <div className="mt-3.5 p-4 rounded-xl bg-pink-50/70 border border-pink-200 animate-in fade-in duration-150">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <span>📋</span> Wklej tekst lub tabelę zamówienia (z maila, komunikatora lub pliku):
@@ -416,95 +424,183 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* Wczytany plik */}
         {orderFile && (
-          <div className="mt-2.5 p-2.5 rounded-lg bg-pink-50/70 border border-pink-200 flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-pink-600 shrink-0" />
-              <div className="truncate">
-                <span className="text-xs font-semibold text-slate-900 truncate mr-2">
-                  🌸 {orderFile.name}
-                </span>
-                <span className="text-[11px] text-rose-600 font-mono">
-                  ({orderFile.size} · zaczytano {itemsCount} pozycji towarowych)
-                </span>
+          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-pink-50/40 to-white border border-emerald-300 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg shrink-0">
+                ✓
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-900 truncate">
+                    🌸 {orderFile.name}
+                  </span>
+                  <span className="text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                    {orderFile.size}
+                  </span>
+                  <span className="text-[11px] font-bold text-pink-700 bg-pink-100 px-2 py-0.5 rounded-full border border-pink-200">
+                    Zaczytano {itemsCount} {itemsCount === 1 ? 'pozycję' : itemsCount < 5 ? 'pozycje' : 'pozycji'} ✨
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Dane zamówienia zostały przetworzone. Sprawdź poniżej dane faktury i zatwierdź nagłówek.
+                </p>
               </div>
             </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOrderFileChange(null);
-              }}
-              className="p-1 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-              title="Wyczyść plik"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => orderInputRef.current?.click()}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
+              >
+                Wgraj inny plik
+              </button>
+              <button
+                type="button"
+                onClick={() => onOrderFileChange(null)}
+                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                title="Wyczyść plik"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Baner potwierdzenia danych odczytanych z zamówienia */}
+        {lastExtractedInfo && (
+          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-rose-50/90 via-pink-50/80 to-fuchsia-50/90 border border-rose-300 shadow-2xs animate-in fade-in duration-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-900">
+                      Pomyślnie odczytano dane z zamówienia
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-pink-100 text-pink-800 border border-pink-200">
+                      {lastExtractedInfo.isRecognizedChain
+                        ? `Rozpoznano profil: ${lastExtractedInfo.chainProfileName}`
+                        : 'Nabywca zdefiniowany w zamówieniu'}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-700 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>
+                      🏢 <strong>Nabywca:</strong> {lastExtractedInfo.buyer.name} (NIP: <strong className="font-mono">{lastExtractedInfo.buyer.nip}</strong>)
+                    </span>
+                    <span>·</span>
+                    <span>
+                      📍 <strong>Adres:</strong> {lastExtractedInfo.buyer.addressLine1}, {lastExtractedInfo.buyer.postalCode} {lastExtractedInfo.buyer.city}
+                    </span>
+                    {lastExtractedInfo.thirdParty && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          🏬 <strong>Odbiorca:</strong> {lastExtractedInfo.thirdParty.name}{' '}
+                          {lastExtractedInfo.thirdParty.gln ? `(GLN: ${lastExtractedInfo.thirdParty.gln})` : lastExtractedInfo.thirdParty.idWew ? `(ID-Wew: ${lastExtractedInfo.thirdParty.idWew})` : ''}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  {lastExtractedInfo.extractedSummary.datesFound.length > 0 && (
+                    <p className="mt-1 text-[11px] text-slate-600 font-mono">
+                      📅 Odczytane daty: {lastExtractedInfo.extractedSummary.datesFound.join(' | ')}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleVerifyAll}
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Zatwierdź wszystkie dane z zamówienia</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Baner potwierdzenia danych odczytanych z zamówienia */}
-      {lastExtractedInfo && (
-        <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-rose-50/90 via-pink-50/80 to-fuchsia-50/90 border border-rose-300 shadow-2xs animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-xs font-bold text-slate-900">
-                    Pomyślnie odczytano dane z zamówienia
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-pink-100 text-pink-800 border border-pink-200">
-                    {lastExtractedInfo.isRecognizedChain
-                      ? `Rozpoznano profil: ${lastExtractedInfo.chainProfileName}`
-                      : 'Nabywca zdefiniowany w zamówieniu'}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-slate-700 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>
-                    🏢 <strong>Nabywca:</strong> {lastExtractedInfo.buyer.name} (NIP: <strong className="font-mono">{lastExtractedInfo.buyer.nip}</strong>)
-                  </span>
-                  <span>·</span>
-                  <span>
-                    📍 <strong>Adres:</strong> {lastExtractedInfo.buyer.addressLine1}, {lastExtractedInfo.buyer.postalCode} {lastExtractedInfo.buyer.city}
-                  </span>
-                  {lastExtractedInfo.thirdParty && (
-                    <>
-                      <span>·</span>
-                      <span>
-                        🏬 <strong>Odbiorca:</strong> {lastExtractedInfo.thirdParty.name}{' '}
-                        {lastExtractedInfo.thirdParty.gln ? `(GLN: ${lastExtractedInfo.thirdParty.gln})` : lastExtractedInfo.thirdParty.idWew ? `(ID-Wew: ${lastExtractedInfo.thirdParty.idWew})` : ''}
-                      </span>
-                    </>
-                  )}
-                </div>
-                {lastExtractedInfo.extractedSummary.datesFound.length > 0 && (
-                  <p className="mt-1 text-[11px] text-slate-600 font-mono">
-                    📅 Odczytane daty: {lastExtractedInfo.extractedSummary.datesFound.join(' | ')}
-                  </p>
-                )}
-              </div>
+      {/* ===================================================================== */}
+      {/* KROK 2: DANE E-FAKTURY KSEF I WERYFIKACJA NAGŁÓWKA                   */}
+      {/* ===================================================================== */}
+      <div className="bg-white rounded-2xl border border-rose-200/80 p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-rose-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm shadow-2xs">
+              2
             </div>
-
-            <div className="shrink-0 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleVerifyAll}
-                className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                <span>Zatwierdź wszystkie dane z zamówienia</span>
-              </button>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FileCheck2 className="w-4 h-4 text-rose-500" />
+                <span>Dane E-Faktury KSeF i Weryfikacja Nagłówka</span>
+                <span className="text-[11px] font-bold text-pink-700 bg-pink-100/80 px-2 py-0.5 rounded-full border border-pink-200">
+                  Krok 2 🌸
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Sprawdź i zatwierdź dane kontrahenta, daty transakcji, termin płatności oraz numer faktury zgodny z ustawą o VAT.
+              </p>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ========================================================================= */}
-      {/* GŁÓWNA SIATKA DANYCH ZAMÓWIENIA & FAKTURY Z POLAMI DO ZATWIERDZENIA       */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
+          {/* Akcja zatwierdzenia */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleVerifyAll}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
+                allVerified
+                  ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 text-white shadow-pink-200'
+                  : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
+              }`}
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{allVerified ? 'Wszystko zatwierdzone ✓' : 'Zatwierdź wszystkie dane jako OK'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Belka postępu zatwierdzenia danych */}
+        <div className="mt-3 px-3.5 py-2 rounded-xl bg-rose-50/40 border border-rose-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            {allVerified ? (
+              <CheckCircle2 className="w-4 h-4 text-rose-600" />
+            ) : (
+              <ShieldCheck className="w-4 h-4 text-pink-600" />
+            )}
+            <span className="font-semibold text-slate-800">
+              Stan weryfikacji nagłówka:{' '}
+              <strong className="text-rose-700">
+                {verifiedCount} z {totalRequired} zatwierdzonych
+              </strong>
+            </span>
+            <span className="text-rose-200">|</span>
+            <span className="text-slate-500 text-[11px]">
+              Każdy kafelek posiada niezależne pole zatwierdzenia (✓ OK)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <div className="w-24 bg-rose-100 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full transition-all duration-300 bg-gradient-to-r from-pink-400 via-rose-500 to-pink-600"
+                style={{ width: `${(verifiedCount / totalRequired) * 100}%` }}
+              />
+            </div>
+            <span className="font-mono text-[11px] font-bold text-slate-700">
+              {Math.round((verifiedCount / totalRequired) * 100)}%
+            </span>
+          </div>
+        </div>
+
+        {/* GŁÓWNA SIATKA DANYCH ZAMÓWIENIA & FAKTURY Z POLAMI DO ZATWIERDZENIA */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
         
         {/* KARTA 1: Nabywca / Sieć apteczna */}
         <div
@@ -1182,6 +1278,7 @@ Numer zamówienia: ZAM/2026/10/01
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
