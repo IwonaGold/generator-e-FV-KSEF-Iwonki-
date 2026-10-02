@@ -20,6 +20,11 @@ import {
   AlertTriangle,
   Info,
   Calendar,
+  Percent,
+  Layers,
+  ListPlus,
+  Check,
+  Sliders,
 } from 'lucide-react';
 import { EntityDetails, ThirdPartyEntity, InvoiceItem, VatRate } from '../types/ksef';
 import {
@@ -27,6 +32,8 @@ import {
   KSeFCorrectionData,
   COMMON_CORRECTION_REASONS,
   CorrectionMode,
+  CorrectedInvoiceReference,
+  FormalCorrectionField,
 } from '../types/correction';
 import { ArchivedOrder } from '../types/ordersHistory';
 import { DEFAULT_SELLER, PHARMACY_CHAINS } from '../utils/sampleData';
@@ -35,6 +42,7 @@ import { parseKSeFXMLString, convertInvoiceItemsToCorrectionItems } from '../uti
 import { validateXmlAgainstKSeFXsd, XsdValidationResult } from '../utils/ksefXsdValidator';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { saveArchivedOrder } from '../utils/ordersStorage';
+import { parseAddressString } from '../utils/ksefPdfInvoiceParser';
 
 interface InvoiceCorrectionViewProps {
   archivedOrders: ArchivedOrder[];
@@ -51,6 +59,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 }) => {
   const today = new Date().toISOString().slice(0, 10);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const bulkPdfInputRef = useRef<HTMLInputElement>(null);
 
   // Strony transakcji
   const [seller, setSeller] = useState<EntityDetails>(DEFAULT_SELLER);
@@ -59,14 +68,97 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
   // Dane faktury korygowanej
   const [originalInvoiceNumber, setOriginalInvoiceNumber] = useState<string>('41/2026/KSEF');
-  const [originalInvoiceDate, setOriginalInvoiceDate] = useState<string>('2026-09-28');
+  const [originalInvoiceDate, setOriginalInvoiceDate] = useState<string>('2026-09-29');
   const [hasOriginalKsefNumber, setHasOriginalKsefNumber] = useState<boolean>(true);
-  const [originalKsefNumber, setOriginalKsefNumber] = useState<string>('5833446059-20260928-123456-ABCDEF-01');
+  const [originalKsefNumber, setOriginalKsefNumber] = useState<string>('9571106742-20260929-4D51D9800003-0F');
+  const [deliveryDate, setDeliveryDate] = useState<string>('2026-09-30');
+  const [orderNumber, setOrderNumber] = useState<string>('ZZ-1009/09/26');
+  const [orderDate, setOrderDate] = useState<string>('2026-09-28');
+  const [bankAccount, setBankAccount] = useState<string>('96 1090 1098 0000 0001 6398 3525');
 
   // Tryb korekty wg wytycznych MF
   const [correctionMode, setCorrectionMode] = useState<CorrectionMode>('value');
   const [typKorekty, setTypKorekty] = useState<'1' | '2' | '3'>('1');
-  const [okresFaKorygowanej, setOkresFaKorygowanej] = useState<string>('');
+  const [okresFaKorygowanej, setOkresFaKorygowanej] = useState<string>('01.09.2026 - 30.09.2026');
+
+  // Stan wielu faktur dla Korekty Zbiorczej (TypKorekty: 3)
+  const [correctedInvoices, setCorrectedInvoices] = useState<CorrectedInvoiceReference[]>([
+    {
+      id: 'inv-init-1',
+      invoiceNumber: '41/2026/KSEF',
+      invoiceDate: '2026-09-29',
+      hasKsefNumber: true,
+      ksefNumber: '9571106742-20260929-4D51D9800003-0F',
+      netTotal: 9239.92,
+      grossTotal: 9979.11,
+      fileName: 'faktura_41_2026_KSEF.pdf',
+    },
+  ]);
+
+  // Konfiguracja rabatu dla korekty zbiorczej
+  const [discountType, setDiscountType] = useState<'percentage' | 'amount'>('percentage');
+  const [discountPercent, setDiscountPercent] = useState<number>(5);
+  const [discountAmountNet, setDiscountAmountNet] = useState<number>(500);
+  const [discountVatRate, setDiscountVatRate] = useState<'8%' | '23%'>('8%');
+  const [discountDescription, setDiscountDescription] = useState<string>(
+    'Rabat potransakcyjny za zrealizowany obrót w okresie 01.09.2026 - 30.09.2026'
+  );
+
+  // Stan błędu formalnego (TypKorekty: 2)
+  const [formalFields, setFormalFields] = useState<
+    Record<
+      FormalCorrectionField,
+      {
+        active: boolean;
+        name: string;
+        origValue: string;
+        corrValue: string;
+      }
+    >
+  >({
+    buyer_name: {
+      active: false,
+      name: 'Nazwa Nabywcy (literówka / zmiana nazwy)',
+      origValue: 'DR. MAX LEKOMAT SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
+      corrValue: 'DR. MAX LEKOMAT SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
+    },
+    buyer_address: {
+      active: true,
+      name: 'Adres siedziby Nabywcy (ulica, nr, kod pocztowy, miasto)',
+      origValue: 'ul. Krzemieniecka 60A, 54-613 Wrocław',
+      corrValue: 'ul. Krzemieniecka 60A, 54-613 Wrocław',
+    },
+    third_party: {
+      active: false,
+      name: 'Dane Odbiorcy towaru / Apteki (Podmiot 3)',
+      origValue: 'Brak odrębnego odbiorcy',
+      corrValue: 'Brak odrębnego odbiorcy',
+    },
+    delivery_date: {
+      active: false,
+      name: 'Data dokonania / zakończenia dostawy',
+      origValue: '2026-09-30',
+      corrValue: '2026-09-30',
+    },
+    order_number: {
+      active: false,
+      name: 'Numer zamówienia klienta (ZZ)',
+      origValue: 'ZZ-1009/09/26',
+      corrValue: 'ZZ-1009/09/26',
+    },
+    bank_account: {
+      active: false,
+      name: 'Rachunek bankowy do płatności',
+      origValue: '96 1090 1098 0000 0001 6398 3525',
+      corrValue: '96 1090 1098 0000 0001 6398 3525',
+    },
+    other: {
+      active: false,
+      name: 'Inne dane formalne / opisowe',
+      origValue: '',
+      corrValue: '',
+    },
+  });
 
   // Dane bieżącej korekty
   const [correctionNumber, setCorrectionNumber] = useState<string>('KOR-01/10/2026');
@@ -171,7 +263,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   const handlePdfFile = async (file: File) => {
     if (!file) return;
     setIsParsingPdf(true);
-    setNotification(`Trwa odczytywanie pliku PDF "${file.name}" (analiza numeru KSeF, nagłówka i pozycji)...`);
+    setNotification(`Trwa odczytywanie pliku PDF "${file.name}" (analiza numeru KSeF, kontrahenta i pozycji)...`);
 
     try {
       const reader = new FileReader();
@@ -211,6 +303,12 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       } else {
         setHasOriginalKsefNumber(false);
       }
+      if (data.deliveryDate) setDeliveryDate(data.deliveryDate);
+      if (data.orderNumber) setOrderNumber(data.orderNumber);
+      if (data.orderDate) setOrderDate(data.orderDate);
+      if (data.bankAccount) setBankAccount(data.bankAccount);
+      if (data.dueDate) setDueDate(data.dueDate);
+
       if (data.buyer && data.buyer.name) {
         setBuyer({
           nip: data.buyer.nip || '',
@@ -222,6 +320,17 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           gln: data.buyer.gln || '',
         });
       }
+      if (data.seller && data.seller.name) {
+        setSeller((s) => ({
+          ...s,
+          nip: data.seller.nip || s.nip,
+          name: data.seller.name || s.name,
+          addressLine1: data.seller.addressLine1 || s.addressLine1,
+          postalCode: data.seller.postalCode || s.postalCode,
+          city: data.seller.city || s.city,
+          bankAccount: data.seller.bankAccount || s.bankAccount,
+        }));
+      }
       if (data.thirdParty && data.thirdParty.name) {
         setThirdParty(data.thirdParty);
       }
@@ -231,10 +340,58 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         setItems(corrItems);
       }
 
+      // Aktualizacja wartości pól formalnych z odczytanego PDF
+      const formattedBuyerAddr = `${data.buyer?.addressLine1 || ''}${
+        data.buyer?.postalCode ? ', ' + data.buyer.postalCode + ' ' + (data.buyer?.city || '') : ''
+      }`;
+
+      setFormalFields((prev) => ({
+        ...prev,
+        buyer_name: {
+          ...prev.buyer_name,
+          origValue: data.buyer?.name || prev.buyer_name.origValue,
+          corrValue: data.buyer?.name || prev.buyer_name.corrValue,
+        },
+        buyer_address: {
+          ...prev.buyer_address,
+          origValue: formattedBuyerAddr || prev.buyer_address.origValue,
+          corrValue: formattedBuyerAddr || prev.buyer_address.corrValue,
+        },
+        delivery_date: {
+          ...prev.delivery_date,
+          origValue: data.deliveryDate || prev.delivery_date.origValue,
+          corrValue: data.deliveryDate || prev.delivery_date.corrValue,
+        },
+        order_number: {
+          ...prev.order_number,
+          origValue: data.orderNumber || prev.order_number.origValue,
+          corrValue: data.orderNumber || prev.order_number.corrValue,
+        },
+        bank_account: {
+          ...prev.bank_account,
+          origValue: data.bankAccount || prev.bank_account.origValue,
+          corrValue: data.bankAccount || prev.bank_account.corrValue,
+        },
+      }));
+
+      // Dodaj także do listy pojedynczej dla korekty zbiorczej
+      setCorrectedInvoices([
+        {
+          id: `inv-${Date.now()}`,
+          invoiceNumber: data.invoiceNumber || file.name,
+          invoiceDate: data.issueDate || today,
+          hasKsefNumber: Boolean(data.ksefNumber),
+          ksefNumber: data.ksefNumber || '',
+          netTotal: data.totalNet || 0,
+          grossTotal: data.totalGross || 0,
+          fileName: file.name,
+        },
+      ]);
+
       setNotification(
         `✅ Pomyślnie wczytano fakturę z PDF! ` +
-          (data.ksefNumber ? `Odczytano nr KSeF: ${data.ksefNumber}` : 'Brak nr KSeF (oznaczono brak KSeF)') +
-          ` · Faktura: ${data.invoiceNumber || originalInvoiceNumber}`
+          (data.ksefNumber ? `Nr KSeF: ${data.ksefNumber}` : 'Brak nr KSeF') +
+          ` · Faktura: ${data.invoiceNumber || originalInvoiceNumber} · Pozycji: ${data.items?.length || 0}`
       );
       setTimeout(() => setNotification(null), 8000);
     } catch (err: any) {
@@ -243,6 +400,164 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     } finally {
       setIsParsingPdf(false);
     }
+  };
+
+  // Obsługa wielu plików PDF jednocześnie (dla korekty zbiorczej)
+  const handleMultiplePdfFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter(
+      (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+    );
+    if (fileArray.length === 0) return;
+
+    if (fileArray.length === 1 && correctionMode !== 'period_bulk') {
+      await handlePdfFile(fileArray[0]);
+      return;
+    }
+
+    setIsParsingPdf(true);
+    setNotification(`Trwa odczytywanie i analiza ${fileArray.length} plików PDF z fakturami...`);
+
+    const loadedInvoices: CorrectedInvoiceReference[] = [];
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      try {
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const res = reader.result as string;
+            const b64 = res.includes(',') ? res.split(',')[1] : res;
+            resolve(b64);
+          };
+          reader.onerror = reject;
+        });
+        reader.readAsDataURL(file);
+        const pdfBase64 = await base64Promise;
+
+        const response = await fetch('/api/parse-invoice-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pdfBase64, fileName: file.name }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          loadedInvoices.push({
+            id: `inv-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
+            invoiceNumber: data.invoiceNumber || file.name,
+            invoiceDate: data.issueDate || today,
+            hasKsefNumber: Boolean(data.ksefNumber),
+            ksefNumber: data.ksefNumber || '',
+            netTotal: data.totalNet || 0,
+            grossTotal: data.totalGross || 0,
+            fileName: file.name,
+          });
+
+          if (i === 0 && data.buyer && data.buyer.name) {
+            setBuyer({
+              nip: data.buyer.nip || '',
+              name: data.buyer.name || '',
+              countryCode: data.buyer.countryCode || 'PL',
+              addressLine1: data.buyer.addressLine1 || '',
+              postalCode: data.buyer.postalCode || '',
+              city: data.buyer.city || '',
+              gln: data.buyer.gln || '',
+            });
+            if (data.seller && data.seller.name) setSeller(data.seller);
+          }
+        }
+      } catch (err) {
+        console.warn(`Błąd odczytu ${file.name}:`, err);
+      }
+    }
+
+    if (loadedInvoices.length > 0) {
+      setCorrectionMode('period_bulk');
+      setTypKorekty('3');
+      setCorrectedInvoices((prev) => {
+        const existingNums = new Set(prev.map((p) => p.invoiceNumber));
+        const newOnes = loadedInvoices.filter((n) => !existingNums.has(n.invoiceNumber));
+        return [...prev, ...newOnes];
+      });
+
+      const allDates = loadedInvoices.map((i) => i.invoiceDate).filter(Boolean).sort();
+      if (allDates.length > 0) {
+        setOkresFaKorygowanej(`${allDates[0]} - ${allDates[allDates.length - 1]}`);
+      }
+
+      setReasonCategory('Udzielenie dodatkowego rabatu / upustu cenowego');
+      setReasonDescription(
+        `Udzielenie rabatu potransakcyjnego na dostawy wg załączonych ${loadedInvoices.length} faktur.`
+      );
+
+      setNotification(`✅ Pomyślnie załadowano ${loadedInvoices.length} faktur do korekty zbiorczej!`);
+      setTimeout(() => setNotification(null), 6000);
+    } else {
+      setNotification(`Nie udało się odczytać plików PDF.`);
+      setTimeout(() => setNotification(null), 5000);
+    }
+
+    setIsParsingPdf(false);
+  };
+
+  const handleRemoveCorrectedInvoice = (id: string) => {
+    setCorrectedInvoices((prev) => prev.filter((i) => i.id !== id));
+  };
+
+  const updateFormalField = (key: FormalCorrectionField, newCorrValue: string) => {
+    setFormalFields((prev) => {
+      const updated = {
+        ...prev,
+        [key]: { ...prev[key], corrValue: newCorrValue },
+      };
+
+      if (key === 'buyer_name') {
+        setBuyer((b) => ({ ...b, name: newCorrValue }));
+      } else if (key === 'buyer_address') {
+        const addr = parseAddressString(newCorrValue);
+        setBuyer((b) => ({
+          ...b,
+          addressLine1: addr.addressLine1 || newCorrValue,
+          postalCode: addr.postalCode || b.postalCode,
+          city: addr.city || b.city,
+        }));
+      }
+
+      // Automatyczna przyczyna korekty
+      const activeDifferent = Object.entries(updated).filter(
+        ([_, v]) => v.active && v.corrValue.trim() !== v.origValue.trim()
+      );
+      if (activeDifferent.length > 0) {
+        const descParts = activeDifferent.map(
+          ([_, v]) => `${v.name}: Było "${v.origValue}", Powinno być "${v.corrValue}"`
+        );
+        setReasonDescription(`Korekta formalna: ${descParts.join('; ')}. Bez wpływu na podstawę opodatkowania.`);
+      }
+
+      return updated;
+    });
+  };
+
+  const toggleFormalFieldActive = (key: FormalCorrectionField) => {
+    setFormalFields((prev) => {
+      const isNowActive = !prev[key].active;
+      const updated = {
+        ...prev,
+        [key]: { ...prev[key], active: isNowActive },
+      };
+
+      const activeDifferent = Object.entries(updated).filter(
+        ([_, v]) => v.active && v.corrValue.trim() !== v.origValue.trim()
+      );
+      if (activeDifferent.length > 0) {
+        const descParts = activeDifferent.map(
+          ([_, v]) => `${v.name}: Było "${v.origValue}", Powinno być "${v.corrValue}"`
+        );
+        setReasonDescription(`Korekta formalna: ${descParts.join('; ')}. Bez wpływu na podstawę opodatkowania.`);
+      }
+
+      return updated;
+    });
   };
 
   const handleXmlFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -417,9 +732,38 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         deltaVat: 0,
         deltaGross: 0,
         modifiedCount: 0,
+        sumOrigNet: 0,
+        sumOrigGross: 0,
       };
     }
 
+    // W korekcie zbiorczej (TypKorekty: 3) z rabatem
+    if (typKorekty === '3') {
+      const sumOrigNet = Math.round(correctedInvoices.reduce((acc, i) => acc + (i.netTotal || 0), 0) * 100) / 100;
+      const sumOrigGross = Math.round(correctedInvoices.reduce((acc, i) => acc + (i.grossTotal || 0), 0) * 100) / 100;
+
+      let deltaNet = 0;
+      if (discountType === 'percentage') {
+        deltaNet = -Math.round(sumOrigNet * (discountPercent / 100) * 100) / 100;
+      } else {
+        deltaNet = -Math.round(discountAmountNet * 100) / 100;
+      }
+
+      const vatPct = discountVatRate === '23%' ? 0.23 : 0.08;
+      const deltaVat = Math.round(deltaNet * vatPct * 100) / 100;
+      const deltaGross = Math.round((deltaNet + deltaVat) * 100) / 100;
+
+      return {
+        deltaNet,
+        deltaVat,
+        deltaGross,
+        modifiedCount: correctedInvoices.length,
+        sumOrigNet,
+        sumOrigGross,
+      };
+    }
+
+    // W korekcie wartościowej (TypKorekty: 1)
     let deltaNet = 0;
     let deltaVat = 0;
     let deltaGross = 0;
@@ -439,8 +783,10 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       deltaVat: Math.round(deltaVat * 100) / 100,
       deltaGross: Math.round(deltaGross * 100) / 100,
       modifiedCount,
+      sumOrigNet: 0,
+      sumOrigGross: 0,
     };
-  }, [items, typKorekty]);
+  }, [items, typKorekty, correctedInvoices, discountType, discountPercent, discountAmountNet, discountVatRate]);
 
   // Walidacja formatu numeru KSeF (35-36 znaków z myślnikami)
   const isKsefNumberValid = useMemo(() => {
@@ -451,6 +797,22 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
   // Generowanie XML korekty
   const handleGenerateCorrectionXml = async () => {
+    const bulkDiscountConfig =
+      typKorekty === '3'
+        ? {
+            discountType,
+            percentageValue: discountPercent,
+            amountNetValue: discountAmountNet,
+            vatRate: discountVatRate,
+            calculatedNetDelta: totals.deltaNet,
+            calculatedVatDelta: totals.deltaVat,
+            calculatedGrossDelta: totals.deltaGross,
+            discountDescription:
+              discountDescription ||
+              `Rabat potransakcyjny ${discountType === 'percentage' ? discountPercent + '%' : ''} za okres ${okresFaKorygowanej}`,
+          }
+        : undefined;
+
     const correctionData: KSeFCorrectionData = {
       correctionNumber,
       issueDate,
@@ -459,6 +821,8 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       originalInvoiceDate,
       hasOriginalKsefNumber,
       originalKsefNumber: hasOriginalKsefNumber ? originalKsefNumber : undefined,
+      correctedInvoices: typKorekty === '3' ? correctedInvoices : undefined,
+      bulkDiscount: bulkDiscountConfig,
       reasonCategory,
       reasonDescription,
       typKorekty,
@@ -471,6 +835,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       currency: 'PLN',
       paymentMethod: 'przelew',
       dueDate,
+      deliveryDate,
+      orderNumber,
+      orderDate,
     };
 
     const xml = generateKSeFCorrectionXML(correctionData);
@@ -509,6 +876,22 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   const handleSaveCorrectionToHistory = async () => {
     let xml = generatedXml;
     if (!xml) {
+      const bulkDiscountConfig =
+        typKorekty === '3'
+          ? {
+              discountType,
+              percentageValue: discountPercent,
+              amountNetValue: discountAmountNet,
+              vatRate: discountVatRate,
+              calculatedNetDelta: totals.deltaNet,
+              calculatedVatDelta: totals.deltaVat,
+              calculatedGrossDelta: totals.deltaGross,
+              discountDescription:
+                discountDescription ||
+                `Rabat potransakcyjny ${discountType === 'percentage' ? discountPercent + '%' : ''} za okres ${okresFaKorygowanej}`,
+            }
+          : undefined;
+
       xml = generateKSeFCorrectionXML({
         correctionNumber,
         issueDate,
@@ -517,6 +900,8 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         originalInvoiceDate,
         hasOriginalKsefNumber,
         originalKsefNumber: hasOriginalKsefNumber ? originalKsefNumber : undefined,
+        correctedInvoices: typKorekty === '3' ? correctedInvoices : undefined,
+        bulkDiscount: bulkDiscountConfig,
         reasonCategory,
         reasonDescription,
         typKorekty,
@@ -529,6 +914,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         currency: 'PLN',
         paymentMethod: 'przelew',
         dueDate,
+        deliveryDate,
+        orderNumber,
+        orderDate,
       });
     }
 
@@ -643,9 +1031,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           onDrop={(e) => {
             e.preventDefault();
             setIsDraggingPdf(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file && file.type === 'application/pdf') {
-              handlePdfFile(file);
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+              handleMultiplePdfFiles(files);
             }
           }}
           onClick={() => pdfInputRef.current?.click()}
@@ -658,11 +1046,12 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           <input
             ref={pdfInputRef}
             type="file"
+            multiple
             accept="application/pdf"
             className="hidden"
             onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handlePdfFile(file);
+              const files = e.target.files;
+              if (files && files.length > 0) handleMultiplePdfFiles(files);
               e.target.value = '';
             }}
           />
@@ -673,13 +1062,13 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             </div>
             <div>
               <div className="text-sm font-bold text-slate-900 flex items-center justify-center gap-2">
-                <span>Wgraj Fakturę Pierwotną w PDF (z numerem KSeF)</span>
+                <span>Wgraj Fakturę Pierwotną w PDF (lub wiele faktur dla korekty zbiorczej)</span>
                 <span className="text-[11px] font-bold text-fuchsia-700 bg-fuchsia-100 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                  Automatyczny OCR KSeF ✨
+                  Możesz zaznaczyć wiele plików PDF ✨
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
-                Przeciągnij i upuść tutaj plik PDF z fakturą lub kliknij, aby wybrać z dysku. System automatycznie sczyta 35-znakowy identyfikator KSeF, numer faktury, daty i całą tabelę pozycji.
+                Przeciągnij i upuść tutaj plik PDF z fakturą (lub wiele faktur jednocześnie dla korekty zbiorczej). System automatycznie sczyta 35-znakowy identyfikator KSeF, dane kontrahentów i pozycje.
               </p>
             </div>
           </div>
@@ -979,22 +1368,393 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           </div>
         </div>
 
-        {/* OKRES FAKTURY KORYGOWANEJ DLA KOREKTY ZBIORCZEJ */}
-        {typKorekty === '3' && (
-          <div className="mt-3 p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs animate-in fade-in">
-            <label className="block font-bold text-purple-900 mb-1">
-              Okres faktury korygowanej (&lt;OkresFaKorygowanej&gt;):
-            </label>
-            <input
-              type="text"
-              value={okresFaKorygowanej}
-              onChange={(e) => setOkresFaKorygowanej(e.target.value)}
-              placeholder="np. 01.01.2026 - 31.03.2026 lub I kwartał 2026"
-              className="w-full px-3 py-1.5 bg-white border border-purple-300 rounded-lg font-mono text-purple-950 focus:outline-purple-500"
-            />
-            <span className="text-[11px] text-purple-700 mt-1 block">
-              Zgodnie z art. 106j ust. 3 ustawy o VAT podaj okres, do którego odnosi się udzielany opust.
-            </span>
+        {/* ===================================================================== */}
+        {/* PANEL DEDYKOWANY: WSKAŻ ELEMENTY PODLEGAJĄCE KOREKCIE FORMALNEJ       */}
+        {/* ===================================================================== */}
+        {(typKorekty === '2' || correctionMode === 'formal') && (
+          <div className="mt-5 p-5 bg-gradient-to-br from-amber-50/70 via-white to-amber-50/40 rounded-2xl border-2 border-amber-300 shadow-xs animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🟡</span>
+                <h4 className="text-sm font-bold text-amber-950">
+                  Wskaż, której części faktury pierwotnej dotyczy błąd formalny:
+                </h4>
+              </div>
+              <span className="text-[10px] font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                Wymóg KSeF: TypKorekty = 2
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 mb-4">
+              Zaznacz pola, w których wystąpił błąd (np. literówka w nazwie, zmiana adresu lub zły numer zamówienia). Poniżej wpisz właściwą wartość – system automatycznie zaktualizuje dane Nabywcy i sformułuje uzasadnienie w XML.
+            </p>
+
+            {/* KAFELKI / CHECKBOXY WYBORU CZĘŚCI FAKTURY */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-4">
+              {(Object.keys(formalFields) as FormalCorrectionField[]).map((key) => {
+                const item = formalFields[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleFormalFieldActive(key)}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between text-xs font-semibold ${
+                      item.active
+                        ? 'bg-amber-100/90 border-amber-400 text-amber-950 shadow-2xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-amber-300'
+                    }`}
+                  >
+                    <span className="truncate pr-1">{item.name}</span>
+                    <span
+                      className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold ${
+                        item.active ? 'bg-amber-600 text-white' : 'border border-slate-300'
+                      }`}
+                    >
+                      {item.active && '✓'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* KARTY EDYCJI DLA AKTYWNYCH PÓL FORMALNYCH */}
+            <div className="space-y-3">
+              {(Object.keys(formalFields) as FormalCorrectionField[])
+                .filter((key) => formalFields[key].active)
+                .map((key) => {
+                  const item = formalFields[key];
+                  return (
+                    <div
+                      key={key}
+                      className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-2xs grid grid-cols-1 md:grid-cols-2 gap-3"
+                    >
+                      {/* LEWA KOLUMNA: STAN PIERWOTNY */}
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+                        <div className="text-[10px] font-bold text-rose-700 uppercase mb-1 flex items-center gap-1">
+                          <span>🔴</span> Stan pierwotny na fakturze (Było):
+                        </div>
+                        <div className="font-semibold text-slate-800 break-words">
+                          {item.origValue || '<brak danych w fakturze>'}
+                        </div>
+                      </div>
+
+                      {/* PRAWA KOLUMNA: WŁAŚCIWA WARTOŚĆ PO KOREKCIE */}
+                      <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-300 text-xs">
+                        <label className="text-[10px] font-bold text-emerald-800 uppercase mb-1 flex items-center gap-1">
+                          <span>🟢</span> Właściwa wartość po korekcie (Powinno być):
+                        </label>
+                        <input
+                          type="text"
+                          value={item.corrValue}
+                          onChange={(e) => updateFormalField(key, e.target.value)}
+                          placeholder={`Wpisz poprawną wartość dla ${item.name}...`}
+                          className="w-full mt-1 px-2.5 py-1.5 font-bold text-slate-900 bg-white border border-emerald-400 rounded-lg focus:outline-emerald-600"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="mt-3.5 p-3 rounded-xl bg-amber-100/60 text-amber-900 text-xs flex items-center gap-2">
+              <Info className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Zasada KSeF dla korekt formalnych:</strong> Sekcje finansowe (<code className="font-mono">P_13</code>, <code className="font-mono">P_14</code>, <code className="font-mono">P_15</code>) wynoszą ściśle <strong>0.00 PLN</strong>, dzięki czemu korekta nie zmienia kwot w ewidencji JPK_V7. Właściwe dane opisowe zostaną umieszczone w nagłówku i sekcji Nabywcy.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ===================================================================== */}
+        {/* PANEL DEDYKOWANY: KOREKTA ZBIORCZA & RABAT NA WSZYSTKICH FAKTURACH     */}
+        {/* ===================================================================== */}
+        {(typKorekty === '3' || correctionMode === 'period_bulk') && (
+          <div className="mt-5 p-5 bg-gradient-to-br from-purple-50/70 via-white to-fuchsia-50/40 rounded-2xl border-2 border-purple-300 shadow-xs animate-in fade-in space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-200 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🟣</span>
+                  <h4 className="text-sm font-bold text-purple-950">
+                    Korekta Zbiorcza: Lista faktur objętych rabatem & Konfiguracja upustu
+                  </h4>
+                  <span className="text-[10px] font-bold bg-purple-200 text-purple-900 px-2 py-0.5 rounded-full">
+                    TypKorekty = 3 (art. 106j ust. 3)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Wgraj wiele faktur PDF z danego okresu i określ wysokość rabatu, który ma zostać udzielony na wszystkich.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  ref={bulkPdfInputRef}
+                  type="file"
+                  multiple
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (files && files.length > 0) handleMultiplePdfFiles(files);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => bulkPdfInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Wgraj kolejne faktury PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* TABELA WGRANYCH FAKTUR W KOREKCIE ZBIORCZEJ */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Faktury korygowane ({correctedInvoices.length}):</span>
+                </span>
+                <span className="text-xs font-medium text-slate-500">
+                  Wszystkie te faktury pojawią się w węzłach &lt;DaneFaKorygowanej&gt;
+                </span>
+              </div>
+
+              <div className="overflow-x-auto border border-purple-200 rounded-xl bg-white">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-purple-50/70 border-b border-purple-200 text-[11px] font-bold text-purple-950 uppercase">
+                    <tr>
+                      <th className="py-2.5 px-3">Lp.</th>
+                      <th className="py-2.5 px-3">Numer Faktury (&lt;NrFaKorygowanej&gt;)</th>
+                      <th className="py-2.5 px-3">Data wystawienia</th>
+                      <th className="py-2.5 px-3">Identyfikator KSeF (&lt;NrKSeF&gt;)</th>
+                      <th className="py-2.5 px-3 text-right">Wartość Netto</th>
+                      <th className="py-2.5 px-3 text-right">Wartość Brutto</th>
+                      <th className="py-2.5 px-3 text-center">Akcja</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-purple-100">
+                    {correctedInvoices.map((inv, idx) => (
+                      <tr key={inv.id} className="hover:bg-purple-50/30 transition-colors">
+                        <td className="py-2 px-3 font-mono text-slate-400 font-semibold">{idx + 1}</td>
+                        <td className="py-2 px-3 font-bold text-slate-900">{inv.invoiceNumber}</td>
+                        <td className="py-2 px-3 text-slate-600 font-mono">{inv.invoiceDate}</td>
+                        <td className="py-2 px-3 font-mono text-[11px]">
+                          {inv.hasKsefNumber && inv.ksefNumber ? (
+                            <span className="text-emerald-800 font-semibold flex items-center gap-1">
+                              <span>✓</span> {inv.ksefNumber}
+                            </span>
+                          ) : (
+                            <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              Brak KSeF (&lt;NrKSeFN&gt;1)
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-semibold text-slate-800">
+                          {inv.netTotal.toFixed(2)} zł
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          {inv.grossTotal.toFixed(2)} zł
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {correctedInvoices.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCorrectedInvoice(inv.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer"
+                              title="Usuń z listy"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-purple-100/50 font-bold text-xs border-t border-purple-200 text-purple-950">
+                    <tr>
+                      <td colSpan={4} className="py-2 px-3 text-right">ŁĄCZNA WARTOŚĆ FAKTUR PIERWOTNYCH:</td>
+                      <td className="py-2 px-3 text-right font-mono">{totals.sumOrigNet?.toFixed(2)} zł</td>
+                      <td className="py-2 px-3 text-right font-mono">{totals.sumOrigGross?.toFixed(2)} zł</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* OKRES FAKTURY KORYGOWANEJ */}
+            <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200 text-xs">
+              <label className="block font-bold text-purple-900 mb-1">
+                Okres faktury korygowanej (&lt;OkresFaKorygowanej&gt;):
+              </label>
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <input
+                  type="text"
+                  value={okresFaKorygowanej}
+                  onChange={(e) => setOkresFaKorygowanej(e.target.value)}
+                  placeholder="np. 01.09.2026 - 30.09.2026"
+                  className="w-full px-3 py-1.5 bg-white border border-purple-300 rounded-lg font-mono text-purple-950 focus:outline-purple-500 font-bold"
+                />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setOkresFaKorygowanej('01.09.2026 - 30.09.2026')}
+                    className="px-2 py-1 bg-white hover:bg-purple-100 border border-purple-200 rounded-md text-[11px] font-semibold text-purple-800"
+                  >
+                    Wrzesień 2026
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOkresFaKorygowanej('01.07.2026 - 30.09.2026')}
+                    className="px-2 py-1 bg-white hover:bg-purple-100 border border-purple-200 rounded-md text-[11px] font-semibold text-purple-800"
+                  >
+                    III kwartał 2026
+                  </button>
+                </div>
+              </div>
+              <span className="text-[11px] text-purple-700 mt-1 block">
+                Zgodnie z art. 106j ust. 3 ustawy o VAT pole to określa przedział czasowy, za który udzielono rabatu.
+              </span>
+            </div>
+
+            {/* SEKCJA UDZIELENIA RABATU NA WSZYSTKICH FAKTURACH */}
+            <div className="p-4 bg-white rounded-xl border border-purple-200 shadow-2xs space-y-4">
+              <div className="flex items-center gap-2">
+                <Percent className="w-4 h-4 text-purple-600" />
+                <h5 className="text-xs font-bold text-slate-900 uppercase">
+                  Wysokość rabatu udzielonego na wszystkich załączonych fakturach:
+                </h5>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* WYBÓR TYPU I WARTOŚCI RABATU */}
+                <div>
+                  <div className="flex items-center gap-3 mb-2 text-xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-slate-800">
+                      <input
+                        type="radio"
+                        name="discountType"
+                        checked={discountType === 'percentage'}
+                        onChange={() => setDiscountType('percentage')}
+                        className="text-purple-600 focus:ring-purple-500"
+                      />
+                      <span>Rabat procentowy (%)</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-slate-800">
+                      <input
+                        type="radio"
+                        name="discountType"
+                        checked={discountType === 'amount'}
+                        onChange={() => setDiscountType('amount')}
+                        className="text-purple-600 focus:ring-purple-500"
+                      />
+                      <span>Rabat kwotowy netto (PLN)</span>
+                    </label>
+                  </div>
+
+                  {discountType === 'percentage' ? (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        {[2, 3, 5, 10, 15].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setDiscountPercent(pct)}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                              discountPercent === pct
+                                ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-purple-50'
+                            }`}
+                          >
+                            {pct}%
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-600 font-medium">Inny procent:</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          max="100"
+                          value={discountPercent}
+                          onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
+                          className="w-24 px-2.5 py-1 text-xs font-bold text-purple-950 bg-white border border-purple-300 rounded-lg focus:outline-purple-500"
+                        />
+                        <span className="text-xs font-bold text-slate-700">%</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-xs text-slate-600 font-medium block mb-1">Kwota upustu netto:</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          step="10"
+                          min="1"
+                          value={discountAmountNet}
+                          onChange={(e) => setDiscountAmountNet(parseFloat(e.target.value) || 0)}
+                          className="w-36 px-2.5 py-1 text-xs font-bold text-purple-950 bg-white border border-purple-300 rounded-lg focus:outline-purple-500"
+                        />
+                        <span className="text-xs font-bold text-slate-700">PLN netto</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-center gap-3 text-xs">
+                    <span className="text-slate-600 font-medium">Stawka VAT rabatu:</span>
+                    <select
+                      value={discountVatRate}
+                      onChange={(e) => setDiscountVatRate(e.target.value as any)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-800"
+                    >
+                      <option value="8%">8% (Standard dla OMNi-BiOTiC)</option>
+                      <option value="23%">23%</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* PODSUMOWANIE KWOTOWE RABATU */}
+                <div className="bg-purple-50/70 p-3.5 rounded-xl border border-purple-200 text-xs space-y-2">
+                  <div className="font-bold text-purple-950 text-xs border-b border-purple-200 pb-1.5 flex items-center justify-between">
+                    <span>Podsumowanie udzielonego rabatu:</span>
+                    <span className="text-[10px] bg-purple-200 px-1.5 py-0.2 rounded font-extrabold text-purple-900">
+                      Różnica w XML
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-600">Rabat Netto (&lt;P_13&gt;):</span>
+                    <span className="font-mono font-bold text-rose-700">{totals.deltaNet.toFixed(2)} PLN</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-600">VAT od rabatu (&lt;P_14&gt;):</span>
+                    <span className="font-mono font-bold text-rose-700">{totals.deltaVat.toFixed(2)} PLN</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-purple-200 font-bold text-sm">
+                    <span className="text-purple-950">Łącznie Brutto do zwrotu (&lt;P_15&gt;):</span>
+                    <span className="font-mono font-black text-rose-700">{totals.deltaGross.toFixed(2)} PLN</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* OPIS POZYCJI RABATOWEJ W XML */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Opis pozycji rabatowej na korekcie (&lt;P_7&gt; w XML):
+                </label>
+                <input
+                  type="text"
+                  value={discountDescription}
+                  onChange={(e) => setDiscountDescription(e.target.value)}
+                  placeholder="np. Rabat potransakcyjny za zrealizowany obrót w okresie..."
+                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-purple-500"
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1013,7 +1773,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                 Pozycje Towarowe: Stan Przed Korektą vs Nowy Stan Po Korekcie
               </h3>
               <p className="text-xs text-slate-500">
-                {typKorekty === '2'
+                {typKorekty === '3'
+                  ? 'W trybie korekty zbiorczej (TypKorekty: 3) w XML generowana jest zbiorcza pozycja rabatu upustowego dla całości obrotu.'
+                  : typKorekty === '2'
                   ? 'W trybie błędu formalnego pozycje są wykazywane ze statusem formalnym, a sumy podatkowe wynoszą 0 PLN.'
                   : 'Wskaż nową ilość lub cenę. W pliku KSeF zostaną wykazane wiersze ze stanem przed (<StanPrzed>1</StanPrzed>) i nowym.'}
               </p>
@@ -1037,128 +1799,152 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           </div>
         </div>
 
-        {/* Tabela pozycji */}
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
-              <tr>
-                <th className="py-2.5 px-3">Lp.</th>
-                <th className="py-2.5 px-3">Nazwa Produktu & GTIN</th>
-                <th className="py-2.5 px-3 text-center bg-slate-100/70 border-x border-slate-200">
-                  Stan Przed (FV Pierwotna)
-                </th>
-                <th className="py-2.5 px-3 text-center bg-fuchsia-50/70 border-r border-fuchsia-200">
-                  Nowy Stan Po Korekcie
-                </th>
-                <th className="py-2.5 px-3 text-right">Różnica (Korekta)</th>
-                <th className="py-2.5 px-3 text-center">Szybkie akcje</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {items.map((it, idx) => (
-                <tr
-                  key={it.id}
-                  className={`hover:bg-slate-50/80 transition-colors ${
-                    it.isModified ? 'bg-fuchsia-50/20' : ''
-                  }`}
-                >
-                  <td className="py-3 px-3 font-mono text-slate-400 font-semibold">{idx + 1}</td>
-                  <td className="py-3 px-3 max-w-xs">
-                    <div className="font-bold text-slate-900">{it.name}</div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5">
-                      {it.gtin && <span>GTIN: {it.gtin}</span>}
-                      <span>VAT: {it.vatRate}</span>
-                      {it.batchNumber && <span>Seria: {it.batchNumber}</span>}
-                    </div>
-                  </td>
-
-                  {/* STAN PRZED */}
-                  <td className="py-3 px-3 bg-slate-50/50 border-x border-slate-200 text-center">
-                    <div className="font-semibold text-slate-800">
-                      {it.originalQuantity} {it.unit} × {it.originalNetPrice.toFixed(2)} zł
-                    </div>
-                    <div className="text-[11px] text-slate-500 font-mono">
-                      Netto: {it.originalNetTotal.toFixed(2)} zł | Brutto: {it.originalGrossTotal.toFixed(2)} zł
-                    </div>
-                  </td>
-
-                  {/* NOWY STAN PO KOREKCIE */}
-                  <td className="py-3 px-3 bg-fuchsia-50/30 border-r border-fuchsia-200">
-                    {typKorekty === '2' ? (
-                      <div className="text-center text-[11px] text-slate-500 font-medium">
-                        Stan ilości i cen bez zmian (korekta formalna)
+        {/* POZYCJE DLA KOREKTY ZBIORCZEJ */}
+        {typKorekty === '3' ? (
+          <div className="p-4 bg-purple-50/60 rounded-xl border border-purple-200 text-xs animate-in fade-in">
+            <div className="flex items-center gap-2 mb-2 font-bold text-purple-950">
+              <Sparkles className="w-4 h-4 text-purple-600" />
+              <span>Pozycja upustowa w pliku XML (&lt;FaWiersz&gt;):</span>
+            </div>
+            <div className="bg-white p-3.5 rounded-lg border border-purple-200 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs shadow-2xs">
+              <div className="md:col-span-2">
+                <span className="text-[10px] text-slate-500 font-semibold block uppercase">Nazwa usługi rabatowej (P_7):</span>
+                <span className="font-bold text-slate-900">{discountDescription || `Rabat potransakcyjny za okres ${okresFaKorygowanej}`}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 font-semibold block uppercase">Różnica Netto (P_11):</span>
+                <span className="font-mono font-bold text-rose-700">{totals.deltaNet.toFixed(2)} PLN</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 font-semibold block uppercase">Stawka VAT (P_12):</span>
+                <span className="font-mono font-bold text-slate-900">{discountVatRate}</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-purple-800 mt-2">
+              Zgodnie z art. 106j ust. 3 ustawy o VAT oraz schematem FA(3) w pliku XML zostanie wygenerowana pojedyncza zbiorcza pozycja rabatowa odniesiona do łącznego wolumenu załączonych faktur.
+            </p>
+          </div>
+        ) : typKorekty === '2' ? (
+          /* POZYCJE DLA KOREKTY FORMALNEJ */
+          <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 text-xs text-amber-950 animate-in fade-in">
+            <div className="flex items-center gap-2 font-bold mb-1">
+              <Info className="w-4 h-4 text-amber-700" />
+              <span>Brak pozycji towarowych w korekcie formalnej</span>
+            </div>
+            <p className="text-[11px] text-slate-600">
+              W strukturze logicznej FA(3) przy korekcie danych formalnych (TypKorekty: 2) sekcja pozycji nie zawiera zmian ilości ani cen. Kwoty różnicowe w rejestrze VAT wynoszą 0.00 PLN.
+            </p>
+          </div>
+        ) : (
+          /* STANDARDOWA TABELA POZYCJI DLA TYPKOREKTY: 1 */
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="py-2.5 px-3">Lp.</th>
+                  <th className="py-2.5 px-3">Nazwa Produktu & GTIN</th>
+                  <th className="py-2.5 px-3 text-center bg-slate-100/70 border-x border-slate-200">
+                    Stan Przed (FV Pierwotna)
+                  </th>
+                  <th className="py-2.5 px-3 text-center bg-fuchsia-50/70 border-r border-fuchsia-200">
+                    Nowy Stan Po Korekcie
+                  </th>
+                  <th className="py-2.5 px-3 text-right">Różnica (Korekta)</th>
+                  <th className="py-2.5 px-3 text-center">Szybkie akcje</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {items.map((it, idx) => (
+                  <tr
+                    key={it.id}
+                    className={`hover:bg-slate-50/80 transition-colors ${
+                      it.isModified ? 'bg-fuchsia-50/20' : ''
+                    }`}
+                  >
+                    <td className="py-3 px-3 font-mono text-slate-400 font-semibold">{idx + 1}</td>
+                    <td className="py-3 px-3 max-w-xs">
+                      <div className="font-bold text-slate-900">{it.name}</div>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5">
+                        {it.gtin && <span>GTIN: {it.gtin}</span>}
+                        <span>VAT: {it.vatRate}</span>
+                        {it.batchNumber && <span>Seria: {it.batchNumber}</span>}
                       </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500 font-medium">Ilość:</span>
-                            <input
-                              type="number"
-                              min="0"
-                              value={it.correctedQuantity}
-                              onChange={(e) => handleUpdateItemQuantity(it.id, parseFloat(e.target.value) || 0)}
-                              className={`w-16 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
-                                it.quantityDelta !== 0
-                                  ? 'border-fuchsia-400 bg-fuchsia-50/60 text-fuchsia-950 font-bold'
-                                  : 'border-slate-300 bg-white'
-                              }`}
-                            />
-                          </div>
+                    </td>
 
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500 font-medium">Cena:</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={it.correctedNetPrice}
-                              onChange={(e) => handleUpdateItemPrice(it.id, parseFloat(e.target.value) || 0)}
-                              className={`w-20 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
-                                it.originalNetPrice !== it.correctedNetPrice
-                                  ? 'border-fuchsia-400 bg-fuchsia-50/60 text-fuchsia-950 font-bold'
-                                  : 'border-slate-300 bg-white'
-                              }`}
-                            />
-                          </div>
-                        </div>
-                        <div className="text-[11px] text-center text-slate-600 font-mono mt-1">
-                          Nowe brutto: <strong>{it.correctedGrossTotal.toFixed(2)} zł</strong>
-                        </div>
-                      </>
-                    )}
-                  </td>
+                    {/* STAN PRZED */}
+                    <td className="py-3 px-3 bg-slate-50/50 border-x border-slate-200 text-center">
+                      <div className="font-semibold text-slate-800">
+                        {it.originalQuantity} {it.unit} × {it.originalNetPrice.toFixed(2)} zł
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-mono">
+                        Netto: {it.originalNetTotal.toFixed(2)} zł | Brutto: {it.originalGrossTotal.toFixed(2)} zł
+                      </div>
+                    </td>
 
-                  {/* RÓŻNICA */}
-                  <td className="py-3 px-3 text-right">
-                    {typKorekty === '2' ? (
-                      <span className="text-slate-400 text-xs">0.00 PLN (Formalna)</span>
-                    ) : it.isModified ? (
-                      <div>
-                        <div
-                          className={`font-black text-xs ${
-                            it.grossDelta < 0 ? 'text-rose-600' : 'text-emerald-600'
-                          }`}
-                        >
-                          {it.grossDelta > 0 ? `+${it.grossDelta.toFixed(2)}` : it.grossDelta.toFixed(2)} zł brutto
+                    {/* NOWY STAN PO KOREKCIE */}
+                    <td className="py-3 px-3 bg-fuchsia-50/30 border-r border-fuchsia-200">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-medium">Ilość:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={it.correctedQuantity}
+                            onChange={(e) => handleUpdateItemQuantity(it.id, parseFloat(e.target.value) || 0)}
+                            className={`w-16 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
+                              it.quantityDelta !== 0
+                                ? 'border-fuchsia-400 bg-fuchsia-50/60 text-fuchsia-950 font-bold'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          />
                         </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          Δ Ilość: {it.quantityDelta > 0 ? `+${it.quantityDelta}` : it.quantityDelta} {it.unit}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          Δ Netto: {it.netDelta > 0 ? `+${it.netDelta.toFixed(2)}` : it.netDelta.toFixed(2)} zł
+
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-medium">Cena:</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={it.correctedNetPrice}
+                            onChange={(e) => handleUpdateItemPrice(it.id, parseFloat(e.target.value) || 0)}
+                            className={`w-20 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
+                              it.originalNetPrice !== it.correctedNetPrice
+                                ? 'border-fuchsia-400 bg-fuchsia-50/60 text-fuchsia-950 font-bold'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          />
                         </div>
                       </div>
-                    ) : (
-                      <span className="text-slate-400 text-xs">Bez zmian</span>
-                    )}
-                  </td>
+                      <div className="text-[11px] text-center text-slate-600 font-mono mt-1">
+                        Nowe brutto: <strong>{it.correctedGrossTotal.toFixed(2)} zł</strong>
+                      </div>
+                    </td>
 
-                  {/* SZYBKIE AKCJE */}
-                  <td className="py-3 px-3 text-center">
-                    {typKorekty === '2' ? (
-                      <span className="text-slate-400 text-[10px]">-</span>
-                    ) : (
+                    {/* RÓŻNICA */}
+                    <td className="py-3 px-3 text-right">
+                      {it.isModified ? (
+                        <div>
+                          <div
+                            className={`font-black text-xs ${
+                              it.grossDelta < 0 ? 'text-rose-600' : 'text-emerald-600'
+                            }`}
+                          >
+                            {it.grossDelta > 0 ? `+${it.grossDelta.toFixed(2)}` : it.grossDelta.toFixed(2)} zł brutto
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            Δ Ilość: {it.quantityDelta > 0 ? `+${it.quantityDelta}` : it.quantityDelta} {it.unit}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            Δ Netto: {it.netDelta > 0 ? `+${it.netDelta.toFixed(2)}` : it.netDelta.toFixed(2)} zł
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs">Bez zmian</span>
+                      )}
+                    </td>
+
+                    {/* SZYBKIE AKCJE */}
+                    <td className="py-3 px-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
@@ -1187,13 +1973,13 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                           </button>
                         )}
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* FINANSOWE PODSUMOWANIE KOREKTY */}
         <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-fuchsia-50/80 via-pink-50/60 to-rose-50/40 border border-fuchsia-200 flex flex-col sm:flex-row items-center justify-between gap-4">

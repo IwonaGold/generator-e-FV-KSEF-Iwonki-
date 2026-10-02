@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { extractLotAfterPrefix, extractMhdDateAfterPrefix } from './src/utils/twoStageOcrService';
+import { parseKSeFInvoiceText } from './src/utils/ksefPdfInvoiceParser';
 
 dotenv.config();
 
@@ -352,41 +353,15 @@ app.post('/api/parse-invoice-pdf', async (req: Request, res: Response) => {
       rawText = data.text || '';
     }
 
-    // Ekstrakcja wyrażeniami regularnymi z tekstu PDF
-    let extractedKsefNumber = '';
-    const ksefRegexStrict = /\b([1-9]\d{9}-20[2-9]\d{5}-[0-9A-Fa-f]{6}-?[0-9A-Fa-f]{6}-[0-9A-Fa-f]{2})\b/;
-    const ksefRegexNamed = /(?:ksef|nr\s*ksef|id\s*ksef|numer\s*ksef|referencyjny)[:\s]*([0-9A-Za-z-]{32,40})/i;
-    const matchStrict = rawText.match(ksefRegexStrict);
-    if (matchStrict) {
-      extractedKsefNumber = matchStrict[1].trim();
-    } else {
-      const matchNamed = rawText.match(ksefRegexNamed);
-      if (matchNamed) {
-        extractedKsefNumber = matchNamed[1].trim();
-      }
+    // 1. DETERMINISTYCZNY I BŁYSKAWICZNY PARSER KSEF/wFirma
+    const deterministic = parseKSeFInvoiceText(rawText);
+
+    // Jeśli odczytano pozycje towarowe lub kontrahenta i numer KSeF, natychmiast zwracamy pełen wynik
+    if (deterministic.items && deterministic.items.length > 0 && deterministic.buyer?.nip) {
+      return res.json(deterministic);
     }
 
-    let invoiceNumber = '';
-    const invNoMatch =
-      rawText.match(/(?:faktura\s*(?:vat)?\s*(?:nr|numer)?|nr\s*faktury)[:\s]*([0-9a-zA-Z_\/\-]+)/i) ||
-      rawText.match(/\b(\d{1,4}\/202[5-9]\/(?:KSEF|VAT|FV|FA))\b/i);
-    if (invNoMatch) {
-      invoiceNumber = invNoMatch[1].trim();
-    }
-
-    let issueDate = '';
-    const dateMatch = rawText.match(/(?:data\s*wystawienia|wystawiono)[:\s]*(\d{4}[-./]\d{2}[-./]\d{2}|\d{2}[-./]\d{2}[-./]\d{4})/i);
-    if (dateMatch) {
-      const rawD = dateMatch[1].replace(/[./]/g, '-');
-      if (/^\d{2}-\d{2}-\d{4}$/.test(rawD)) {
-        const [d, m, y] = rawD.split('-');
-        issueDate = `${y}-${m}-${d}`;
-      } else {
-        issueDate = rawD;
-      }
-    }
-
-    // Próba inteligentnej analizy Gemini 2.5 Flash dla pełnej tabeli pozycji i danych kontrahenta
+    // 2. Fallback: Próba inteligentnej analizy Gemini 2.5 Flash dla nietypowych lub zrastrowanych skanów
     const apiKey = process.env.GEMINI_API_KEY;
     if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
       try {
@@ -441,39 +416,31 @@ Zwróć wynik jako czysty obiekt JSON.`;
         });
 
         const parsed = JSON.parse(response.text || '{}');
-        const finalKsef = parsed.ksefNumber || extractedKsefNumber;
+        const finalKsef = parsed.ksefNumber || deterministic.ksefNumber;
 
         return res.json({
           success: true,
           method: 'gemini-pdf',
           ksefNumber: finalKsef || '',
           hasKsefNumber: Boolean(finalKsef && finalKsef.length >= 30),
-          invoiceNumber: parsed.invoiceNumber || invoiceNumber || 'FAKTURA',
-          issueDate: parsed.issueDate || issueDate || new Date().toISOString().slice(0, 10),
-          buyer: parsed.buyer || null,
-          seller: parsed.seller || null,
-          thirdParty: parsed.thirdParty || null,
-          items: Array.isArray(parsed.items) ? parsed.items : [],
-          totalGross: parsed.totalGross || 0,
-          totalNet: parsed.totalNet || 0,
+          invoiceNumber: parsed.invoiceNumber || deterministic.invoiceNumber || 'FAKTURA',
+          issueDate: parsed.issueDate || deterministic.issueDate || new Date().toISOString().slice(0, 10),
+          buyer: parsed.buyer || deterministic.buyer,
+          seller: parsed.seller || deterministic.seller,
+          thirdParty: parsed.thirdParty || deterministic.thirdParty,
+          items: Array.isArray(parsed.items) && parsed.items.length > 0 ? parsed.items : deterministic.items,
+          totalGross: parsed.totalGross || deterministic.totalGross || 0,
+          totalNet: parsed.totalNet || deterministic.totalNet || 0,
           currency: parsed.currency || 'PLN',
           rawText: rawText.slice(0, 500),
         });
       } catch (geminiErr) {
-        console.warn('Błąd analizy Gemini PDF dla faktury, fallback do tekstu:', geminiErr);
+        console.warn('Błąd analizy Gemini PDF dla faktury, fallback do parsera deterministycznego:', geminiErr);
       }
     }
 
-    // Fallback gdy brak Gemini lub błąd: zwróć odczytane pola tekstowe
-    return res.json({
-      success: true,
-      method: 'regex-text',
-      ksefNumber: extractedKsefNumber,
-      hasKsefNumber: Boolean(extractedKsefNumber && extractedKsefNumber.length >= 30),
-      invoiceNumber: invoiceNumber || 'FAKTURA',
-      issueDate: issueDate || new Date().toISOString().slice(0, 10),
-      rawText,
-    });
+    // 3. Ostateczny zwrot z parsera deterministycznego
+    return res.json(deterministic);
   } catch (error: any) {
     console.error('Błąd parsowania PDF faktury:', error);
     return res.status(500).json({ error: error.message || 'Błąd odczytu pliku PDF' });

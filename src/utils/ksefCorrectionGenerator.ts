@@ -27,6 +27,7 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
     dueDate,
     orderNumber,
     orderDate,
+    correctionMode,
   } = data;
 
   const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -43,10 +44,11 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
   const modifiedItems = items.filter((it) => it.isModified);
   const itemsToProcess = modifiedItems.length > 0 ? modifiedItems : items;
 
-  // Jeśli wybrano korektę formalną (TypKorekty: 2 - wyłącznie dane podatnika bez wpływu na kwoty)
-  const isFormalCorrection = typKorekty === '2';
+  // Typ korekty
+  const isFormalCorrection = typKorekty === '2' || correctionMode === 'formal';
+  const isBulkCorrection = typKorekty === '3' || correctionMode === 'period_bulk';
 
-  if (!isFormalCorrection) {
+  if (!isFormalCorrection && !isBulkCorrection) {
     itemsToProcess.forEach((item) => {
       const dNet = Math.round((item.correctedNetTotal - item.originalNetTotal) * 100) / 100;
       const dVat = Math.round((item.correctedVatTotal - item.originalVatTotal) * 100) / 100;
@@ -77,53 +79,48 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
     deltaNetZw = Math.round(deltaNetZw * 100) / 100;
   }
 
-  const totalDeltaNet = isFormalCorrection ? 0 : Math.round((deltaNet23 + deltaNet8 + deltaNet5 + deltaNet0 + deltaNetZw) * 100) / 100;
-  const totalDeltaVat = isFormalCorrection ? 0 : Math.round((deltaVat23 + deltaVat8 + deltaVat5) * 100) / 100;
-  const totalDeltaGross = isFormalCorrection ? 0 : Math.round((totalDeltaNet + totalDeltaVat) * 100) / 100;
-
-  // Budowa wierszy <FaWiersz> (zgodnie ze schematem FA(3) dla korekt):
-  // 1. Wiersz ze statusem <StanPrzed>1</StanPrzed> (stan pierwotny)
-  // 2. Wiersz ze stanem nowym (po korekcie)
-  let rowCounter = 1;
-  const faWierszeXmlParts: string[] = [];
-
-  itemsToProcess.forEach((item) => {
-    let vatVal = item.vatRate.replace('%', '');
-    if (vatVal === '0') vatVal = '0 KR';
-
-    const cleanName = cleanProductName(item.name) || item.name.trim();
-    const gtinTag = item.gtin ? `\n            <GTIN>${cleanNumeric(item.gtin)}</GTIN>` : '';
-    const unitStr = (item.unit || 'szt.').trim();
-
-    // 1. Wiersz StanPrzed (stan przed korektą)
-    faWierszeXmlParts.push(`        <FaWiersz>
-            <NrWierszaFa>${rowCounter++}</NrWierszaFa>
-            <P_7>${escapeXml(cleanName)}</P_7>${gtinTag}
-            <P_8A>${escapeXml(unitStr)}</P_8A>
-            <P_8B>${item.originalQuantity}</P_8B>
-            <P_9A>${item.originalNetPrice.toFixed(2)}</P_9A>
-            <P_11>${item.originalNetTotal.toFixed(2)}</P_11>
-            <P_12>${vatVal}</P_12>
-            <StanPrzed>1</StanPrzed>
-        </FaWiersz>`);
-
-    // 2. Wiersz StanPo (nowy stan po korekcie)
-    faWierszeXmlParts.push(`        <FaWiersz>
-            <NrWierszaFa>${rowCounter++}</NrWierszaFa>
-            <P_7>${escapeXml(cleanName)}</P_7>${gtinTag}
-            <P_8A>${escapeXml(unitStr)}</P_8A>
-            <P_8B>${item.correctedQuantity}</P_8B>
-            <P_9A>${item.correctedNetPrice.toFixed(2)}</P_9A>
-            <P_11>${item.correctedNetTotal.toFixed(2)}</P_11>
-            <P_12>${vatVal}</P_12>
-        </FaWiersz>`);
-  });
-
-  const faWierszeXml = faWierszeXmlParts.join('\n');
-
-  // Podsumowanie stawek podatku VAT (kwoty różnicowe P_13_x i P_14_x)
+  // W przypadku korekty formalnej sumy różnicowe wynoszą ściśle 0.00 PLN
+  // W przypadku korekty zbiorczej z rabatem używamy wartości rabatu
+  let totalDeltaNet = 0;
+  let totalDeltaVat = 0;
+  let totalDeltaGross = 0;
   let vatSummaryXml = '';
-  if (!isFormalCorrection) {
+  let faWierszeXml = '';
+
+  if (isFormalCorrection) {
+    totalDeltaNet = 0;
+    totalDeltaVat = 0;
+    totalDeltaGross = 0;
+    vatSummaryXml = '';
+    faWierszeXml = ''; // W FA(3) FaWiersz minOccurs="0" - przy korekcie formalnej pozycje są pomijane
+  } else if (isBulkCorrection && data.bulkDiscount) {
+    const bd = data.bulkDiscount;
+    totalDeltaNet = bd.calculatedNetDelta;
+    totalDeltaVat = bd.calculatedVatDelta;
+    totalDeltaGross = bd.calculatedGrossDelta;
+
+    const rateClean = bd.vatRate.replace('%', '');
+    if (rateClean === '23') {
+      vatSummaryXml = `\n        <P_13_1>${bd.calculatedNetDelta.toFixed(2)}</P_13_1>\n        <P_14_1>${bd.calculatedVatDelta.toFixed(2)}</P_14_1>`;
+    } else {
+      vatSummaryXml = `\n        <P_13_2>${bd.calculatedNetDelta.toFixed(2)}</P_13_2>\n        <P_14_2>${bd.calculatedVatDelta.toFixed(2)}</P_14_2>`;
+    }
+
+    const discountDesc = bd.discountDescription || `Rabat potransakcyjny za okres ${data.okresFaKorygowanej || ''}`;
+    faWierszeXml = `        <FaWiersz>
+            <NrWierszaFa>1</NrWierszaFa>
+            <P_7>${escapeXml(discountDesc)}</P_7>
+            <P_8A>usł.</P_8A>
+            <P_8B>1</P_8B>
+            <P_9A>${bd.calculatedNetDelta.toFixed(2)}</P_9A>
+            <P_11>${bd.calculatedNetDelta.toFixed(2)}</P_11>
+            <P_12>${rateClean}</P_12>
+        </FaWiersz>`;
+  } else {
+    totalDeltaNet = Math.round((deltaNet23 + deltaNet8 + deltaNet5 + deltaNet0 + deltaNetZw) * 100) / 100;
+    totalDeltaVat = Math.round((deltaVat23 + deltaVat8 + deltaVat5) * 100) / 100;
+    totalDeltaGross = Math.round((totalDeltaNet + totalDeltaVat) * 100) / 100;
+
     if (deltaNet23 !== 0 || deltaVat23 !== 0) {
       vatSummaryXml += `\n        <P_13_1>${deltaNet23.toFixed(2)}</P_13_1>\n        <P_14_1>${deltaVat23.toFixed(2)}</P_14_1>`;
     }
@@ -139,24 +136,72 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
     if (deltaNetZw !== 0) {
       vatSummaryXml += `\n        <P_13_7>${deltaNetZw.toFixed(2)}</P_13_7>`;
     }
+
+    let rowCounter = 1;
+    const faWierszeXmlParts: string[] = [];
+    itemsToProcess.forEach((item) => {
+      let vatVal = item.vatRate.replace('%', '');
+      if (vatVal === '0') vatVal = '0 KR';
+
+      const cleanName = cleanProductName(item.name) || item.name.trim();
+      const gtinTag = item.gtin ? `\n            <GTIN>${cleanNumeric(item.gtin)}</GTIN>` : '';
+      const unitStr = (item.unit || 'szt.').trim();
+
+      // 1. Wiersz StanPrzed (stan przed korektą)
+      faWierszeXmlParts.push(`        <FaWiersz>
+            <NrWierszaFa>${rowCounter++}</NrWierszaFa>
+            <P_7>${escapeXml(cleanName)}</P_7>${gtinTag}
+            <P_8A>${escapeXml(unitStr)}</P_8A>
+            <P_8B>${item.originalQuantity}</P_8B>
+            <P_9A>${item.originalNetPrice.toFixed(2)}</P_9A>
+            <P_11>${item.originalNetTotal.toFixed(2)}</P_11>
+            <P_12>${vatVal}</P_12>
+            <StanPrzed>1</StanPrzed>
+        </FaWiersz>`);
+
+      // 2. Wiersz StanPo (nowy stan po korekcie)
+      faWierszeXmlParts.push(`        <FaWiersz>
+            <NrWierszaFa>${rowCounter++}</NrWierszaFa>
+            <P_7>${escapeXml(cleanName)}</P_7>${gtinTag}
+            <P_8A>${escapeXml(unitStr)}</P_8A>
+            <P_8B>${item.correctedQuantity}</P_8B>
+            <P_9A>${item.correctedNetPrice.toFixed(2)}</P_9A>
+            <P_11>${item.correctedNetTotal.toFixed(2)}</P_11>
+            <P_12>${vatVal}</P_12>
+        </FaWiersz>`);
+    });
+    faWierszeXml = faWierszeXmlParts.join('\n');
   }
 
-  // Węzeł DaneFaKorygowanej
-  let ksefTag = '<NrKSeFN>1</NrKSeFN>';
-  const cleanKsef = (originalKsefNumber || '').trim().replace(/\s+/g, '');
-  if (hasOriginalKsefNumber && cleanKsef) {
-    ksefTag = `<NrKSeF>1</NrKSeF>\n                <NrKSeFFaKorygowanej>${escapeXml(cleanKsef)}</NrKSeFFaKorygowanej>`;
-  }
-
+  // Węzeł DaneFaKorygowanej (obsługa pojedynczej lub wielu faktur korygowanych)
   const okresXml = data.okresFaKorygowanej?.trim()
     ? `\n        <OkresFaKorygowanej>${escapeXml(data.okresFaKorygowanej.trim())}</OkresFaKorygowanej>`
     : '';
 
-  const daneFaKorygowanejXml = `        <DaneFaKorygowanej>
-            <DataWystFaKorygowanej>${originalInvoiceDate}</DataWystFaKorygowanej>
-            <NrFaKorygowanej>${escapeXml(originalInvoiceNumber)}</NrFaKorygowanej>
-            ${ksefTag}
-        </DaneFaKorygowanej>${okresXml}`;
+  const invoicesToCorrect = (data.correctedInvoices && data.correctedInvoices.length > 0)
+    ? data.correctedInvoices
+    : [{
+        id: 'orig',
+        invoiceNumber: originalInvoiceNumber,
+        invoiceDate: originalInvoiceDate,
+        hasKsefNumber: hasOriginalKsefNumber,
+        ksefNumber: originalKsefNumber,
+        netTotal: 0,
+        grossTotal: 0,
+      }];
+
+  const daneFaKorygowanejXml = invoicesToCorrect.map((inv) => {
+    const cleanKsef = (inv.ksefNumber || '').trim().replace(/\s+/g, '');
+    const kTag = (inv.hasKsefNumber && cleanKsef)
+      ? `<NrKSeF>1</NrKSeF>\n                <NrKSeFFaKorygowanej>${escapeXml(cleanKsef)}</NrKSeFFaKorygowanej>`
+      : '<NrKSeFN>1</NrKSeFN>';
+
+    return `        <DaneFaKorygowanej>
+            <DataWystFaKorygowanej>${inv.invoiceDate || issueDate}</DataWystFaKorygowanej>
+            <NrFaKorygowanej>${escapeXml(inv.invoiceNumber)}</NrFaKorygowanej>
+            ${kTag}
+        </DaneFaKorygowanej>`;
+  }).join('\n') + okresXml;
 
   // Podmiot 3 (Odbiorca / Apteka)
   let podmiot3Xml = '';

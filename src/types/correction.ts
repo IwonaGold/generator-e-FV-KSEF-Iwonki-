@@ -36,16 +36,64 @@ export interface CorrectionItem {
 
 export type CorrectionMode = 'value' | 'formal' | 'zero_nip' | 'period_bulk';
 
+export interface CorrectedInvoiceReference {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  hasKsefNumber: boolean;
+  ksefNumber?: string;
+  netTotal: number;
+  grossTotal: number;
+  fileName?: string;
+}
+
+export type FormalCorrectionField =
+  | 'buyer_name'
+  | 'buyer_address'
+  | 'third_party'
+  | 'delivery_date'
+  | 'order_number'
+  | 'bank_account'
+  | 'other';
+
+export interface FormalCorrectionEntry {
+  field: FormalCorrectionField;
+  fieldName: string;
+  originalValue: string;
+  correctedValue: string;
+  isActive: boolean;
+}
+
+export interface BulkDiscountConfig {
+  discountType: 'percentage' | 'amount';
+  percentageValue: number; // np. 5 dla 5%
+  amountNetValue: number; // np. 1000.00
+  vatRate: '8%' | '23%';
+  calculatedNetDelta: number; // ujemna wartość np. -1250.00
+  calculatedVatDelta: number; // ujemna wartość np. -100.00
+  calculatedGrossDelta: number; // ujemna wartość np. -1350.00
+  discountDescription: string;
+}
+
 export interface KSeFCorrectionData {
   correctionNumber: string; // np. KOR-1/10/2026
   issueDate: string; // YYYY-MM-DD
   issuePlace: string;
   
-  // Dane faktury korygowanej
+  // Dane faktury korygowanej (pojedynczej)
   originalInvoiceNumber: string;
   originalInvoiceDate: string;
   hasOriginalKsefNumber: boolean;
   originalKsefNumber?: string;
+
+  // Lista faktur korygowanych (dla korekty zbiorczej - TypKorekty: 3)
+  correctedInvoices?: CorrectedInvoiceReference[];
+
+  // Dane błędu formalnego (TypKorekty: 2)
+  formalCorrections?: FormalCorrectionEntry[];
+
+  // Konfiguracja rabatu zbiorczego (TypKorekty: 3)
+  bulkDiscount?: BulkDiscountConfig;
 
   // Przyczyna korekty
   reasonCategory: string;
@@ -75,6 +123,7 @@ export interface KSeFCorrectionData {
   currency: string;
   paymentMethod: string;
   dueDate: string;
+  deliveryDate?: string;
   orderNumber?: string;
   orderDate?: string;
 }
