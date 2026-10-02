@@ -41,7 +41,7 @@ import { OrderHistoryView } from './components/OrderHistoryView';
 import { ArchivedOrder } from './types/ordersHistory';
 import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
 
-export const EMPTY_BUYER: EntityDetails = {
+const EMPTY_BUYER: EntityDetails = {
   nip: '',
   name: '',
   countryCode: 'PL',
