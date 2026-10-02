@@ -434,6 +434,13 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
     if (order.items && order.items.length > 0) {
       const corrItems = convertInvoiceItemsToCorrectionItems(order.items);
+      if (correctionMode === 'zero_nip') {
+        corrItems.forEach((it) => {
+          it.correctedQuantity = 0;
+          it.correctedNetPrice = 0;
+          recalculateItemDeltas(it);
+        });
+      }
       setItems(corrItems);
     }
 
@@ -524,6 +531,13 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
       if (Array.isArray(data.items) && data.items.length > 0) {
         const corrItems = convertInvoiceItemsToCorrectionItems(data.items);
+        if (correctionMode === 'zero_nip') {
+          corrItems.forEach((it) => {
+            it.correctedQuantity = 0;
+            it.correctedNetPrice = 0;
+            recalculateItemDeltas(it);
+          });
+        }
         setItems(corrItems);
       }
 
@@ -802,6 +816,13 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         setCorrectionNumber(`KOR-${parsed.invoiceNumber.replace('/KSEF', '')}`);
 
         const corrItems = convertInvoiceItemsToCorrectionItems(parsed.items);
+        if (correctionMode === 'zero_nip') {
+          corrItems.forEach((it) => {
+            it.correctedQuantity = 0;
+            it.correctedNetPrice = 0;
+            recalculateItemDeltas(it);
+          });
+        }
         setItems(corrItems);
 
         setNotification(`Pomyślnie wczytano plik XML faktury ${parsed.invoiceNumber} (${corrItems.length} pozycji).`);
@@ -824,20 +845,46 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       setTypKorekty('1');
       setReasonCategory('Zwrot towaru przez odbiorcę (uszkodzenie w transporcie / reklamacja)');
       setReasonDescription('Zwrot części towaru przez odbiorcę');
+      if (correctionMode === 'zero_nip') {
+        setItems((prev) =>
+          prev.map((it) => {
+            const updated = {
+              ...it,
+              correctedQuantity: it.originalQuantity,
+              correctedNetPrice: it.originalNetPrice,
+            };
+            recalculateItemDeltas(updated);
+            return updated;
+          })
+        );
+      }
     } else if (mode === 'formal') {
       setTypKorekty('2');
       setReasonCategory('Korekta formalna – błąd w danych adresowych bez wpływu na kwoty');
       setReasonDescription('Korekta danych adresowych nabywcy na fakturze pierwotnej');
+      if (correctionMode === 'zero_nip') {
+        setItems((prev) =>
+          prev.map((it) => {
+            const updated = {
+              ...it,
+              correctedQuantity: it.originalQuantity,
+              correctedNetPrice: it.originalNetPrice,
+            };
+            recalculateItemDeltas(updated);
+            return updated;
+          })
+        );
+      }
     } else if (mode === 'zero_nip') {
       setTypKorekty('1');
       setReasonCategory('Błędny NIP nabywcy – wyzerowanie do zera (procedura KSeF)');
       setReasonDescription(
         'Wyzerowanie transakcji do 0 z powodu błędnego NIP nabywcy. Nowa faktura z poprawnym NIP zostanie wystawiona odrębnie.'
       );
-      // Zerujemy wszystkie pozycje
+      // Zerujemy wszystkie pozycje: ilości do 0 oraz ceny jednostkowe do 0 zł
       setItems((prev) =>
         prev.map((it) => {
-          const updated = { ...it, correctedQuantity: 0 };
+          const updated = { ...it, correctedQuantity: 0, correctedNetPrice: 0 };
           recalculateItemDeltas(updated);
           return updated;
         })
@@ -992,6 +1039,13 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   };
 
   const handleAddItem = () => {
+    const isZeroNip = correctionMode === 'zero_nip';
+    const initQty = isZeroNip ? 0 : 1;
+    const initPrice = isZeroNip ? 0 : 100;
+    const initNet = Math.round(initQty * initPrice * 100) / 100;
+    const initVat = Math.round(initNet * 0.08 * 100) / 100;
+    const initGross = Math.round((initNet + initVat) * 100) / 100;
+
     const newItem: CorrectionItem = {
       id: `corr-new-${Date.now()}`,
       originalRowNumber: items.length + 1,
@@ -1005,15 +1059,15 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       originalNetTotal: 0,
       originalVatTotal: 0,
       originalGrossTotal: 0,
-      correctedQuantity: 1,
-      correctedNetPrice: 100,
-      correctedNetTotal: 100,
-      correctedVatTotal: 8,
-      correctedGrossTotal: 108,
-      quantityDelta: 1,
-      netDelta: 100,
-      vatDelta: 8,
-      grossDelta: 108,
+      correctedQuantity: initQty,
+      correctedNetPrice: initPrice,
+      correctedNetTotal: initNet,
+      correctedVatTotal: initVat,
+      correctedGrossTotal: initGross,
+      quantityDelta: initQty,
+      netDelta: initNet,
+      vatDelta: initVat,
+      grossDelta: initGross,
       isModified: true,
       batchNumber: '',
       expiryDate: '',
@@ -1735,7 +1789,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-600 leading-snug">
-              Wymóg KSeF: wyzerowanie do zera całej faktury z błędnym NIP-em, a następnie wystawienie nowej faktury pierwotnej.
+              Wymóg KSeF: wyzerowanie do zera całej faktury z błędnym NIP-em (ilości = 0, ceny jednostkowe = 0 zł), a następnie wystawienie nowej faktury pierwotnej.
             </p>
           </button>
 
@@ -2280,7 +2334,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                   type="button"
                   onClick={handleZeroOutAllItems}
                   className="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer"
-                  title="Procedura do zera: ustawia ilość = 0 dla wszystkich pozycji"
+                  title="Procedura do zera: ustawia ilość = 0 oraz cenę jednostkową = 0 zł dla wszystkich pozycji"
                 >
                   Wyzeruj całość do 0
                 </button>
