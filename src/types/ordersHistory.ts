@@ -41,4 +41,12 @@ export interface ArchivedOrder {
 export type OrderChainFilter = 'Wszystkie' | 'DOZ' | 'Dr. Max' | 'Super-Pharm' | 'Gemini' | 'Inne';
 export type OrderStatusFilter = 'all' | 'delivered' | 'pending';
 export type OrderPaymentFilter = 'all' | 'paid' | 'pending' | 'overdue';
+export type OrderDatePeriodFilter =
+  | 'all'
+  | 'this_month'
+  | 'last_month'
+  | 'this_quarter'
+  | 'last_quarter'
+  | 'this_year'
+  | 'custom';
 

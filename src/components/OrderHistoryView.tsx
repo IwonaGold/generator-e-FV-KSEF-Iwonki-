@@ -27,12 +27,23 @@ import {
   CreditCard,
   AlertCircle,
 } from 'lucide-react';
-import { ArchivedOrder, OrderChainFilter, OrderStatusFilter, OrderPaymentFilter } from '../types/ordersHistory';
+import {
+  ArchivedOrder,
+  OrderChainFilter,
+  OrderStatusFilter,
+  OrderPaymentFilter,
+  OrderDatePeriodFilter,
+} from '../types/ordersHistory';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
 import { parseKSeFXMLString, extractInvoiceNumberFromXml } from '../utils/ksefXmlParser';
 import { detectPharmacyChain } from '../utils/orderParser';
 import { exportOrdersToCsv } from '../utils/ordersExport';
+import {
+  getDateRangeForPeriod,
+  isOrderInPeriod,
+  calculatePeriodCounts,
+} from '../utils/orderPeriodFilter';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
@@ -50,6 +61,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const [chainFilter, setChainFilter] = useState<OrderChainFilter>('Wszystkie');
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
   const [paymentFilter, setPaymentFilter] = useState<OrderPaymentFilter>('all');
+  const [periodFilter, setPeriodFilter] = useState<OrderDatePeriodFilter>('all');
+  const [customDateFrom, setCustomDateFrom] = useState<string>('');
+  const [customDateTo, setCustomDateTo] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -109,6 +123,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return counts;
   }, [orders]);
 
+  // Obliczenia liczników dla okresów
+  const periodCounts = useMemo(() => {
+    return calculatePeriodCounts(orders);
+  }, [orders]);
+
+  // Informacja o aktualnie wybranym zakresie dat
+  const activePeriodInfo = useMemo(() => {
+    return getDateRangeForPeriod(periodFilter, customDateFrom, customDateTo);
+  }, [periodFilter, customDateFrom, customDateTo]);
+
   // Filtrowanie listy zamówień
   const filteredOrders = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -136,6 +160,14 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         if (paymentFilter === 'overdue' && !isOverdue) return false;
       }
 
+      // 2c. Filtr okresu / daty wystawienia
+      if (periodFilter !== 'all') {
+        const orderDate = ord.issueDate || ord.createdAt;
+        if (!isOrderInPeriod(orderDate, periodFilter, customDateFrom, customDateTo)) {
+          return false;
+        }
+      }
+
       // 3. Wyszukiwarka
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
@@ -156,7 +188,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
       return true;
     });
-  }, [orders, chainFilter, statusFilter, paymentFilter, searchQuery]);
+  }, [orders, chainFilter, statusFilter, paymentFilter, periodFilter, customDateFrom, customDateTo, searchQuery]);
 
   // Obsługa zmiany checkboxa "Towar dotarł do odbiorcy"
   const handleToggleDelivered = async (order: ArchivedOrder) => {
@@ -327,7 +359,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
   // Eksport aktualnie przefiltrowanych zamówień do CSV/Excel dla biura rachunkowego
   const handleExportCsv = () => {
-    exportOrdersToCsv(filteredOrders, 'Zestawienie_Faktur_KSeF');
+    let prefix = 'Zestawienie_Faktur_KSeF';
+    if (periodFilter === 'this_month') prefix = 'Zestawienie_Faktur_Ten_Miesiac';
+    else if (periodFilter === 'last_month') prefix = 'Zestawienie_Faktur_Poprzedni_Miesiac';
+    else if (periodFilter === 'this_quarter') prefix = 'Zestawienie_Faktur_Ten_Kwartal';
+    else if (periodFilter === 'last_quarter') prefix = 'Zestawienie_Faktur_Poprzedni_Kwartal';
+    else if (periodFilter === 'this_year') prefix = 'Zestawienie_Faktur_Ten_Rok';
+    else if (periodFilter === 'custom' && (customDateFrom || customDateTo)) {
+      prefix = `Zestawienie_Faktur_${customDateFrom || 'od-poczatku'}_${customDateTo || 'do-dzis'}`;
+    }
+    exportOrdersToCsv(filteredOrders, prefix);
   };
 
   // Pobieranie pliku XML
@@ -576,6 +617,164 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                   🚨 Po terminie ({paymentCounts.overdue})
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* FILTR OKRESU (DATA WYSTAWIENIA FAKTURY / ZAMÓWIENIA) */}
+        <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-500 font-medium text-[11px] flex items-center gap-1 shrink-0">
+              <Calendar className="w-3.5 h-3.5 text-rose-500" />
+              <span>Okres:</span>
+            </span>
+
+            <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodFilter('all');
+                  setCustomDateFrom('');
+                  setCustomDateTo('');
+                }}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Wszystkie ({periodCounts.all})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('this_month')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'this_month'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Ten miesiąc ({periodCounts.this_month})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('last_month')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'last_month'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Poprzedni miesiąc ({periodCounts.last_month})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('this_quarter')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'this_quarter'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Ten kwartał ({periodCounts.this_quarter})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('last_quarter')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'last_quarter'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Poprzedni kwartał ({periodCounts.last_quarter})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('this_year')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'this_year'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Ten rok ({periodCounts.this_year})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodFilter('custom');
+                  if (!customDateFrom && activePeriodInfo?.start) {
+                    setCustomDateFrom(activePeriodInfo.start);
+                  }
+                  if (!customDateTo && activePeriodInfo?.end) {
+                    setCustomDateTo(activePeriodInfo.end);
+                  }
+                }}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'custom'
+                    ? 'bg-slate-800 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                📅 Własny zakres
+              </button>
+            </div>
+          </div>
+
+          {/* POLA WYBORU DATY (OD - DO) I PODGLĄD AKTYWNEGO PRZEDZIAŁU */}
+          <div className="flex flex-wrap items-center gap-2">
+            {activePeriodInfo && (
+              <span className="text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-1 rounded-lg font-mono">
+                📅 {activePeriodInfo.prettyRange}
+              </span>
+            )}
+
+            <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+              <span className="text-[11px] font-semibold text-slate-500">Od:</span>
+              <input
+                type="date"
+                value={customDateFrom}
+                onChange={(e) => {
+                  setCustomDateFrom(e.target.value);
+                  setPeriodFilter('custom');
+                }}
+                className="px-1.5 py-0.5 text-xs font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-800 cursor-pointer"
+                title="Wybierz datę początkową (Od)"
+              />
+
+              <span className="text-[11px] font-semibold text-slate-500 ml-1">Do:</span>
+              <input
+                type="date"
+                value={customDateTo}
+                onChange={(e) => {
+                  setCustomDateTo(e.target.value);
+                  setPeriodFilter('custom');
+                }}
+                className="px-1.5 py-0.5 text-xs font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-800 cursor-pointer"
+                title="Wybierz datę końcową (Do)"
+              />
+
+              {(periodFilter !== 'all' || customDateFrom || customDateTo) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeriodFilter('all');
+                    setCustomDateFrom('');
+                    setCustomDateTo('');
+                  }}
+                  className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Wyczyść filtr daty i pokaż wszystkie okresy"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
