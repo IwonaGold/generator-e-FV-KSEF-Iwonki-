@@ -43,9 +43,6 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
               🧾
             </div>
             <div className="pr-12">
-              <div className="text-[10px] font-bold tracking-wider text-fuchsia-600 uppercase mb-0.5">
-                Krok 1 / Moduł Główny
-              </div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
                 1. WYGENERUJ FAKTURĘ XML
               </h2>
@@ -82,9 +79,6 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
               📝
             </div>
             <div className="pr-12">
-              <div className="text-[10px] font-bold tracking-wider text-fuchsia-600 uppercase mb-0.5">
-                KSeF Rodzaj: KOR
-              </div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
                 2. WYGENERUJ KOREKTĘ FAKTURY XML
               </h2>
@@ -126,9 +120,6 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
               📚
             </div>
             <div className="pr-12">
-              <div className="text-[10px] font-bold tracking-wider text-rose-600 uppercase mb-0.5">
-                Centralne Archiwum
-              </div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
                 3. HISTORIA ZAMÓWIEŃ SIECIOWYCH
               </h2>
