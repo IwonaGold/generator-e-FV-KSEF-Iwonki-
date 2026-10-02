@@ -28,7 +28,7 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
           title="Wróć do strony startowej z dwoma kafelkami"
         >
           <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-rose-600 group-hover:-translate-x-0.5 transition-all" />
-          <span>← Wróć do menu głównego</span>
+          <span>Wróć do menu głównego</span>
         </button>
 
         <div className="flex items-center gap-2">
