@@ -83,7 +83,7 @@ export const ModuleTilesNav: React.FC<ModuleTilesNavProps> = ({
                 2. WYGENERUJ KOREKTĘ FAKTURY XML
               </h2>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                Zaczytaj fakturę pierwotną z pliku PDF, XML lub z historii, podaj przyczynę (zwrot, rabat, ilość) i wygeneruj oficjalną e-korektę KSeF.
+                Zaczytaj fakturę pierwotną z pliku PDF, XML lub z historii, podaj przyczynę i wygeneruj oficjalną e-korektę KSeF.
               </p>
             </div>
           </div>
