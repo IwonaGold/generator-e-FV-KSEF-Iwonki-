@@ -216,6 +216,8 @@ export function parseKSeFInvoiceText(rawText: string): ParsedInvoicePdfResult {
       quantity,
       netPrice,
       vatRate: (rawVat as any) || '8%',
+      batchNumber: '',
+      expiryDate: '',
     });
   }
 
@@ -232,6 +234,8 @@ export function parseKSeFInvoiceText(rawText: string): ParsedInvoicePdfResult {
         unit: lMatch[5].trim().toUpperCase(),
         vatRate: (lMatch[6].trim() as any) || '8%',
         gtin: gtinMap[lMatch[1]] || '',
+        batchNumber: '',
+        expiryDate: '',
       });
     }
   }
