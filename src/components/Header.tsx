@@ -115,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="my-1 border-t border-slate-100" />
 
                 <a
-                  href="https://ksef.podatki.gov.pl/web/login"
+                  href="https://ap.ksef.mf.gov.pl/web/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full text-left p-2.5 rounded-xl hover:bg-blue-50 transition-colors flex items-start gap-2.5 cursor-pointer"
