@@ -50,22 +50,58 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
 
   if (!isFormalCorrection && !isBulkCorrection) {
     itemsToProcess.forEach((item) => {
-      const dNet = Math.round((item.correctedNetTotal - item.originalNetTotal) * 100) / 100;
-      const dVat = Math.round((item.correctedVatTotal - item.originalVatTotal) * 100) / 100;
+      const origVat = item.vatRate;
+      const corrVat = item.correctedVatRate || item.vatRate;
 
-      if (item.vatRate === '23%') {
-        deltaNet23 += dNet;
-        deltaVat23 += dVat;
-      } else if (item.vatRate === '8%') {
-        deltaNet8 += dNet;
-        deltaVat8 += dVat;
-      } else if (item.vatRate === '5%') {
-        deltaNet5 += dNet;
-        deltaVat5 += dVat;
-      } else if (item.vatRate === '0%') {
-        deltaNet0 += dNet;
-      } else if (item.vatRate === 'zw') {
-        deltaNetZw += dNet;
+      if (origVat === corrVat) {
+        const dNet = Math.round((item.correctedNetTotal - item.originalNetTotal) * 100) / 100;
+        const dVat = Math.round((item.correctedVatTotal - item.originalVatTotal) * 100) / 100;
+
+        if (origVat === '23%') {
+          deltaNet23 += dNet;
+          deltaVat23 += dVat;
+        } else if (origVat === '8%') {
+          deltaNet8 += dNet;
+          deltaVat8 += dVat;
+        } else if (origVat === '5%') {
+          deltaNet5 += dNet;
+          deltaVat5 += dVat;
+        } else if (origVat === '0%') {
+          deltaNet0 += dNet;
+        } else if (origVat === 'zw') {
+          deltaNetZw += dNet;
+        }
+      } else {
+        // Zmiana stawki VAT na pozycji: odejmujemy stan pierwotny z poprzedniej stawki, dodajemy skorygowany stan do nowej stawki
+        if (origVat === '23%') {
+          deltaNet23 -= item.originalNetTotal;
+          deltaVat23 -= item.originalVatTotal;
+        } else if (origVat === '8%') {
+          deltaNet8 -= item.originalNetTotal;
+          deltaVat8 -= item.originalVatTotal;
+        } else if (origVat === '5%') {
+          deltaNet5 -= item.originalNetTotal;
+          deltaVat5 -= item.originalVatTotal;
+        } else if (origVat === '0%') {
+          deltaNet0 -= item.originalNetTotal;
+        } else if (origVat === 'zw') {
+          deltaNetZw -= item.originalNetTotal;
+        }
+
+        if (corrVat === '23%') {
+          deltaNet23 += item.correctedNetTotal;
+          deltaVat23 += item.correctedVatTotal;
+        } else if (corrVat === '8%') {
+          deltaNet8 += item.correctedNetTotal;
+          deltaVat8 += item.correctedVatTotal;
+        } else if (corrVat === '5%') {
+          deltaNet5 += item.correctedNetTotal;
+          deltaVat5 += item.correctedVatTotal;
+        } else if (corrVat === '0%') {
+          deltaNet0 += item.correctedNetTotal;
+        } else if (corrVat === 'zw') {
+          deltaNetZw += item.correctedNetTotal;
+        }
       }
     });
 
@@ -140,8 +176,11 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
     let rowCounter = 1;
     const faWierszeXmlParts: string[] = [];
     itemsToProcess.forEach((item) => {
-      let vatVal = item.vatRate.replace('%', '');
-      if (vatVal === '0') vatVal = '0 KR';
+      let origVatVal = item.vatRate.replace('%', '');
+      if (origVatVal === '0') origVatVal = '0 KR';
+
+      let corrVatVal = (item.correctedVatRate || item.vatRate).replace('%', '');
+      if (corrVatVal === '0') corrVatVal = '0 KR';
 
       const cleanName = cleanProductName(item.name) || item.name.trim();
       const gtinTag = item.gtin ? `\n            <GTIN>${cleanNumeric(item.gtin)}</GTIN>` : '';
@@ -155,7 +194,7 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
             <P_8B>${item.originalQuantity}</P_8B>
             <P_9A>${item.originalNetPrice.toFixed(2)}</P_9A>
             <P_11>${item.originalNetTotal.toFixed(2)}</P_11>
-            <P_12>${vatVal}</P_12>
+            <P_12>${origVatVal}</P_12>
             <StanPrzed>1</StanPrzed>
         </FaWiersz>`);
 
@@ -167,7 +206,7 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
             <P_8B>${item.correctedQuantity}</P_8B>
             <P_9A>${item.correctedNetPrice.toFixed(2)}</P_9A>
             <P_11>${item.correctedNetTotal.toFixed(2)}</P_11>
-            <P_12>${vatVal}</P_12>
+            <P_12>${corrVatVal}</P_12>
         </FaWiersz>`);
     });
     faWierszeXml = faWierszeXmlParts.join('\n');

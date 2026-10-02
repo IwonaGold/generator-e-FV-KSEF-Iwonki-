@@ -6,8 +6,9 @@ export interface CorrectionItem {
   name: string;
   gtin?: string;
   unit: string;
-  vatRate: string; // '23%', '8%', '5%', '0%', 'zw'
-  
+  vatRate: string; // '23%', '8%', '5%', '0%', 'zw' (oryginalna stawka VAT)
+  correctedVatRate?: string; // Stawka VAT po korekcie
+
   // Stan PRZED korektą
   originalQuantity: number;
   originalNetPrice: number;
@@ -32,6 +33,8 @@ export interface CorrectionItem {
   isModified: boolean;
   batchNumber?: string;
   expiryDate?: string;
+  correctedBatchNumber?: string;
+  correctedExpiryDate?: string;
 }
 
 export type CorrectionMode = 'value' | 'formal' | 'zero_nip' | 'period_bulk';
@@ -52,6 +55,8 @@ export type FormalCorrectionField =
   | 'buyer_address'
   | 'third_party'
   | 'delivery_date'
+  | 'expiry_date'
+  | 'batch_number'
   | 'order_number'
   | 'bank_account'
   | 'other';

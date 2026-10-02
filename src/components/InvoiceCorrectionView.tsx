@@ -25,6 +25,10 @@ import {
   ListPlus,
   Check,
   Sliders,
+  FileSpreadsheet,
+  Barcode,
+  Hash,
+  Tag,
 } from 'lucide-react';
 import { EntityDetails, ThirdPartyEntity, InvoiceItem, VatRate } from '../types/ksef';
 import {
@@ -35,6 +39,8 @@ import {
   CorrectedInvoiceReference,
   FormalCorrectionField,
 } from '../types/correction';
+import { PriceListItem } from '../types/priceList';
+import { parsePriceListFile, SAMPLE_XLSX_PRICE_LIST, cleanGtinValue } from '../utils/priceListParser';
 import { ArchivedOrder } from '../types/ordersHistory';
 import { DEFAULT_SELLER, PHARMACY_CHAINS } from '../utils/sampleData';
 import { generateKSeFCorrectionXML } from '../utils/ksefCorrectionGenerator';
@@ -146,6 +152,18 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       origValue: 'ZZ-1009/09/26',
       corrValue: 'ZZ-1009/09/26',
     },
+    expiry_date: {
+      active: false,
+      name: 'Data ważności (MHD) produktu / partii',
+      origValue: '2028-04-30',
+      corrValue: '2028-04-30',
+    },
+    batch_number: {
+      active: false,
+      name: 'Numer serii towaru (LOT)',
+      origValue: '25E1244',
+      corrValue: '25E1244',
+    },
     bank_account: {
       active: false,
       name: 'Rachunek bankowy do płatności',
@@ -159,6 +177,12 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       corrValue: '',
     },
   });
+
+  // Stan cennika do automatycznej korekty cen (1-kliknięciem)
+  const [priceList, setPriceList] = useState<PriceListItem[] | null>(null);
+  const [priceListFileName, setPriceListFileName] = useState<string | null>(null);
+  const [isPriceListLoading, setIsPriceListLoading] = useState<boolean>(false);
+  const priceListInputRef = useRef<HTMLInputElement>(null);
 
   // Dane bieżącej korekty
   const [correctionNumber, setCorrectionNumber] = useState<string>('KOR-01/10/2026');
@@ -367,6 +391,16 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           origValue: data.orderNumber || prev.order_number.origValue,
           corrValue: data.orderNumber || prev.order_number.corrValue,
         },
+        expiry_date: {
+          ...prev.expiry_date,
+          origValue: data.items?.[0]?.expiryDate || prev.expiry_date.origValue,
+          corrValue: data.items?.[0]?.expiryDate || prev.expiry_date.corrValue,
+        },
+        batch_number: {
+          ...prev.batch_number,
+          origValue: data.items?.[0]?.batchNumber || prev.batch_number.origValue,
+          corrValue: data.items?.[0]?.batchNumber || prev.batch_number.corrValue,
+        },
         bank_account: {
           ...prev.bank_account,
           origValue: data.bankAccount || prev.bank_account.origValue,
@@ -521,6 +555,28 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           postalCode: addr.postalCode || b.postalCode,
           city: addr.city || b.city,
         }));
+      } else if (key === 'delivery_date') {
+        setDeliveryDate(newCorrValue);
+      } else if (key === 'order_number') {
+        setOrderNumber(newCorrValue);
+      } else if (key === 'bank_account') {
+        setBankAccount(newCorrValue);
+      } else if (key === 'expiry_date') {
+        setItems((prev) =>
+          prev.map((it) => ({
+            ...it,
+            correctedExpiryDate: newCorrValue,
+            isModified: true,
+          }))
+        );
+      } else if (key === 'batch_number') {
+        setItems((prev) =>
+          prev.map((it) => ({
+            ...it,
+            correctedBatchNumber: newCorrValue,
+            isModified: true,
+          }))
+        );
       }
 
       // Automatyczna przyczyna korekty
@@ -641,8 +697,18 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     const origVat = Math.round(origNet * vatPct * 100) / 100;
     const origGross = Math.round((origNet + origVat) * 100) / 100;
 
+    const corrVatRate = item.correctedVatRate || item.vatRate;
+    const corrVatPct =
+      corrVatRate === '23%'
+        ? 0.23
+        : corrVatRate === '8%'
+        ? 0.08
+        : corrVatRate === '5%'
+        ? 0.05
+        : 0;
+
     const corrNet = Math.round(item.correctedQuantity * item.correctedNetPrice * 100) / 100;
-    const corrVat = Math.round(corrNet * vatPct * 100) / 100;
+    const corrVat = Math.round(corrNet * corrVatPct * 100) / 100;
     const corrGross = Math.round((corrNet + corrVat) * 100) / 100;
 
     item.originalNetTotal = origNet;
@@ -659,7 +725,11 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     item.grossDelta = Math.round((corrGross - origGross) * 100) / 100;
 
     item.isModified =
-      item.quantityDelta !== 0 || item.originalNetPrice !== item.correctedNetPrice;
+      item.quantityDelta !== 0 ||
+      Math.abs(item.originalNetPrice - item.correctedNetPrice) > 0.001 ||
+      (Boolean(item.correctedVatRate) && item.correctedVatRate !== item.vatRate) ||
+      (Boolean(item.correctedExpiryDate) && item.correctedExpiryDate !== item.expiryDate) ||
+      (Boolean(item.correctedBatchNumber) && item.correctedBatchNumber !== item.batchNumber);
   };
 
   const handleUpdateItemQuantity = (id: string, newQty: number) => {
@@ -688,6 +758,107 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     );
   };
 
+  const handleUpdateItemVatRate = (id: string, newVat: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === id) {
+          const updated = { ...it, correctedVatRate: newVat };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return it;
+      })
+    );
+  };
+
+  const handleUpdateItemExpiryDate = (id: string, newExp: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === id) {
+          const updated = { ...it, correctedExpiryDate: newExp };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return it;
+      })
+    );
+  };
+
+  const handleUpdateItemBatchNumber = (id: string, newBatch: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === id) {
+          const updated = { ...it, correctedBatchNumber: newBatch };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return it;
+      })
+    );
+  };
+
+  const handleUpdateItemName = (id: string, newName: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === id) {
+          const updated = { ...it, name: newName };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return it;
+      })
+    );
+  };
+
+  const handleUpdateItemGtin = (id: string, newGtin: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === id) {
+          const updated = { ...it, gtin: newGtin };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return it;
+      })
+    );
+  };
+
+  const handleAddItem = () => {
+    const newItem: CorrectionItem = {
+      id: `corr-new-${Date.now()}`,
+      originalRowNumber: items.length + 1,
+      name: 'Nowa pozycja towarowa',
+      gtin: '',
+      unit: 'SZT.',
+      vatRate: '8%',
+      correctedVatRate: '8%',
+      originalQuantity: 0,
+      originalNetPrice: 0,
+      originalNetTotal: 0,
+      originalVatTotal: 0,
+      originalGrossTotal: 0,
+      correctedQuantity: 1,
+      correctedNetPrice: 100,
+      correctedNetTotal: 100,
+      correctedVatTotal: 8,
+      correctedGrossTotal: 108,
+      quantityDelta: 1,
+      netDelta: 100,
+      vatDelta: 8,
+      grossDelta: 108,
+      isModified: true,
+      batchNumber: '',
+      expiryDate: '',
+      correctedBatchNumber: '',
+      correctedExpiryDate: '',
+    };
+    setItems((prev) => [...prev, newItem]);
+  };
+
+  const handleDeleteItem = (id: string) => {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+  };
+
   const handleApplyQuickReturn = (id: string, unitsToReturn: number) => {
     setItems((prev) =>
       prev.map((it) => {
@@ -714,6 +885,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             ...it,
             correctedQuantity: it.originalQuantity,
             correctedNetPrice: it.originalNetPrice,
+            correctedVatRate: it.vatRate,
+            correctedExpiryDate: it.expiryDate,
+            correctedBatchNumber: it.batchNumber,
           };
           recalculateItemDeltas(updated);
           return updated;
@@ -721,6 +895,102 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         return it;
       })
     );
+  };
+
+  // =========================================================================
+  // OBSŁUGA CENNIKA I KOREKTY CEN JEDNYM KLIKNIĘCIEM
+  // =========================================================================
+  const handleUploadPriceListFile = async (file: File) => {
+    if (!file) return;
+    setIsPriceListLoading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const loaded = await parsePriceListFile(buffer);
+      if (!loaded || loaded.length === 0) {
+        throw new Error('Nie znaleziono pozycji w pliku cennika.');
+      }
+      setPriceList(loaded);
+      setPriceListFileName(file.name);
+      setNotification(`✅ Wczytano cennik "${file.name}" (${loaded.length} pozycji). Kliknij "Skoryguj ceny 1-kliknięciem"!`);
+      setTimeout(() => setNotification(null), 6000);
+    } catch (err: any) {
+      alert('Błąd odczytu cennika: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsPriceListLoading(false);
+    }
+  };
+
+  const handleLoadSamplePriceList = () => {
+    setPriceList(SAMPLE_XLSX_PRICE_LIST);
+    setPriceListFileName('Cennik_Standardowy_OMNi-BiOTiC_2026.xlsx');
+    setNotification(`✅ Załadowano standardowy cennik OMNi-BiOTiC® (${SAMPLE_XLSX_PRICE_LIST.length} pozycji).`);
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  const handleApplyPriceListToOneClick = () => {
+    if (!priceList || priceList.length === 0) {
+      alert('Najpierw wgraj cennik lub załaduj standardowy cennik.');
+      return;
+    }
+
+    let updatedCount = 0;
+    let oldSum = 0;
+    let newSum = 0;
+
+    setItems((prev) =>
+      prev.map((item) => {
+        const cleanInvoiceGtin = cleanGtinValue(item.gtin);
+        const cleanInvoiceName = (item.name || '').toLowerCase().trim();
+
+        // 1. Dopasowanie po GTIN
+        let matched = priceList.find((p) => {
+          const pGtin = cleanGtinValue(p.gtin);
+          return (
+            cleanInvoiceGtin &&
+            pGtin &&
+            (cleanInvoiceGtin === pGtin || cleanInvoiceGtin.includes(pGtin) || pGtin.includes(cleanInvoiceGtin))
+          );
+        });
+
+        // 2. Dopasowanie po nazwie
+        if (!matched && cleanInvoiceName) {
+          matched = priceList.find((p) => {
+            const pName = (p.name || '').toLowerCase().trim();
+            if (pName === cleanInvoiceName) return true;
+            const itemWords = cleanInvoiceName.split(/\s+/).slice(0, 3).join(' ');
+            const pWords = pName.split(/\s+/).slice(0, 3).join(' ');
+            return itemWords.length >= 6 && (pName.includes(itemWords) || cleanInvoiceName.includes(pWords));
+          });
+        }
+
+        if (matched && matched.discountedNetPrice !== undefined) {
+          const newPrice = matched.discountedNetPrice;
+          oldSum += item.correctedQuantity * item.correctedNetPrice;
+          newSum += item.correctedQuantity * newPrice;
+
+          if (Math.abs(item.correctedNetPrice - newPrice) > 0.001) {
+            updatedCount++;
+            const updated = {
+              ...item,
+              correctedNetPrice: newPrice,
+            };
+            recalculateItemDeltas(updated);
+            return updated;
+          }
+        }
+        return item;
+      })
+    );
+
+    const diff = Math.round((newSum - oldSum) * 100) / 100;
+    if (updatedCount > 0) {
+      setNotification(
+        `✨ Skorygowano ceny dla ${updatedCount} pozycji wg cennika! Różnica: ${diff > 0 ? '+' : ''}${diff.toFixed(2)} PLN netto.`
+      );
+    } else {
+      setNotification('ℹ️ Wszystkie ceny na fakturze są już w 100% zgodne z wczytanym cennikiem!');
+    }
+    setTimeout(() => setNotification(null), 8000);
   };
 
   // Łączne sumy różnic (delty)
@@ -768,8 +1038,12 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     let deltaVat = 0;
     let deltaGross = 0;
     let modifiedCount = 0;
+    let sumOrigNet = 0;
+    let sumOrigGross = 0;
 
     items.forEach((it) => {
+      sumOrigNet += it.originalNetTotal;
+      sumOrigGross += it.originalGrossTotal;
       if (it.isModified) {
         deltaNet += it.netDelta;
         deltaVat += it.vatDelta;
@@ -783,8 +1057,8 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       deltaVat: Math.round(deltaVat * 100) / 100,
       deltaGross: Math.round(deltaGross * 100) / 100,
       modifiedCount,
-      sumOrigNet: 0,
-      sumOrigGross: 0,
+      sumOrigNet: Math.round(sumOrigNet * 100) / 100,
+      sumOrigGross: Math.round(sumOrigGross * 100) / 100,
     };
   }, [items, typKorekty, correctedInvoices, discountType, discountPercent, discountAmountNet, discountVatRate]);
 
@@ -1782,22 +2056,98 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {correctionMode !== 'zero_nip' && typKorekty === '1' && (
-              <button
-                type="button"
-                onClick={handleZeroOutAllItems}
-                className="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
-                title="Procedura do zera: ustawia ilość = 0 dla wszystkich pozycji"
-              >
-                Wyzeruj całość do 0
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-fuchsia-600 hover:bg-fuchsia-700 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Dodaj pozycję</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZeroOutAllItems}
+                  className="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                  title="Procedura do zera: ustawia ilość = 0 dla wszystkich pozycji"
+                >
+                  Wyzeruj całość do 0
+                </button>
+              </>
             )}
-            <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-1 rounded-xl border border-slate-200">
+            <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
               Zmodyfikowano pozycji: <strong className="text-fuchsia-900">{totals.modifiedCount}</strong> z {items.length}
             </div>
           </div>
         </div>
+
+        {/* MODUŁ CENNIKA: KOREKTA CEN 1-KLIKNIĘCIEM */}
+        {typKorekty === '1' && (
+          <div className="mb-4 p-3.5 bg-gradient-to-r from-purple-50 via-pink-50/50 to-fuchsia-50 rounded-xl border border-purple-200 shadow-2xs">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-purple-600" />
+                  <span className="text-xs font-bold text-purple-950">
+                    Automatyczna korekta cen z cennika (1-kliknięciem):
+                  </span>
+                  {priceList && (
+                    <span className="text-[10px] bg-purple-200 text-purple-900 px-2 py-0.5 rounded-full font-bold">
+                      {priceListFileName || 'Wczytano cennik'} ({priceList.length} poz.)
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Wgraj plik cennika (Excel .xlsx / .csv) lub użyj cennika OMNi-BiOTiC®. Jednym kliknięciem system dopasuje produkty po GTIN/Nazwie i zaktualizuje ceny netto do stawek z cennika.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={priceListInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleUploadPriceListFile(file);
+                    e.target.value = '';
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => priceListInputRef.current?.click()}
+                  disabled={isPriceListLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-900 bg-white hover:bg-purple-50 border border-purple-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                >
+                  <Upload className="w-3.5 h-3.5 text-purple-600" />
+                  <span>{isPriceListLoading ? 'Wczytywanie...' : 'Wgraj cennik (Excel/CSV)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLoadSamplePriceList}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                  title="Wczytaj oficjalny cennik hurtowy OMNi-BiOTiC 2026"
+                >
+                  <span>⭐ Cennik OMNi-BiOTiC</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleApplyPriceListToOneClick}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl transition-all cursor-pointer shadow-xs shadow-fuchsia-200"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Skoryguj ceny 1-kliknięciem wg cennika ✨</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* POZYCJE DLA KOREKTY ZBIORCZEJ */}
         {typKorekty === '3' ? (
@@ -1835,147 +2185,278 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
               W strukturze logicznej FA(3) przy korekcie danych formalnych (TypKorekty: 2) sekcja pozycji nie zawiera zmian ilości ani cen. Kwoty różnicowe w rejestrze VAT wynoszą 0.00 PLN.
             </p>
           </div>
+        ) : items.length === 0 ? (
+          /* PUSTY STAN */
+          <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-300 rounded-xl">
+            <p className="text-sm font-semibold text-slate-700">Brak pozycji na fakturze</p>
+            <p className="text-xs text-slate-500 mt-1 mb-3">
+              Wgraj plik PDF w Kroku 1 lub dodaj pierwszą pozycję ręcznie.
+            </p>
+            <button
+              type="button"
+              onClick={handleAddItem}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-fuchsia-600 hover:bg-fuchsia-700 rounded-xl transition-colors cursor-pointer"
+            >
+              + Dodaj pozycję towarową
+            </button>
+          </div>
         ) : (
           /* STANDARDOWA TABELA POZYCJI DLA TYPKOREKTY: 1 */
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
             <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
                 <tr>
-                  <th className="py-2.5 px-3">Lp.</th>
-                  <th className="py-2.5 px-3">Nazwa Produktu & GTIN</th>
-                  <th className="py-2.5 px-3 text-center bg-slate-100/70 border-x border-slate-200">
-                    Stan Przed (FV Pierwotna)
+                  <th className="py-2.5 px-2.5 w-10 text-center">Lp.</th>
+                  <th className="py-2.5 px-3 min-w-[140px]">
+                    <div className="flex items-center gap-1">
+                      <Barcode className="w-3.5 h-3.5 text-slate-400" />
+                      <span>GTIN</span>
+                    </div>
                   </th>
-                  <th className="py-2.5 px-3 text-center bg-fuchsia-50/70 border-r border-fuchsia-200">
-                    Nowy Stan Po Korekcie
+                  <th className="py-2.5 px-3 min-w-[200px]">Nazwa towaru lub usługi</th>
+                  <th className="py-2.5 px-3 min-w-[130px] text-center bg-slate-100/50 border-x border-slate-200">
+                    Ilość (Przed → Po)
                   </th>
-                  <th className="py-2.5 px-3 text-right">Różnica (Korekta)</th>
-                  <th className="py-2.5 px-3 text-center">Szybkie akcje</th>
+                  <th className="py-2.5 px-3 min-w-[160px] bg-emerald-50/50 text-emerald-950 border-r border-emerald-100">
+                    <div className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Data ważności / Seria</span>
+                    </div>
+                  </th>
+                  <th className="py-2.5 px-3 min-w-[140px] text-center bg-fuchsia-50/50 border-r border-fuchsia-200">
+                    Cena jedn. netto (Przed → Po)
+                  </th>
+                  <th className="py-2.5 px-2.5 w-24 text-center">Stawka VAT</th>
+                  <th className="py-2.5 px-3 min-w-[150px] text-right">Wartość Netto / Brutto & Δ</th>
+                  <th className="py-2.5 px-2.5 text-center w-24">Akcje</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {items.map((it, idx) => (
-                  <tr
-                    key={it.id}
-                    className={`hover:bg-slate-50/80 transition-colors ${
-                      it.isModified ? 'bg-fuchsia-50/20' : ''
-                    }`}
-                  >
-                    <td className="py-3 px-3 font-mono text-slate-400 font-semibold">{idx + 1}</td>
-                    <td className="py-3 px-3 max-w-xs">
-                      <div className="font-bold text-slate-900">{it.name}</div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5">
-                        {it.gtin && <span>GTIN: {it.gtin}</span>}
-                        <span>VAT: {it.vatRate}</span>
-                        {it.batchNumber && <span>Seria: {it.batchNumber}</span>}
-                      </div>
-                    </td>
+                {items.map((it, idx) => {
+                  const effectiveVat = it.correctedVatRate || it.vatRate;
+                  const hasExpOrBatch = Boolean(it.expiryDate || it.correctedExpiryDate || it.batchNumber || it.correctedBatchNumber);
 
-                    {/* STAN PRZED */}
-                    <td className="py-3 px-3 bg-slate-50/50 border-x border-slate-200 text-center">
-                      <div className="font-semibold text-slate-800">
-                        {it.originalQuantity} {it.unit} × {it.originalNetPrice.toFixed(2)} zł
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-mono">
-                        Netto: {it.originalNetTotal.toFixed(2)} zł | Brutto: {it.originalGrossTotal.toFixed(2)} zł
-                      </div>
-                    </td>
+                  return (
+                    <tr
+                      key={it.id}
+                      className={`hover:bg-slate-50/80 transition-colors ${
+                        it.isModified ? 'bg-fuchsia-50/20' : ''
+                      }`}
+                    >
+                      {/* 1. LP */}
+                      <td className="py-3 px-2.5 text-center font-mono text-slate-400 font-semibold">
+                        {idx + 1}
+                      </td>
 
-                    {/* NOWY STAN PO KOREKCIE */}
-                    <td className="py-3 px-3 bg-fuchsia-50/30 border-r border-fuchsia-200">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-slate-500 font-medium">Ilość:</span>
+                      {/* 2. GTIN */}
+                      <td className="py-3 px-3 font-mono">
+                        <input
+                          type="text"
+                          value={it.gtin || ''}
+                          maxLength={14}
+                          placeholder="np. 9120117912773"
+                          onChange={(e) => handleUpdateItemGtin(it.id, e.target.value)}
+                          className="w-full font-mono text-xs text-slate-800 bg-white border border-slate-200 hover:border-slate-300 focus:border-fuchsia-500 rounded px-2 py-1"
+                        />
+                      </td>
+
+                      {/* 3. NAZWA PRODUKTU */}
+                      <td className="py-3 px-3">
+                        <input
+                          type="text"
+                          value={it.name}
+                          onChange={(e) => handleUpdateItemName(it.id, e.target.value)}
+                          className="w-full font-medium text-slate-900 bg-white border border-slate-200 hover:border-slate-300 focus:border-fuchsia-500 rounded px-2 py-1 text-xs"
+                          placeholder="Nazwa leku / suplementu"
+                        />
+                      </td>
+
+                      {/* 4. ILOŚĆ (STAN PRZED VS STAN PO) */}
+                      <td className="py-3 px-3 bg-slate-50/40 border-x border-slate-200 text-center">
+                        <div className="text-[11px] text-slate-500 mb-0.5">
+                          Było: <strong className="font-mono text-slate-700">{it.originalQuantity}</strong> {it.unit}
+                        </div>
+                        <div className="flex items-center justify-center gap-1.5">
                           <input
                             type="number"
                             min="0"
                             value={it.correctedQuantity}
                             onChange={(e) => handleUpdateItemQuantity(it.id, parseFloat(e.target.value) || 0)}
-                            className={`w-16 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
+                            className={`w-18 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
                               it.quantityDelta !== 0
-                                ? 'border-fuchsia-400 bg-fuchsia-50/60 text-fuchsia-950 font-bold'
+                                ? 'border-fuchsia-400 bg-fuchsia-50 text-fuchsia-950 font-bold'
                                 : 'border-slate-300 bg-white'
                             }`}
                           />
+                          <span className="text-[11px] text-slate-500 font-medium">{it.unit}</span>
                         </div>
+                        {it.quantityDelta !== 0 && (
+                          <div
+                            className={`text-[10px] font-bold font-mono mt-0.5 ${
+                              it.quantityDelta < 0 ? 'text-rose-600' : 'text-emerald-600'
+                            }`}
+                          >
+                            Δ: {it.quantityDelta > 0 ? `+${it.quantityDelta}` : it.quantityDelta}
+                          </div>
+                        )}
+                      </td>
 
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-slate-500 font-medium">Cena:</span>
+                      {/* 5. DATA WAŻNOŚCI (MHD) & SERIA (LOT) */}
+                      <td className="py-3 px-3 bg-emerald-50/20 border-r border-emerald-100">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500 w-9 shrink-0">MHD:</span>
+                            <input
+                              type="date"
+                              value={it.correctedExpiryDate || it.expiryDate || ''}
+                              onChange={(e) => handleUpdateItemExpiryDate(it.id, e.target.value)}
+                              className="w-full text-[11px] font-mono px-1.5 py-0.5 bg-white border border-emerald-200 rounded focus:border-emerald-500"
+                              title="Data ważności produktu"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500 w-9 shrink-0">Seria:</span>
+                            <input
+                              type="text"
+                              value={it.correctedBatchNumber || it.batchNumber || ''}
+                              placeholder="np. 25E1244"
+                              onChange={(e) => handleUpdateItemBatchNumber(it.id, e.target.value.toUpperCase())}
+                              className="w-full text-[11px] font-mono px-1.5 py-0.5 bg-white border border-emerald-200 rounded focus:border-emerald-500"
+                              title="Numer serii towaru"
+                            />
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 6. CENA JEDNOSTKOWA NETTO */}
+                      <td className="py-3 px-3 bg-fuchsia-50/20 border-r border-fuchsia-200 text-center">
+                        <div className="text-[11px] text-slate-500 mb-0.5">
+                          Było: <strong className="font-mono text-slate-700">{it.originalNetPrice.toFixed(2)}</strong> zł
+                        </div>
+                        <div className="flex items-center justify-center gap-1">
                           <input
                             type="number"
                             step="0.01"
                             min="0"
                             value={it.correctedNetPrice}
                             onChange={(e) => handleUpdateItemPrice(it.id, parseFloat(e.target.value) || 0)}
-                            className={`w-20 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
-                              it.originalNetPrice !== it.correctedNetPrice
-                                ? 'border-fuchsia-400 bg-fuchsia-50/60 text-fuchsia-950 font-bold'
+                            className={`w-22 px-2 py-1 text-center font-bold text-xs rounded-lg border focus:outline-fuchsia-500 ${
+                              Math.abs(it.originalNetPrice - it.correctedNetPrice) > 0.001
+                                ? 'border-fuchsia-400 bg-fuchsia-50 text-fuchsia-950 font-bold'
                                 : 'border-slate-300 bg-white'
                             }`}
                           />
+                          <span className="text-[11px] text-slate-500 font-medium">zł</span>
                         </div>
-                      </div>
-                      <div className="text-[11px] text-center text-slate-600 font-mono mt-1">
-                        Nowe brutto: <strong>{it.correctedGrossTotal.toFixed(2)} zł</strong>
-                      </div>
-                    </td>
-
-                    {/* RÓŻNICA */}
-                    <td className="py-3 px-3 text-right">
-                      {it.isModified ? (
-                        <div>
+                        {Math.abs(it.originalNetPrice - it.correctedNetPrice) > 0.001 && (
                           <div
-                            className={`font-black text-xs ${
-                              it.grossDelta < 0 ? 'text-rose-600' : 'text-emerald-600'
+                            className={`text-[10px] font-bold font-mono mt-0.5 ${
+                              it.correctedNetPrice < it.originalNetPrice ? 'text-rose-600' : 'text-emerald-600'
                             }`}
                           >
-                            {it.grossDelta > 0 ? `+${it.grossDelta.toFixed(2)}` : it.grossDelta.toFixed(2)} zł brutto
+                            Δ: {(it.correctedNetPrice - it.originalNetPrice).toFixed(2)} zł
                           </div>
-                          <div className="text-[10px] text-slate-500 font-mono">
-                            Δ Ilość: {it.quantityDelta > 0 ? `+${it.quantityDelta}` : it.quantityDelta} {it.unit}
+                        )}
+                      </td>
+
+                      {/* 7. STAWKA VAT (Z MOŻLIWOŚCIĄ KOREKTY STAWKI) */}
+                      <td className="py-3 px-2.5 text-center">
+                        <select
+                          value={effectiveVat}
+                          onChange={(e) => handleUpdateItemVatRate(it.id, e.target.value)}
+                          className={`w-full px-1.5 py-1 text-xs font-bold rounded-lg border transition-colors ${
+                            it.correctedVatRate && it.correctedVatRate !== it.vatRate
+                              ? 'bg-amber-50 border-amber-400 text-amber-950 font-black'
+                              : 'bg-white border-slate-300 text-slate-800'
+                          }`}
+                          title={
+                            it.correctedVatRate && it.correctedVatRate !== it.vatRate
+                              ? `Skorygowano stawkę VAT z ${it.vatRate} na ${it.correctedVatRate}`
+                              : 'Stawka podatku VAT'
+                          }
+                        >
+                          <option value="8%">8%</option>
+                          <option value="23%">23%</option>
+                          <option value="5%">5%</option>
+                          <option value="0%">0%</option>
+                          <option value="zw">zw</option>
+                        </select>
+                        {it.correctedVatRate && it.correctedVatRate !== it.vatRate && (
+                          <div className="text-[9px] font-bold text-amber-700 mt-0.5">
+                            Było: {it.vatRate}
                           </div>
-                          <div className="text-[10px] text-slate-500 font-mono">
-                            Δ Netto: {it.netDelta > 0 ? `+${it.netDelta.toFixed(2)}` : it.netDelta.toFixed(2)} zł
+                        )}
+                      </td>
+
+                      {/* 8. WARTOŚĆ NETTO / BRUTTO & RÓŻNICA */}
+                      <td className="py-3 px-3 text-right">
+                        <div>
+                          <div className="font-bold text-xs text-slate-900 font-mono">
+                            {it.correctedNetTotal.toFixed(2)} zł <span className="text-[10px] text-slate-500">netto</span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 font-mono">
+                            {it.correctedGrossTotal.toFixed(2)} zł <span className="text-[9px] text-slate-400">brutto</span>
                           </div>
                         </div>
-                      ) : (
-                        <span className="text-slate-400 text-xs">Bez zmian</span>
-                      )}
-                    </td>
 
-                    {/* SZYBKIE AKCJE */}
-                    <td className="py-3 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleApplyQuickReturn(it.id, 1)}
-                          className="px-2 py-1 text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
-                          title="Zwróć 1 sztukę"
-                        >
-                          -1 szt.
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleApplyQuickReturn(it.id, 2)}
-                          className="px-2 py-1 text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
-                          title="Zwróć 2 sztuki"
-                        >
-                          -2 szt.
-                        </button>
                         {it.isModified && (
+                          <div className="mt-1 pt-1 border-t border-slate-200">
+                            <div
+                              className={`font-black text-[11px] font-mono ${
+                                it.grossDelta < 0 ? 'text-rose-600' : 'text-emerald-600'
+                              }`}
+                            >
+                              Δ {it.grossDelta > 0 ? `+${it.grossDelta.toFixed(2)}` : it.grossDelta.toFixed(2)} zł brutto
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              Δ {it.netDelta > 0 ? `+${it.netDelta.toFixed(2)}` : it.netDelta.toFixed(2)} zł netto
+                            </div>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 9. SZYBKIE AKCJE */}
+                      <td className="py-3 px-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleResetItem(it.id)}
-                            className="p-1 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
-                            title="Cofnij zmiany w tej pozycji"
+                            onClick={() => handleApplyQuickReturn(it.id, 1)}
+                            className="px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition-colors cursor-pointer"
+                            title="Zwróć 1 sztukę"
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            -1
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            type="button"
+                            onClick={() => handleApplyQuickReturn(it.id, 2)}
+                            className="px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition-colors cursor-pointer"
+                            title="Zwróć 2 sztuki"
+                          >
+                            -2
+                          </button>
+                          {it.isModified && (
+                            <button
+                              type="button"
+                              onClick={() => handleResetItem(it.id)}
+                              className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="Cofnij zmiany w tej pozycji"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(it.id)}
+                            className="p-1 text-slate-300 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                            title="Usuń pozycję z korekty"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
