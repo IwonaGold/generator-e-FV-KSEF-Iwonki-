@@ -8,7 +8,6 @@ import { ItemsPreviewTable } from './components/ItemsPreviewTable';
 import { KSeFXMLModal } from './components/KSeFXMLModal';
 import { WZDocumentModal } from './components/WZDocumentModal';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
-import { KSeFDirectApiModal } from './components/KSeFDirectApiModal';
 import {
   PharmacyChain,
   LogisticsFormat,
@@ -131,7 +130,6 @@ export default function App() {
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [isWzModalOpen, setIsWzModalOpen] = useState(false);
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
-  const [isDirectApiModalOpen, setIsDirectApiModalOpen] = useState(false);
 
   // --- Moduł Aplikacji (3 Kafelki: Faktura XML | Korekta Faktury XML | Historia Zamówień) ---
   const [activeModule, setActiveModule] = useState<AppModule>('invoice');
@@ -597,7 +595,6 @@ export default function App() {
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
-        onOpenDirectApiModal={() => setIsDirectApiModalOpen(true)}
         itemCount={items.length}
         username="Eubiosis"
         onLogout={handleLogout}
@@ -754,16 +751,6 @@ export default function App() {
       <VisionLLMGuideModal
         isOpen={isAiGuideOpen}
         onClose={() => setIsAiGuideOpen(false)}
-      />
-
-      {/* Modal bezpośredniej integracji z KSeF (API / Portal) */}
-      <KSeFDirectApiModal
-        isOpen={isDirectApiModalOpen}
-        onClose={() => setIsDirectApiModalOpen(false)}
-        xmlContent={xmlPayload}
-        invoiceNumber={meta.invoiceNumber || 'FAKTURA'}
-        sellerNip={seller.nip}
-        schemaVersion={schemaVersion}
       />
 
       {/* Dyskretna kwiecista stopka */}

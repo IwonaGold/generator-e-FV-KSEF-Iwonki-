@@ -6,7 +6,6 @@ interface HeaderProps {
   onOpenXmlModal: () => void;
   onOpenWzModal?: () => void;
   onOpenAiGuide: () => void;
-  onOpenDirectApiModal: () => void;
   itemCount: number;
   username?: string;
   onLogout?: () => void;
@@ -16,7 +15,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenXmlModal,
   onOpenWzModal,
   onOpenAiGuide,
-  onOpenDirectApiModal,
   itemCount,
   username = 'Eubiosis',
   onLogout,
@@ -34,25 +32,13 @@ export const Header: React.FC<HeaderProps> = ({
             alt="Centrum Obsługi Zamówień Sieciowych"
             className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl shadow-xs object-contain shrink-0"
           />
-          <div className="flex items-center gap-2">
-            <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent leading-tight">
-              Centrum Obsługi Zamówień Sieciowych
-            </span>
-            <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
-              FA(3)
-            </span>
-          </div>
+          <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent leading-tight">
+            Centrum Obsługi Zamówień Sieciowych
+          </span>
         </div>
 
         {/* Zone 2: Clean text navigation links / status */}
         <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600">
-          <button
-            onClick={onOpenDirectApiModal}
-            className="flex items-center gap-1.5 hover:text-pink-700 font-semibold transition-colors cursor-pointer text-pink-700 bg-pink-50 hover:bg-pink-100 px-3 py-1.5 rounded-xl border border-pink-200 shadow-2xs"
-          >
-            <span>Wgraj do KSeF (API / Portal)</span>
-          </button>
-          <span className="text-rose-200">·</span>
           <span className="bg-rose-50/80 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 text-xs">
             Pozycji: <strong className="text-rose-950 font-mono tabular-nums font-bold">{itemCount}</strong>
           </span>
