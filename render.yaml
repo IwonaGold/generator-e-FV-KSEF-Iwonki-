@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: generator-e-FV-KSEF-Iwonki-
+    name: centrum-ozs-iwonki
     runtime: node
     plan: free
     region: frankfurt
