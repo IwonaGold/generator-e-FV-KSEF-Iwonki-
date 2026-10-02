@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, User, Eye, EyeOff, Sparkles, ShieldCheck } from 'lucide-react';
+import appLogo from '../assets/app-logo.png';
 
 interface LoginScreenProps {
   onLoginSuccess: (username: string, remember: boolean) => void;
@@ -50,9 +51,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         
         {/* Logo & Nagłówek */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-pink-500 via-rose-500 to-fuchsia-400 flex items-center justify-center text-white text-2xl shadow-md shadow-pink-200 mb-3">
-            🧾
-          </div>
+          <img
+            src={appLogo}
+            alt="Centrum Obsługi Zamówień Sieciowych"
+            className="w-16 h-16 mx-auto rounded-2xl shadow-md mb-3 object-contain"
+          />
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent">
             Centrum Obsługi Zamówień Sieciowych
           </h1>

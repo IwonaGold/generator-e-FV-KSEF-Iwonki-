@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileCode, Sparkles, BookOpen, LogOut, ShieldCheck } from 'lucide-react';
+import appLogo from '../assets/app-logo.png';
 
 interface HeaderProps {
   onOpenXmlModal: () => void;
@@ -22,22 +23,19 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-rose-200/80 shadow-xs">
       <div className="h-1 bg-gradient-to-r from-pink-400 via-rose-400 to-fuchsia-400 w-full" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Zone 1: Wordmark & Invoice Badge */}
+        {/* Zone 1: Wordmark & Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 via-rose-500 to-fuchsia-400 flex items-center justify-center text-white text-base shadow-sm shadow-pink-300">
-            🧾
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="text-base font-extrabold tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent leading-tight">
-                Centrum Obsługi Zamówień Sieciowych
-              </span>
-              <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded-full font-bold">
-                FA(3)
-              </span>
-            </div>
-            <span className="text-xs text-rose-500/90 font-medium">
-              E-faktury i Korekty KSeF · FA(3)
+          <img
+            src={appLogo}
+            alt="Centrum Obsługi Zamówień Sieciowych"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl shadow-xs object-contain shrink-0"
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-pink-600 via-rose-600 to-fuchsia-600 bg-clip-text text-transparent leading-tight">
+              Centrum Obsługi Zamówień Sieciowych
+            </span>
+            <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+              FA(3)
             </span>
           </div>
         </div>
