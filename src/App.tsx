@@ -132,7 +132,26 @@ export default function App() {
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
 
   // --- Moduł Aplikacji (3 Kafelki: Faktura XML | Korekta Faktury XML | Historia Zamówień) ---
-  const [activeModule, setActiveModule] = useState<AppModule>('invoice');
+  const [activeModule, setActiveModule] = useState<AppModule>(() => {
+    try {
+      const saved = localStorage.getItem('iwonka_active_module');
+      if (saved === 'invoice' || saved === 'correction' || saved === 'history') {
+        return saved as AppModule;
+      }
+    } catch (e) {
+      console.warn('Storage error:', e);
+    }
+    return 'invoice';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('iwonka_active_module', activeModule);
+    } catch (e) {
+      console.warn('Storage error:', e);
+    }
+  }, [activeModule]);
+
   const [archivedOrders, setArchivedOrders] = useState<ArchivedOrder[]>([]);
   const [preloadedOrderForCorrection, setPreloadedOrderForCorrection] = useState<ArchivedOrder | null>(null);
 

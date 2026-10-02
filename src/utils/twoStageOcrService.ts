@@ -258,6 +258,17 @@ export async function runStage1ProductRecognition(
   let recognizedName = '';
   let recognizedGtin = '';
 
+  // Jeśli na fakturze jest tylko 1 pozycja, zdjęcie automatycznie do niej należy
+  if (invoiceItems && invoiceItems.length === 1) {
+    return {
+      recognizedProductName: invoiceItems[0].name,
+      recognizedGtin: invoiceItems[0].gtin || '',
+      matchedInvoiceItemId: invoiceItems[0].id,
+      matchedInvoiceItemIndex: 1,
+      isConfident: true,
+    };
+  }
+
   try {
     const { dataUrl } = await prepareCanvasFragment(file);
     const ocrText = (await runOcrEngine(dataUrl)) || '';

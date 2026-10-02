@@ -90,6 +90,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   // Stan lokalny edycji numeru listu przewozowego
   const [trackingNumberState, setTrackingNumberState] = useState<Record<string, string>>({});
   const [savingTrackingId, setSavingTrackingId] = useState<string | null>(null);
+  const [checkingTrackingId, setCheckingTrackingId] = useState<string | null>(null);
 
   // Stan lokalny edycji numeru faktury (i generowania z XML)
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
@@ -363,6 +364,53 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     );
     setTimeout(() => setInvoiceNotice(null), 4000);
     onRefreshOrders();
+  };
+
+  // Automatyczne sprawdzenie statusu przesyłki u kuriera
+  const handleCheckLiveTrackingStatus = async (order: ArchivedOrder) => {
+    if (!order.trackingNumber) return;
+    setCheckingTrackingId(order.id);
+
+    const detected = order.courierName || detectCourierFromTrackingNumber(order.trackingNumber);
+    const cleanNo = order.trackingNumber.trim().replace(/\s+/g, '');
+
+    // Sprawdzenie przez publiczne API InPost (jeśli przesyłka InPost)
+    if (detected === 'InPost' && cleanNo.length >= 20) {
+      try {
+        const res = await fetch(`https://api-shipx-pl.easypack24.net/v1/tracking/${encodeURIComponent(cleanNo)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const rawStatus = (data.status || '').toLowerCase();
+          let newStatus: ShippingStatus = 'in_transit';
+          let msg = `Status InPost: ${data.status}`;
+
+          if (rawStatus === 'delivered') {
+            newStatus = 'delivered';
+            msg = '✅ InPost: Przesyłka została pomyślnie DORĘCZONA!';
+          } else if (rawStatus.includes('out_for_delivery') || rawStatus === 'ready_to_pickup') {
+            newStatus = 'out_for_delivery';
+            msg = '⚡ InPost: Paczka wydana do doręczenia / w Paczkomacie!';
+          } else if (rawStatus.includes('transit') || rawStatus.includes('sent')) {
+            newStatus = 'in_transit';
+            msg = '🚚 InPost: Przesyłka w transporcie do odbiorcy.';
+          }
+
+          await handleShippingStatusChange(order, newStatus);
+          setCheckingTrackingId(null);
+          setInvoiceNotice(msg);
+          setTimeout(() => setInvoiceNotice(null), 4000);
+          return;
+        }
+      } catch (e) {
+        console.warn('Błąd weryfikacji API InPost:', e);
+      }
+    }
+
+    // Dla pozostałych kurierów (DPD, DHL, GLS, Pocztex itp.) otwieramy oficjalny portal śledzenia
+    setCheckingTrackingId(null);
+    setInvoiceNotice(`Otwieram portal śledzenia ${detected}...`);
+    window.open(getTrackingUrl(order.trackingNumber, detected), '_blank');
+    setTimeout(() => setInvoiceNotice(null), 3000);
   };
 
   // Obsługa wpisywania notatki
@@ -1482,7 +1530,13 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           value={currentTrackingNumber}
                           onChange={(e) => handleTrackingNumberChange(ord.id, e.target.value)}
                           onBlur={() => handleSaveTrackingNumber(ord)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSaveTrackingNumber(ord)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleSaveTrackingNumber(ord);
+                            }
+                          }}
                           className="w-full px-2.5 py-1 text-xs font-mono bg-white border border-slate-300 focus:border-rose-400 rounded-lg text-slate-900 shadow-2xs"
                         />
                         {currentTrackingNumber !== (ord.trackingNumber || '') && (
@@ -1513,6 +1567,20 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         </button>
                       )}
 
+                      {/* PRZYCISK SPRAWDZANIA STATUSU U KURIERA */}
+                      {ord.trackingNumber && (
+                        <button
+                          type="button"
+                          onClick={() => handleCheckLiveTrackingStatus(ord)}
+                          disabled={checkingTrackingId === ord.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors cursor-pointer shadow-2xs shrink-0"
+                          title="Sprawdź status przesyłki u kuriera"
+                        >
+                          <RefreshCw className={`w-3 h-3 text-rose-500 ${checkingTrackingId === ord.id ? 'animate-spin' : ''}`} />
+                          <span>{checkingTrackingId === ord.id ? '...' : 'Sprawdź status'}</span>
+                        </button>
+                      )}
+
                       {/* LINK DO ŚLEDZENIA PRZESYŁKI */}
                       {ord.trackingNumber && (
                         <a
@@ -1523,7 +1591,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           title={`Otwórz oficjalne śledzenie przesyłki ${ord.courierName || 'Kurier'}`}
                         >
                           <ExternalLink className="w-3 h-3" />
-                          <span>Śledź przesyłkę ↗</span>
+                          <span>Śledź ↗</span>
                         </a>
                       )}
                     </div>
@@ -1577,7 +1645,13 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         value={currentNote}
                         onChange={(e) => handleNoteChange(ord.id, e.target.value)}
                         onBlur={() => handleSaveNote(ord.id)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSaveNote(ord.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleSaveNote(ord.id);
+                          }
+                        }}
                         className="w-full px-3 py-1.5 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded-xl transition-colors text-slate-800"
                       />
                       {currentNote !== ord.notes && (

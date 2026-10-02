@@ -1,5 +1,73 @@
 [
   {
+    "id": "ord-1790964035193",
+    "chain": "DOZ",
+    "documentType": "FV",
+    "invoiceNumber": "35/2026/KSEF",
+    "orderNumber": "6745/2026/KPD",
+    "orderDate": "2026-03-27",
+    "issueDate": "2026-10-02",
+    "avisoDate": "2026-04-01",
+    "deliveryDate": "2026-04-01",
+    "dueDate": "2026-05-01",
+    "seller": {
+      "nip": "9571106742",
+      "name": "EUBIOSIS SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
+      "countryCode": "PL",
+      "addressLine1": "ul. Nowatorów 31 lok. 4",
+      "postalCode": "80-298",
+      "city": "Gdańsk",
+      "bdoNumber": "000585744",
+      "bankAccount": "96 1090 1098 0000 0001 6398 3525",
+      "bankName": "ERSTE BANK POLSKA S.A.",
+      "email": "kontakt@eubiosis.pl",
+      "phone": "+48 58 712 34 56"
+    },
+    "buyer": {
+      "nip": "8271807718",
+      "name": "DOZ SPÓŁKA AKCYJNA DIRECT SPÓŁKA KOMANDYTOWA - HURTOWNIA FARMACEUTYCZNA",
+      "countryCode": "PL",
+      "addressLine1": "UL.KINGA C.GILLETTE 11",
+      "postalCode": "94-406",
+      "city": "Łódź",
+      "email": "reklamacje_dd@doz.pl",
+      "gln": "5909000828476"
+    },
+    "thirdParty": null,
+    "items": [
+      {
+        "id": "parsed-1790963881723-0",
+        "name": "Omni Biotic 10 Flora Plus, prosz., 2 g, 14 sasz.",
+        "gtin": "9120117912858",
+        "quantity": 81,
+        "unit": "SZT.",
+        "netPrice": 94.05,
+        "vatRate": "8%",
+        "batchNumber": "25E3475",
+        "expiryDate": "2028-08-31",
+        "quantityInBatch": 81,
+        "ocrMatched": true,
+        "ocrConfidence": 0.98
+      }
+    ],
+    "itemsCount": 1,
+    "totalNet": 7618.05,
+    "totalVat": 609.44,
+    "totalGross": 8227.49,
+    "currency": "PLN",
+    "xmlContent": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Faktura xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns=\"http://crd.gov.pl/wzor/2025/06/25/13775/\">\n    <Naglowek>\n        <KodFormularza kodSystemowy=\"FA (3)\" wersjaSchemy=\"1-0E\">FA</KodFormularza>\n        <WariantFormularza>3</WariantFormularza>\n        <DataWytworzeniaFa>2026-10-02T18:00:13Z</DataWytworzeniaFa>\n    </Naglowek>\n    <Podmiot1>\n        <PrefiksPodatnika>PL</PrefiksPodatnika>\n        <DaneIdentyfikacyjne>\n            <NIP>9571106742</NIP>\n            <Nazwa>EUBIOSIS SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ</Nazwa>\n        </DaneIdentyfikacyjne>\n        <Adres>\n            <KodKraju>PL</KodKraju>\n            <AdresL1>ul. Nowatorów 31 lok. 4, 80-298 Gdańsk</AdresL1>\n        </Adres>\n        <DaneKontaktowe><Email>kontakt@eubiosis.pl</Email></DaneKontaktowe>\n    </Podmiot1>\n    <Podmiot2>\n        <DaneIdentyfikacyjne>\n            <NIP>8271807718</NIP>\n            <Nazwa>DOZ SPÓŁKA AKCYJNA DIRECT SPÓŁKA KOMANDYTOWA - HURTOWNIA FARMACEUTYCZNA</Nazwa>\n        </DaneIdentyfikacyjne>\n        <Adres>\n            <KodKraju>PL</KodKraju>\n            <AdresL1>UL.KINGA C.GILLETTE 11, 94-406 Łódź</AdresL1>\n            <GLN>5909000828476</GLN>\n        </Adres>\n        <DaneKontaktowe><Email>reklamacje_dd@doz.pl</Email></DaneKontaktowe>\n        <JST>2</JST>\n        <GV>2</GV>\n    </Podmiot2>\n    <Fa>\n        <KodWaluty>PLN</KodWaluty>\n        <P_1>2026-10-02</P_1>\n        <P_1M>Gdańsk</P_1M>\n        <P_2>35/2026/KSEF</P_2>\n        <P_6>2026-04-01</P_6>\n        <P_13_2>7618.05</P_13_2>\n        <P_14_2>609.44</P_14_2>\n        <P_15>8227.49</P_15>\n        <Adnotacje>\n            <P_16>2</P_16>\n            <P_17>2</P_17>\n            <P_18>2</P_18>\n            <P_18A>2</P_18A>\n            <Zwolnienie>\n                <P_19N>1</P_19N>\n            </Zwolnienie>\n            <NoweSrodkiTransportu>\n                <P_22N>1</P_22N>\n            </NoweSrodkiTransportu>\n            <P_23>2</P_23>\n            <PMarzy>\n                <P_PMarzyN>1</P_PMarzyN>\n            </PMarzy>\n        </Adnotacje>\n        <RodzajFaktury>VAT</RodzajFaktury>\n        <DodatkowyOpis>\n            <NrWiersza>1</NrWiersza>\n            <Klucz>Seria</Klucz>\n            <Wartosc>25E3475</Wartosc>\n        </DodatkowyOpis>\n        <DodatkowyOpis>\n            <NrWiersza>1</NrWiersza>\n            <Klucz>Data ważności</Klucz>\n            <Wartosc>2028-08-31</Wartosc>\n        </DodatkowyOpis>\n        <FaWiersz>\n            <NrWierszaFa>1</NrWierszaFa>\n            <P_7>Omni Biotic 10 Flora Plus, prosz., 2 g, 14 sasz.</P_7>\n            <GTIN>9120117912858</GTIN>\n            <P_8A>SZT.</P_8A>\n            <P_8B>81</P_8B>\n            <P_9A>94.05</P_9A>\n            <P_11>7618.05</P_11>\n            <P_12>8</P_12>\n        </FaWiersz>\n        <Platnosc>\n            <TerminPlatnosci>\n                <Termin>2026-05-01</Termin>\n            </TerminPlatnosci>\n            <FormaPlatnosci>6</FormaPlatnosci>\n            <RachunekBankowy>\n                <NrRB>96109010980000000163983525</NrRB>\n            </RachunekBankowy>\n        </Platnosc>\n        <WarunkiTransakcji>\n            <Zamowienia>\n                <DataZamowienia>2026-03-27</DataZamowienia>\n                <NrZamowienia>6745/2026/KPD</NrZamowienia>\n            </Zamowienia>\n        </WarunkiTransakcji>\n    </Fa>\n    <Stopka>\n        <Rejestry>\n            <BDO>000585744</BDO>\n        </Rejestry>\n    </Stopka>\n</Faktura>",
+    "isDelivered": true,
+    "deliveredAt": "02.10.2026, 20:03",
+    "notes": "Z pliku zamówienia: zam. 6746.pdf",
+    "originalFileName": "zam. 6746.pdf",
+    "createdAt": "2026-10-02T18:00:35.193Z",
+    "updatedAt": "2026-10-02T18:13:31.891Z",
+    "shippingStatus": "delivered",
+    "shippingStatusUpdatedAt": "02.10.2026, 20:03",
+    "trackingNumber": "GK261002192282",
+    "courierName": "Inny"
+  },
+  {
     "id": "kor-1790928499189",
     "chain": "Dr. Max",
     "documentType": "KOR",
@@ -65,10 +133,12 @@
     "deliveredAt": "2026-10-02 (Korekta)",
     "notes": "Przyczyna korekty (Wartościowa): Błędny NIP nabywcy – wyzerowanie do zera (procedura KSeF). Wyzerowanie transakcji do 0 z powodu błędnego NIP nabywcy. Nowa faktura z poprawnym NIP zostanie wystawiona odrębnie.. Korekta faktury podstawowa [KSeF: 9571106742-20260910-4BFAF5400004-D7]",
     "createdAt": "2026-10-02T08:08:19.189Z",
-    "updatedAt": "2026-10-02T08:08:19.189Z",
+    "updatedAt": "2026-10-02T18:03:29.384Z",
     "correctionReason": "Błędny NIP nabywcy – wyzerowanie do zera (procedura KSeF): Wyzerowanie transakcji do 0 z powodu błędnego NIP nabywcy. Nowa faktura z poprawnym NIP zostanie wystawiona odrębnie.",
     "originalInvoiceNumber": "podstawowa",
-    "originalInvoiceDate": "2026-10-02"
+    "originalInvoiceDate": "2026-10-02",
+    "shippingStatus": "in_transit",
+    "shippingStatusUpdatedAt": "02.10.2026, 20:03"
   },
   {
     "id": "ord-1790928424420",

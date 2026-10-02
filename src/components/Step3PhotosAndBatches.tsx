@@ -60,22 +60,39 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
    * Dodaje nowe zdjęcia i uruchamia WYŁĄCZNIE ETAP 1 (Rozpoznanie produktu)
    * Na tym etapie kategorycznie NIE ODCZYTUJEMY ani nie zapisujemy LOT/MHD.
    */
+  /**
+   * Dodaje nowe zdjęcia i uruchamia WYŁĄCZNIE ETAP 1 (Rozpoznanie produktu)
+   * Na tym etapie kategorycznie NIE ODCZYTUJEMY ani nie zapisujemy LOT/MHD.
+   * Jeśli faktura ma tylko 1 pozycję, automatycznie ją przypisujemy bez pytania dwukrotnie.
+   */
   const handleAddNewPhotos = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
+
+    const isSingleItem = items && items.length === 1;
+    const defaultMatchedItem = isSingleItem ? items[0] : null;
 
     const newPhotoRecords: PhotoVerificationItem[] = imageFiles.map((file, idx) => ({
       id: `photo-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
       file,
       fileName: file.name,
       photoUrl: URL.createObjectURL(file),
-      status: 'PRODUCT_PENDING',
-      isConfidentProductMatch: false,
-      isAnalyzingProduct: true,
+      status: isSingleItem ? 'LOT_MHD_PENDING' : 'PRODUCT_PENDING',
+      recognizedProductName: defaultMatchedItem?.name || '',
+      recognizedGtin: defaultMatchedItem?.gtin || '',
+      matchedInvoiceItemId: defaultMatchedItem?.id,
+      matchedInvoiceItemIndex: isSingleItem ? 1 : undefined,
+      isConfidentProductMatch: isSingleItem,
+      isAnalyzingProduct: !isSingleItem,
       batches: [],
     }));
 
     setPhotoItems((prev) => [...prev, ...newPhotoRecords]);
+
+    // Jeśli faktura ma tylko 1 pozycję, nie ma potrzeby uruchamiać OCR rozpoznawania produktu
+    if (isSingleItem) {
+      return;
+    }
 
     for (const record of newPhotoRecords) {
       try {
@@ -84,6 +101,19 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
         setPhotoItems((prev) =>
           prev.map((item) => {
             if (item.id !== record.id) return item;
+
+            // Jeśli użytkownik już ręcznie przypisał pozycję lub przeszedł dalej, nie cofaj statusu!
+            if (
+              item.status === 'LOT_MHD_PENDING' ||
+              item.status === 'LOT_MHD_READ' ||
+              item.status === 'CONFIRMED' ||
+              item.status === 'MANUAL_VERIFICATION_REQUIRED'
+            ) {
+              return {
+                ...item,
+                isAnalyzingProduct: false,
+              };
+            }
 
             const isMatched = Boolean(stage1Res.matchedInvoiceItemId && stage1Res.isConfident);
 
@@ -130,8 +160,11 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
   /**
    * RĘCZNA ZMIANA DOPASOWANIA PRODUKTU
+   * Wybranie pozycji z listy rozwijanej natychmiast zatwierdza przypisanie (LOT_MHD_PENDING)
+   * bez zmuszania użytkownika do ponownego, drugiego klikania przycisku zatwierdzenia.
    */
   const handleManualProductSelect = (photoId: string, invoiceItemId: string) => {
+    if (!invoiceItemId) return;
     const selectedItem = items.find((it) => it.id === invoiceItemId);
     const itemIndex = items.findIndex((it) => it.id === invoiceItemId);
 
@@ -144,8 +177,9 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           matchedInvoiceItemIndex: itemIndex !== -1 ? itemIndex + 1 : undefined,
           recognizedProductName: selectedItem?.name || item.recognizedProductName,
           recognizedGtin: selectedItem?.gtin || item.recognizedGtin,
-          status: 'PRODUCT_MATCHED',
+          status: 'LOT_MHD_PENDING',
           isConfidentProductMatch: true,
+          isAnalyzingProduct: false,
         };
       })
     );
@@ -434,6 +468,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           if (e.target.files && e.target.files.length > 0) {
             handleAddNewPhotos(Array.from(e.target.files));
           }
+          e.target.value = '';
         }}
         className="hidden"
       />
@@ -612,7 +647,18 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                           </div>
 
                           <div>
-                            <span className="text-[10px] text-slate-500 block">Dopasowana pozycja faktury:</span>
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 mb-0.5">
+                              <span>Dopasowana pozycja faktury:</span>
+                              {photo.matchedInvoiceItemId && changingMatchPhotoId !== photo.id && photo.status !== 'CONFIRMED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setChangingMatchPhotoId(photo.id)}
+                                  className="text-[10px] font-semibold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+                                >
+                                  Zmień
+                                </button>
+                              )}
+                            </div>
                             <span className="font-bold text-emerald-900 block truncate">
                               {matchedProduct
                                 ? `${photo.matchedInvoiceItemIndex || 1}. ${matchedProduct.name}`
@@ -622,7 +668,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                         </div>
 
                         {/* Potwierdzenie lub zmiana pozycji */}
-                        {(photo.status === 'PRODUCT_PENDING' || photo.status === 'PRODUCT_MATCHED') && (
+                        {(photo.status === 'PRODUCT_PENDING' || photo.status === 'PRODUCT_MATCHED' || changingMatchPhotoId === photo.id) && (
                           <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
                             {changingMatchPhotoId === photo.id || !photo.matchedInvoiceItemId ? (
                               <div className="w-full flex items-center gap-2">
@@ -638,6 +684,15 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                     </option>
                                   ))}
                                 </select>
+                                {changingMatchPhotoId === photo.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setChangingMatchPhotoId(null)}
+                                    className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer shrink-0"
+                                  >
+                                    Anuluj
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <>
