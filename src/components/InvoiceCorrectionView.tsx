@@ -1427,23 +1427,23 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       {/* KROK 1: ŹRÓDŁO FAKTURY PIERWOTNEJ (PDF Z NUMEREM KSEF / XML / ARCHIWUM)*/}
       {/* ===================================================================== */}
       <div className="bg-white rounded-2xl border border-fuchsia-200/80 p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm">
+        <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-3 mb-4">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shrink-0">
               1
             </div>
-            <div>
+            <div className="min-w-0 pr-2">
               <h3 className="text-sm font-bold text-slate-900">
                 Wczytaj Fakturę Pierwotną w PDF (z numerem KSeF) lub z Archiwum
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 max-w-xl">
                 Wgraj plik PDF otrzymany z KSeF/ERP – system automatycznie wyodrębni 35-znakowy numer KSeF, numer faktury, kontrahenta i pozycje.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl cursor-pointer transition-colors shadow-2xs">
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2 shrink-0 sm:ml-auto">
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl cursor-pointer transition-colors shadow-2xs shrink-0">
               <Upload className="w-3.5 h-3.5 text-slate-500" />
               <span>Wgraj XML faktury</span>
               <input type="file" accept=".xml" className="hidden" onChange={handleXmlFileUpload} />
@@ -1452,7 +1452,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             <button
               type="button"
               onClick={loadSampleCorrectionData}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
               <span>Wzorzec testowy</span>
@@ -1461,7 +1461,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             <button
               type="button"
               onClick={handleResetEverything}
-              className="inline-flex items-center gap-2 px-4 py-2 sm:px-4.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border-2 border-rose-300 hover:border-rose-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 sm:px-4.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border-2 border-rose-300 hover:border-rose-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer shrink-0"
               title="Wyczyść wszystkie wprowadzone dane formularza korekty"
             >
               <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
