@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, Copy, Check, ShieldCheck, AlertCircle, FileCode, CheckCircle2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { X, Download, Copy, Check, ShieldCheck, AlertCircle, FileCode, CheckCircle2, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
 import { downloadKSeFXMLFile, ValidationIssue } from '../utils/ksefGenerator';
 import { LogisticsFormat, KSeFSchemaVersion } from '../types/ksef';
 import { validateXmlAgainstKSeFXsd, XsdValidationResult } from '../utils/ksefXsdValidator';
@@ -31,6 +31,12 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
   const [isSavedToHistory, setIsSavedToHistory] = useState(false);
   const [isValidatingXsd, setIsValidatingXsd] = useState(false);
   const [xsdResult, setXsdResult] = useState<XsdValidationResult | null>(null);
+  const [ksefEnv, setKsefEnv] = useState<'prod' | 'test'>('prod');
+
+  const KSEF_LOGIN_URLS = {
+    prod: 'https://ksef.podatki.gov.pl/web/login',
+    test: 'https://ksef-test.mf.gov.pl/web/login',
+  };
 
   // Automatyczne uruchomienie walidacji XSD FA(3) przy otwarciu lub zmianie XML
   useEffect(() => {
@@ -149,6 +155,136 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+
+        {/* ===================================================================== */}
+        {/* DWIE GŁÓWNE ŚCIEŻKI: 1. WYGENERUJ/POBIERZ XML | 2. PRZEJDŹ DO KSEF    */}
+        {/* ===================================================================== */}
+        <div className="px-6 py-4 bg-gradient-to-r from-fuchsia-50/70 via-pink-50/40 to-slate-50 border-b border-fuchsia-100">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            {/* OPCJA 1: Wygeneruj i pobierz plik XML */}
+            <div className="bg-white p-4 rounded-2xl border border-fuchsia-200/90 shadow-2xs flex flex-col justify-between hover:border-fuchsia-300 transition-all">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center text-xs font-black">
+                      1
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Pobierz wygenerowany plik XML
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 px-2 py-0.5 rounded-full border border-fuchsia-200">
+                    FA(3) Gotowy
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 mb-3 leading-relaxed">
+                  Oficjalny plik XML zgodny ze schematem FA(3) Ministerstwa Finansów, gotowy do wgrania na portalu KSeF.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-700 hover:to-pink-700 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>1. Pobierz plik XML (FA3)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="p-2 text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                  title="Skopiuj treść XML do schowka"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* OPCJA 2: Przejdź do logowania w KSeF */}
+            <div className="bg-white p-4 rounded-2xl border border-blue-200/90 shadow-2xs flex flex-col justify-between hover:border-blue-300 transition-all">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-black">
+                      2
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Przejdź na stronę logowania KSeF
+                    </h4>
+                  </div>
+                  
+                  {/* Przełącznik Produkcja / Test */}
+                  <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setKsefEnv('prod')}
+                      className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                        ksefEnv === 'prod'
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Oficjalna bramka produkcyjna (ksef.podatki.gov.pl)"
+                    >
+                      Produkcja
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKsefEnv('test')}
+                      className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                        ksefEnv === 'test'
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Środowisko testowe MF (ksef-test.mf.gov.pl)"
+                    >
+                      Test
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-600 mb-3 leading-relaxed">
+                  Zaloguj się w Aplikacji Podatnika MF (Profilem Zaufanym lub Certyfikatem) i wgraj pobrany plik w zakładce <em>Wprowadź fakturę</em>.
+                </p>
+              </div>
+
+              <div>
+                <a
+                  href={KSEF_LOGIN_URLS[ksefEnv]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <span>2. Przejdź do logowania KSeF</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Szybka podpowiedź procesu */}
+          <div className="mt-3 pt-2.5 border-t border-fuchsia-100/80 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-500 gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-slate-600">
+              <span className="font-bold text-slate-800">Proces wgrywania:</span>
+              <span>1. Kliknij <em>Pobierz plik XML</em></span>
+              <span>➔</span>
+              <span>2. Kliknij <em>Przejdź do logowania KSeF</em></span>
+              <span>➔</span>
+              <span>3. W KSeF wybierz <strong>Wprowadź fakturę</strong> i załaduj pobrany plik XML.</span>
+            </div>
+            <a
+              href={KSEF_LOGIN_URLS[ksefEnv]}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 font-mono font-medium flex items-center gap-1 hover:underline text-[10px] shrink-0"
+            >
+              <span>{ksefEnv === 'prod' ? 'ksef.podatki.gov.pl/web/login' : 'ksef-test.mf.gov.pl/web/login'}</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
         </div>
 

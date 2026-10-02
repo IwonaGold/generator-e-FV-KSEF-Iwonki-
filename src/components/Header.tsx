@@ -1,5 +1,5 @@
-import React from 'react';
-import { FileCode, Sparkles, BookOpen, LogOut, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileCode, Sparkles, BookOpen, LogOut, ShieldCheck, ChevronDown, ExternalLink } from 'lucide-react';
 import appLogo from '../assets/app-logo.png';
 
 interface HeaderProps {
@@ -19,6 +19,8 @@ export const Header: React.FC<HeaderProps> = ({
   username = 'Eubiosis',
   onLogout,
 }) => {
+  const [isKsefMenuOpen, setIsKsefMenuOpen] = useState(false);
+
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-rose-200/80 shadow-xs">
       <div className="h-1 bg-gradient-to-r from-pink-400 via-rose-400 to-fuchsia-400 w-full" />
@@ -71,13 +73,67 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <BookOpen className="w-4 h-4" />
           </button>
-          <button
-            onClick={onOpenXmlModal}
-            className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-sm shadow-pink-200 transition-all whitespace-nowrap cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <FileCode className="w-4 h-4" />
-            <span>Generuj KSeF XML</span>
-          </button>
+          <div className="relative">
+            <div className="inline-flex items-center rounded-xl shadow-sm shadow-pink-200 bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 hover:from-pink-600 hover:to-rose-700 transition-all">
+              <button
+                type="button"
+                onClick={onOpenXmlModal}
+                className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-2 text-xs font-bold text-white whitespace-nowrap cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+              >
+                <FileCode className="w-4 h-4" />
+                <span>Generuj KSeF XML</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsKsefMenuOpen(!isKsefMenuOpen)}
+                className="p-2 border-l border-white/20 text-white hover:bg-black/10 rounded-r-xl cursor-pointer transition-colors"
+                title="Wybierz: wygeneruj XML lub przejdź do logowania KSeF"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {isKsefMenuOpen && (
+              <div
+                className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in-95 duration-100"
+                onClick={() => setIsKsefMenuOpen(false)}
+              >
+                <button
+                  type="button"
+                  onClick={onOpenXmlModal}
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-fuchsia-50 transition-colors flex items-start gap-2.5 cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                    1
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">1. Wygeneruj i pobierz XML</div>
+                    <div className="text-[11px] text-slate-500 leading-tight">Podgląd kodu, walidacja XSD FA(3) i pobranie pliku</div>
+                  </div>
+                </button>
+
+                <div className="my-1 border-t border-slate-100" />
+
+                <a
+                  href="https://ksef.podatki.gov.pl/web/login"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-blue-50 transition-colors flex items-start gap-2.5 cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                    2
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-blue-950 flex items-center gap-1">
+                      <span>2. Przejdź do logowania KSeF</span>
+                      <ExternalLink className="w-3 h-3 text-blue-600" />
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-tight">Oficjalny portal MF do wgrania pobranego pliku XML</div>
+                  </div>
+                </a>
+              </div>
+            )}
+          </div>
           {onLogout && (
             <button
               onClick={onLogout}

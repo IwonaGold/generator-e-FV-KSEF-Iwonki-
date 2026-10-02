@@ -724,11 +724,11 @@ export default function App() {
       <footer className="bg-white/80 backdrop-blur-sm border-t border-rose-100 py-6 text-xs text-slate-500 mt-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-pink-600 font-bold">🌸 Centrum Obsługi Zamówień Sieciowych</span>
+            <span className="text-slate-800 font-bold">Centrum Obsługi Zamówień Sieciowych</span>
             <span>·</span>
             <span>Wariant FA(3) wersja 1-0E</span>
             <span>·</span>
-            <span className="text-rose-500 font-medium">Obsługa zamówień i e-faktur z uśmiechem ✨</span>
+            <span className="text-slate-500 font-medium">Obsługa zamówień i e-faktur KSeF FA(3)</span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
             <span>Eubiosis Sp. z o.o. · BDO: 000585744</span>
