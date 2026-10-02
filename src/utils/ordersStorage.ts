@@ -137,7 +137,7 @@ export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedO
  */
 export async function updateArchivedOrderFields(
   id: string,
-  fields: Partial<Pick<ArchivedOrder, 'isDelivered' | 'deliveredAt' | 'notes' | 'invoiceNumber' | 'xmlContent' | 'paymentStatus' | 'paymentDueDate' | 'paidAt' | 'paymentTermDays'>>
+  fields: Partial<ArchivedOrder>
 ): Promise<boolean> {
   // Próba na serwerze
   try {

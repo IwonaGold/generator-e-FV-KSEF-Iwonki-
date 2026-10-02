@@ -26,6 +26,9 @@ import {
   FileSpreadsheet,
   CreditCard,
   AlertCircle,
+  Truck,
+  Package,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   ArchivedOrder,
@@ -33,6 +36,8 @@ import {
   OrderStatusFilter,
   OrderPaymentFilter,
   OrderDatePeriodFilter,
+  ShippingCourier,
+  ShippingStatus,
 } from '../types/ordersHistory';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
@@ -44,6 +49,13 @@ import {
   isOrderInPeriod,
   calculatePeriodCounts,
 } from '../utils/orderPeriodFilter';
+import {
+  COURIER_OPTIONS,
+  SHIPPING_STATUSES,
+  detectCourierFromTrackingNumber,
+  getTrackingUrl,
+  getShippingStatusConfig,
+} from '../utils/shippingTracking';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
@@ -74,6 +86,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   // Stan lokalny edycji notatek i statusu dostawy
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [notesState, setNotesState] = useState<Record<string, string>>({});
+
+  // Stan lokalny edycji numeru listu przewozowego
+  const [trackingNumberState, setTrackingNumberState] = useState<Record<string, string>>({});
+  const [savingTrackingId, setSavingTrackingId] = useState<string | null>(null);
 
   // Stan lokalny edycji numeru faktury (i generowania z XML)
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
@@ -180,8 +196,19 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         const matchesRecipient = ord.thirdParty?.name?.toLowerCase().includes(query);
         const matchesNotes = ord.notes?.toLowerCase().includes(query);
         const matchesItems = ord.items?.some((it) => it.name?.toLowerCase().includes(query));
+        const matchesTracking =
+          ord.trackingNumber?.toLowerCase().includes(query) ||
+          ord.courierName?.toLowerCase().includes(query);
 
-        if (!matchesInv && !matchesOrd && !matchesBuyer && !matchesRecipient && !matchesNotes && !matchesItems) {
+        if (
+          !matchesInv &&
+          !matchesOrd &&
+          !matchesBuyer &&
+          !matchesRecipient &&
+          !matchesNotes &&
+          !matchesItems &&
+          !matchesTracking
+        ) {
           return false;
         }
       }
@@ -201,11 +228,112 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       minute: '2-digit',
     });
 
-    await updateArchivedOrderFields(order.id, {
+    const updates: Partial<ArchivedOrder> = {
       isDelivered: newStatus,
-      deliveredAt: newStatus ? nowStr : null,
+      deliveredAt: newStatus ? (order.deliveredAt || nowStr) : null,
+    };
+
+    // Jeśli zamówienie ma przypisany list przewozowy, automatycznie synchronizujemy status przesyłki
+    if (newStatus) {
+      if (order.trackingNumber) {
+        updates.shippingStatus = 'delivered';
+        updates.shippingStatusUpdatedAt = nowStr;
+      }
+    } else {
+      if (order.trackingNumber && order.shippingStatus === 'delivered') {
+        updates.shippingStatus = 'in_transit';
+        updates.shippingStatusUpdatedAt = nowStr;
+      }
+    }
+
+    await updateArchivedOrderFields(order.id, updates);
+
+    setInvoiceNotice(
+      newStatus
+        ? `Potwierdzono dostawę zamówienia ${order.invoiceNumber} (data: ${nowStr})`
+        : `Cofnięto status doręczenia dla ${order.invoiceNumber}`
+    );
+    setTimeout(() => setInvoiceNotice(null), 3000);
+    onRefreshOrders();
+  };
+
+  // Obsługa wpisywania numeru listu przewozowego
+  const handleTrackingNumberChange = (orderId: string, value: string) => {
+    setTrackingNumberState((prev) => ({ ...prev, [orderId]: value }));
+  };
+
+  // Zapisanie numeru listu przewozowego (onBlur lub przycisk Zapisz)
+  const handleSaveTrackingNumber = async (order: ArchivedOrder, explicitNumber?: string) => {
+    const newTracking = (explicitNumber !== undefined ? explicitNumber : trackingNumberState[order.id])?.trim();
+    if (newTracking === undefined) return;
+
+    setSavingTrackingId(order.id);
+
+    const detectedCourier = order.courierName || detectCourierFromTrackingNumber(newTracking);
+    const updates: Partial<ArchivedOrder> = {
+      trackingNumber: newTracking || null,
+      courierName: newTracking ? detectedCourier : null,
+    };
+
+    if (newTracking && !order.shippingStatus) {
+      updates.shippingStatus = order.isDelivered ? 'delivered' : 'in_transit';
+      updates.shippingStatusUpdatedAt = new Date().toLocaleString('pl-PL');
+    }
+
+    await updateArchivedOrderFields(order.id, updates);
+    setSavingTrackingId(null);
+    setInvoiceNotice(
+      newTracking
+        ? `Zapisano list przewozowy: ${newTracking} (${detectedCourier})`
+        : 'Wyczyszczono list przewozowy.'
+    );
+    setTimeout(() => setInvoiceNotice(null), 3000);
+    onRefreshOrders();
+  };
+
+  // Zmiana firmy kurierskiej
+  const handleCourierChange = async (order: ArchivedOrder, courier: ShippingCourier) => {
+    await updateArchivedOrderFields(order.id, { courierName: courier });
+    setInvoiceNotice(`Zmieniono firmę kurierską na: ${courier}`);
+    setTimeout(() => setInvoiceNotice(null), 2500);
+    onRefreshOrders();
+  };
+
+  // Zmiana statusu przesyłki kurierskiej z automatyczną aktualizacją doręczenia
+  const handleShippingStatusChange = async (order: ArchivedOrder, newStatus: ShippingStatus) => {
+    const nowStr = new Date().toLocaleString('pl-PL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
 
+    const isNowDelivered = newStatus === 'delivered';
+    const updates: Partial<ArchivedOrder> = {
+      shippingStatus: newStatus,
+      shippingStatusUpdatedAt: nowStr,
+    };
+
+    if (isNowDelivered) {
+      // Automatyczna aktualizacja statusu dostawy gdy przesyłka została doręczona
+      updates.isDelivered = true;
+      updates.deliveredAt = order.deliveredAt || nowStr;
+    } else if (order.shippingStatus === 'delivered' && !isNowDelivered) {
+      // Jeśli użytkownik cofnął status z 'doręczona', odznaczamy doręczenie
+      updates.isDelivered = false;
+      updates.deliveredAt = null;
+    }
+
+    await updateArchivedOrderFields(order.id, updates);
+
+    const statusCfg = getShippingStatusConfig(newStatus);
+    setInvoiceNotice(
+      isNowDelivered
+        ? `✅ Przesyłka oznaczona jako DORĘCZONA! Automatycznie zaktualizowano: Towar dotarł do odbiorcy (${nowStr}).`
+        : `Zaktualizowano status przesyłki na: ${statusCfg.label}`
+    );
+    setTimeout(() => setInvoiceNotice(null), 4000);
     onRefreshOrders();
   };
 
@@ -841,6 +969,14 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               daysDiff = Math.round((dDue.getTime() - dNow.getTime()) / (1000 * 60 * 60 * 24));
             }
 
+            const currentTrackingNumber =
+              trackingNumberState[ord.id] !== undefined
+                ? trackingNumberState[ord.id]
+                : ord.trackingNumber || '';
+            const currentShippingCfg = getShippingStatusConfig(
+              ord.shippingStatus || (ord.isDelivered ? 'delivered' : 'in_transit')
+            );
+
             return (
               <div
                 key={ord.id}
@@ -1093,6 +1229,120 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     </div>
                   </div>
 
+                  {/* MODUŁ SPEDYCJI: LIST PRZEWOZOWY, KURIER I STATUS PRZESYŁKI */}
+                  <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 via-rose-50/20 to-slate-50 p-3 rounded-xl border border-slate-200/80">
+                    {/* LEWA STRONA: PRZEWOŹNIK, NUMER LISTU, ŚLEDZENIE */}
+                    <div className="flex flex-wrap items-center gap-2 flex-1">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 shrink-0">
+                        <Truck className="w-4 h-4 text-rose-500" />
+                        <span>List przewozowy:</span>
+                      </div>
+
+                      {/* WYBÓR KURIERA */}
+                      <select
+                        value={ord.courierName || 'DPD'}
+                        onChange={(e) => handleCourierChange(ord, e.target.value as ShippingCourier)}
+                        className="px-2 py-1 text-xs font-semibold bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-rose-500 cursor-pointer shadow-2xs"
+                        title="Firma kurierska / Przewoźnik"
+                      >
+                        {COURIER_OPTIONS.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* POLE NUMERU LISTU */}
+                      <div className="flex items-center gap-1 flex-1 min-w-[190px] max-w-sm">
+                        <input
+                          type="text"
+                          placeholder="Wpisz nr listu (np. 0000123... lub 62400...)..."
+                          value={currentTrackingNumber}
+                          onChange={(e) => handleTrackingNumberChange(ord.id, e.target.value)}
+                          onBlur={() => handleSaveTrackingNumber(ord)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSaveTrackingNumber(ord)}
+                          className="w-full px-2.5 py-1 text-xs font-mono bg-white border border-slate-300 focus:border-rose-400 rounded-lg text-slate-900 shadow-2xs"
+                        />
+                        {currentTrackingNumber !== (ord.trackingNumber || '') && (
+                          <button
+                            type="button"
+                            onClick={() => handleSaveTrackingNumber(ord)}
+                            disabled={savingTrackingId === ord.id}
+                            className="px-2.5 py-1 text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors cursor-pointer shrink-0"
+                          >
+                            {savingTrackingId === ord.id ? '...' : 'Zapisz'}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* PRZYCISK KOPIOWANIA */}
+                      {ord.trackingNumber && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(ord.trackingNumber || '');
+                            setInvoiceNotice(`Skopiowano nr listu: ${ord.trackingNumber}`);
+                            setTimeout(() => setInvoiceNotice(null), 2500);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-slate-200"
+                          title="Kopiuj numer listu przewozowego"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* LINK DO ŚLEDZENIA PRZESYŁKI */}
+                      {ord.trackingNumber && (
+                        <a
+                          href={getTrackingUrl(ord.trackingNumber, ord.courierName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-lg transition-colors cursor-pointer shadow-2xs shrink-0"
+                          title={`Otwórz oficjalne śledzenie przesyłki ${ord.courierName || 'Kurier'}`}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Śledź przesyłkę ↗</span>
+                        </a>
+                      )}
+                    </div>
+
+                    {/* PRAWA STRONA: STATUS PRZESYŁKI & AUTOMATYCZNE OZNACZENIE DORĘCZENIA */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Status paczki:
+                      </span>
+
+                      {/* DROPDOWN STATUSU PRZESYŁKI */}
+                      <select
+                        value={ord.shippingStatus || (ord.isDelivered ? 'delivered' : 'in_transit')}
+                        onChange={(e) => handleShippingStatusChange(ord, e.target.value as ShippingStatus)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border cursor-pointer shadow-2xs ${
+                          currentShippingCfg.badgeClass
+                        }`}
+                        title="Zmień status przesyłki. Wybór 'Doręczona' automatycznie zaktualizuje status zamówienia jako doręczone z datą!"
+                      >
+                        {SHIPPING_STATUSES.map((st) => (
+                          <option key={st.id} value={st.id}>
+                            {st.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* SZYBKI PRZYCISK: ⚡ OZNACZ JAKO DORĘCZONA */}
+                      {!ord.isDelivered && (
+                        <button
+                          type="button"
+                          onClick={() => handleShippingStatusChange(ord, 'delivered')}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                          title="Kliknij, aby jednym ruchem oznaczyć przesyłkę jako doręczoną i potwierdzić odbiór towaru przez aptekę"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>⚡ Doręczono</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* POLE NOTATKI (Z AUTOMATYCZNYM ZAPISEM) */}
                   <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
                     <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1">
@@ -1101,7 +1351,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     <div className="flex-1 flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder="Wpisz notatkę (np. nr listu przewozowego, uwagi kierowcy, stan przesyłki)..."
+                        placeholder="Wpisz notatkę (np. uwagi kierowcy, stan przesyłki, osoba odbierająca)..."
                         value={currentNote}
                         onChange={(e) => handleNoteChange(ord.id, e.target.value)}
                         onBlur={() => handleSaveNote(ord.id)}

@@ -32,11 +32,19 @@ export interface ArchivedOrder {
   paymentDueDate?: string | null;
   paidAt?: string | null;
   paymentTermDays?: number;
+  // Śledzenie przesyłki kurierskiej i list przewozowy
+  trackingNumber?: string | null;
+  courierName?: ShippingCourier | string | null;
+  shippingStatus?: ShippingStatus | null;
+  shippingStatusUpdatedAt?: string | null;
   // Pola specyficzne dla korekt (gdy documentType === 'KOR')
   correctionReason?: string;
   originalInvoiceNumber?: string;
   originalInvoiceDate?: string;
 }
+
+export type ShippingCourier = 'DPD' | 'InPost' | 'DHL' | 'GLS' | 'FedEx' | 'Pocztex' | 'Schenker' | 'Inny';
+export type ShippingStatus = 'registered' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception';
 
 export type OrderChainFilter = 'Wszystkie' | 'DOZ' | 'Dr. Max' | 'Super-Pharm' | 'Gemini' | 'Inne';
 export type OrderStatusFilter = 'all' | 'delivered' | 'pending';
