@@ -534,6 +534,47 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     };
   }, [buyer.name, buyer.nip, thirdParty?.name, thirdParty?.idWew, selectedChain, knowledgeClients, meta.paymentDays, logisticsFormat]);
 
+  // Automatyczne zaznaczanie terminu płatności (np. 30 / 45 / 60 dni) oraz wyliczanie daty płatności wg Centrum Wiedzy
+  const lastAutoPaymentKeyRef = useRef<string>('');
+  useEffect(() => {
+    if (!recipientCheatSheet || recipientCheatSheet.id === 'custom') {
+      lastAutoPaymentKeyRef.current = '';
+      return;
+    }
+
+    const targetDays = recipientCheatSheet.paymentDays;
+    if (!targetDays) return;
+
+    const baseDateStr = meta.deliveryDate || meta.issueDate || meta.orderDate || '';
+    const currentKey = `${recipientCheatSheet.id}|${targetDays}|${buyer.nip || ''}|${orderFile?.name || ''}|${meta.orderNumber || ''}|${baseDateStr}`;
+
+    if (lastAutoPaymentKeyRef.current !== currentKey || !meta.paymentDays) {
+      lastAutoPaymentKeyRef.current = currentKey;
+      const base = baseDateStr ? new Date(baseDateStr) : new Date();
+      base.setDate(base.getDate() + targetDays);
+      const calculatedDueDate = base.toISOString().slice(0, 10);
+
+      if (meta.paymentDays !== targetDays || meta.dueDate !== calculatedDueDate) {
+        onUpdateMeta({
+          ...meta,
+          paymentDays: targetDays,
+          dueDate: calculatedDueDate,
+        });
+      }
+    }
+  }, [
+    recipientCheatSheet,
+    buyer.nip,
+    orderFile?.name,
+    meta.orderNumber,
+    meta.deliveryDate,
+    meta.issueDate,
+    meta.orderDate,
+    meta.paymentDays,
+    meta.dueDate,
+    onUpdateMeta,
+  ]);
+
   return (
     <div className="space-y-6 mb-6">
       {/* ===================================================================== */}
@@ -1509,56 +1550,64 @@ Numer zamówienia: ZAM/2026/10/01
             </div>
           </div>
 
-          {/* Szybkie przyciski dni: 30, 45, 60 dni OD DATY DOSTAWY (P_6) */}
+          {/* Szybkie przyciski dni: 30, 45, 60 dni OD DATY DOSTAWY (P_6) — automatycznie wg Centrum Wiedzy */}
           <div className="bg-fuchsia-50/50 p-2.5 rounded-xl border border-fuchsia-200/80 mt-1">
-            <div className="flex items-center justify-between text-[11px] mb-1.5">
+            <div className="flex items-center justify-between text-[11px] mb-1.5 gap-1 flex-wrap">
               <span className="font-semibold text-slate-700 flex items-center gap-1">
                 <span>🚚</span> Termin od daty dostawy (P_6: <strong className="font-mono text-fuchsia-700">{meta.deliveryDate || meta.issueDate}</strong>):
               </span>
               {meta.paymentDays ? (
                 <span className="text-[10px] font-bold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-full border border-fuchsia-200">
-                  Wybrano: {meta.paymentDays} dni ✨
+                  {recipientCheatSheet &&
+                  recipientCheatSheet.id !== 'custom' &&
+                  meta.paymentDays === recipientCheatSheet.paymentDays
+                    ? `Wg Centrum Wiedzy: ${meta.paymentDays} dni ✨`
+                    : `Wybrano: ${meta.paymentDays} dni ✨`}
                 </span>
               ) : null}
             </div>
-            <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
-              <button
-                type="button"
-                onClick={() => setPaymentDaysFromDelivery(30)}
-                className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
-                  meta.paymentDays === 30
-                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white border-fuchsia-500 shadow-xs'
-                    : 'bg-white hover:bg-fuchsia-50/70 text-slate-800 border-slate-200 hover:border-fuchsia-300'
-                }`}
-                title="30 dni od daty dostawy"
-              >
-                30 dni
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentDaysFromDelivery(45)}
-                className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
-                  meta.paymentDays === 45
-                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white border-fuchsia-500 shadow-xs'
-                    : 'bg-white hover:bg-fuchsia-50/70 text-slate-800 border-slate-200 hover:border-fuchsia-300'
-                }`}
-                title="45 dni od daty dostawy"
-              >
-                45 dni
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentDaysFromDelivery(60)}
-                className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
-                  meta.paymentDays === 60
-                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white border-fuchsia-500 shadow-xs'
-                    : 'bg-white hover:bg-fuchsia-50/70 text-slate-800 border-slate-200 hover:border-fuchsia-300'
-                }`}
-                title="60 dni od daty dostawy"
-              >
-                60 dni
-              </button>
-            </div>
+            {(() => {
+              const cwDays =
+                recipientCheatSheet && recipientCheatSheet.id !== 'custom'
+                  ? recipientCheatSheet.paymentDays
+                  : undefined;
+              const dayOptions = Array.from(
+                new Set([30, 45, 60, ...(cwDays ? [cwDays] : [])])
+              ).sort((a, b) => a - b);
+              return (
+                <div
+                  className={`grid gap-1.5 font-mono text-xs ${
+                    dayOptions.length === 4 ? 'grid-cols-4' : 'grid-cols-3'
+                  }`}
+                >
+                  {dayOptions.map((days) => {
+                    const isSelected = meta.paymentDays === days;
+                    const isFromKnowledge = cwDays === days;
+                    return (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => setPaymentDaysFromDelivery(days)}
+                        className={`py-1.5 px-2 rounded-xl font-bold border transition-all text-center cursor-pointer ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white border-fuchsia-500 shadow-xs'
+                            : isFromKnowledge
+                            ? 'bg-fuchsia-50 text-fuchsia-900 border-fuchsia-300 hover:border-fuchsia-400'
+                            : 'bg-white hover:bg-fuchsia-50/70 text-slate-800 border-slate-200 hover:border-fuchsia-300'
+                        }`}
+                        title={
+                          isFromKnowledge
+                            ? `${days} dni od daty dostawy (termin przypisany w Centrum Wiedzy)`
+                            : `${days} dni od daty dostawy`
+                        }
+                      >
+                        {days} dni
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
 

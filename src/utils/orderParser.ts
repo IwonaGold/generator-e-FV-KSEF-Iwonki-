@@ -580,14 +580,12 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
       };
     }
 
-    if (!metaUpdates.paymentDays && profile.standardPaymentDays) {
+    if (profile.standardPaymentDays) {
       metaUpdates.paymentDays = profile.standardPaymentDays;
-      if (!metaUpdates.dueDate) {
-        const baseDateStr = metaUpdates.deliveryDate || metaUpdates.orderDate;
-        const base = baseDateStr ? new Date(baseDateStr) : new Date();
-        base.setDate(base.getDate() + profile.standardPaymentDays);
-        metaUpdates.dueDate = base.toISOString().slice(0, 10);
-      }
+      const baseDateStr = metaUpdates.deliveryDate || metaUpdates.orderDate;
+      const base = baseDateStr ? new Date(baseDateStr) : new Date();
+      base.setDate(base.getDate() + profile.standardPaymentDays);
+      metaUpdates.dueDate = base.toISOString().slice(0, 10);
     }
 
     return {
@@ -620,6 +618,16 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
     city: headerData.buyerCity || 'Warszawa',
     email: headerData.buyerEmail || '',
   };
+
+  // Sprawdzenie Modum Pharma (Centrum Wiedzy: 30 dni)
+  const cleanCustomNip = (customBuyer.nip || '').replace(/\D/g, '');
+  if (cleanCustomNip === '7010955110' || (customBuyer.name || '').toLowerCase().includes('modum')) {
+    metaUpdates.paymentDays = 30;
+    const baseDateStr = metaUpdates.deliveryDate || metaUpdates.orderDate;
+    const base = baseDateStr ? new Date(baseDateStr) : new Date();
+    base.setDate(base.getDate() + 30);
+    metaUpdates.dueDate = base.toISOString().slice(0, 10);
+  }
 
   let thirdParty: ThirdPartyEntity | null = null;
   if (headerData.recipientName) {
