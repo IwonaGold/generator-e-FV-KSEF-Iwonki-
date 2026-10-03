@@ -9,6 +9,8 @@ import { ItemsPreviewTable } from './components/ItemsPreviewTable';
 import { KSeFXMLModal } from './components/KSeFXMLModal';
 import { WZDocumentModal } from './components/WZDocumentModal';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
+import { EdiDozPrototypeModal } from './components/EdiDozPrototypeModal';
+import { DozEdiOrderSample } from './utils/ediGenerator';
 import {
   PharmacyChain,
   LogisticsFormat,
@@ -146,6 +148,7 @@ export default function App() {
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [isWzModalOpen, setIsWzModalOpen] = useState(false);
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
+  const [isEdiModalOpen, setIsEdiModalOpen] = useState(false);
 
   // --- Moduł Aplikacji: 'home' (Strona startowa z 2 kafelkami) | 'invoice' | 'correction' | 'history' | 'knowledge' ---
   const [activeModule, setActiveModule] = useState<AppModule>(() => {
@@ -644,6 +647,42 @@ export default function App() {
     setOrderFile({ name: 'zamowienie_22122_2026_KPD.txt', size: '2.4 KB' });
   };
 
+  const handleLoadEdiOrderToApp = (ediOrder: DozEdiOrderSample) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const deliv = ediOrder.expectedDeliveryDate || today;
+    const dueObj = new Date(deliv);
+    dueObj.setDate(dueObj.getDate() + 60);
+    const dueDateStr = dueObj.toISOString().slice(0, 10);
+
+    setSelectedChain('DOZ');
+    setBuyer({ ...PHARMACY_CHAINS['DOZ'].buyer });
+    setThirdParty(null);
+    setSeller({ ...DEFAULT_SELLER });
+    setMeta((prev) => ({
+      ...prev,
+      invoiceNumber: prev.invoiceNumber || `FV/2026/10/DOZ-${ediOrder.orderNumber.slice(0, 5)}`,
+      issueDate: today,
+      deliveryDate: deliv,
+      orderNumber: ediOrder.orderNumber,
+      orderDate: ediOrder.orderDate,
+      paymentDays: 60,
+      dueDate: dueDateStr,
+    }));
+    setItems(ediOrder.items.map((it) => ({ ...it })));
+    setLogisticsFormat('gs1_composite');
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride('DOZ_SPECIAL');
+    setOrderFile({
+      name: `EDI_ORDERS_${ediOrder.orderNumber.replace(/\//g, '_')}.xml`,
+      size: 'Bramka EDI DOZ Direct',
+    });
+    setActiveModule('invoice');
+    setPriceNotice(
+      `📡 Wczytano zamówienie EDI ORDERS nr ${ediOrder.orderNumber} z bramki DOZ Direct (${ediOrder.items.length} pozycji · Cennik Kolumna O -12% · Termin 60 dni · Brak Podmiot3).`
+    );
+    setTimeout(() => setPriceNotice(null), 7000);
+  };
+
   const handleUpdateItem = (id: string, updatedFields: Partial<InvoiceItem>) => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updatedFields } : item))
@@ -890,6 +929,7 @@ export default function App() {
           <HomePortalView
             onSelectModule={setActiveModule}
             ordersCount={archivedOrders.length}
+            onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
           />
         ) : (
           /* ==================================================================== */
@@ -900,6 +940,7 @@ export default function App() {
             onSelectModule={setActiveModule}
             onNavigateHome={() => setActiveModule('home')}
             ordersCount={archivedOrders.length}
+            onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
           />
         )}
 
@@ -1042,6 +1083,7 @@ export default function App() {
         onSchemaVersionChange={setSchemaVersion}
         onSaveToHistory={handleSaveInvoiceToHistory}
         onOpenWzModal={() => setIsWzModalOpen(true)}
+        onOpenEdiModal={() => setIsEdiModalOpen(true)}
       />
 
       {/* Modal generowania i wydruku dokumentu WZ */}
@@ -1060,6 +1102,18 @@ export default function App() {
       <VisionLLMGuideModal
         isOpen={isAiGuideOpen}
         onClose={() => setIsAiGuideOpen(false)}
+      />
+
+      {/* Interaktywny Prototyp Komunikacji EDI DOZ Direct (ORDERS, ORDRSP, DESADV, INVOIC) */}
+      <EdiDozPrototypeModal
+        isOpen={isEdiModalOpen}
+        onClose={() => setIsEdiModalOpen(false)}
+        seller={seller}
+        buyer={buyer}
+        meta={meta}
+        items={items}
+        ksefXmlContent={xmlPayload}
+        onLoadEdiOrderToApp={handleLoadEdiOrderToApp}
       />
 
       {/* Dyskretna kwiecista stopka */}

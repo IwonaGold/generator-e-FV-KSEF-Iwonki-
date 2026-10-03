@@ -15,6 +15,7 @@ interface KSeFXMLModalProps {
   onSchemaVersionChange: (ver: KSeFSchemaVersion) => void;
   onSaveToHistory?: () => void;
   onOpenWzModal?: () => void;
+  onOpenEdiModal?: () => void;
 }
 
 export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
@@ -28,6 +29,7 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
   onSchemaVersionChange,
   onSaveToHistory,
   onOpenWzModal,
+  onOpenEdiModal,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isSavedToHistory, setIsSavedToHistory] = useState(false);
@@ -377,6 +379,19 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {onOpenEdiModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenEdiModal();
+                }}
+                className="px-3.5 py-1.5 text-xs font-bold text-fuchsia-800 bg-fuchsia-50 hover:bg-fuchsia-100 border border-fuchsia-200 rounded-lg transition-colors cursor-pointer"
+                title="Otwórz Centrum EDI DOZ Direct (INVOIC / DESADV / ORDRSP)"
+              >
+                📡 Eksport EDI DOZ
+              </button>
+            )}
             {onOpenWzModal && (
               <button
                 type="button"

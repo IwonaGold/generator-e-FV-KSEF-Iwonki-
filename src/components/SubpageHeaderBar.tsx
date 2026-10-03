@@ -7,6 +7,7 @@ interface SubpageHeaderBarProps {
   onSelectModule: (module: AppModule) => void;
   onNavigateHome: () => void;
   ordersCount: number;
+  onOpenEdiPrototype?: () => void;
 }
 
 export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
@@ -14,6 +15,7 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
   onSelectModule,
   onNavigateHome,
   ordersCount,
+  onOpenEdiPrototype,
 }) => {
   const isInvoiceCenter = activeModule === 'invoice' || activeModule === 'correction';
   const isKnowledgeCenter = activeModule === 'knowledge';
@@ -69,6 +71,18 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
               📚 Centrum Wiedzy (CRM)
             </button>
           </div>
+
+          {onOpenEdiPrototype && (
+            <button
+              type="button"
+              onClick={onOpenEdiPrototype}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black text-white bg-gradient-to-r from-indigo-600 to-fuchsia-600 hover:from-indigo-700 hover:to-fuchsia-700 rounded-xl shadow-xs transition-all cursor-pointer"
+              title="Otwórz interaktywny prototyp komunikacji EDI DOZ Direct (ORDERS, ORDRSP, DESADV, INVOIC)"
+            >
+              <span>📡</span>
+              <span>EDI DOZ (Prototyp)</span>
+            </button>
+          )}
 
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-50 border border-slate-200/70 text-slate-700">
             <span>

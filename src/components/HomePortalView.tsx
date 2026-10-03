@@ -5,11 +5,13 @@ import { AppModule } from '../types/navigation';
 interface HomePortalViewProps {
   onSelectModule: (module: AppModule) => void;
   ordersCount: number;
+  onOpenEdiPrototype?: () => void;
 }
 
 export const HomePortalView: React.FC<HomePortalViewProps> = ({
   onSelectModule,
   ordersCount,
+  onOpenEdiPrototype,
 }) => {
   return (
     <div className="max-w-7xl mx-auto py-6 sm:py-10 animate-in fade-in zoom-in-95 duration-200">
@@ -275,6 +277,54 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ==================================================================== */}
+      {/* NOWOŚĆ: INTERAKTYWNY PROTOTYP KOMUNIKACJI EDI DOZ DIRECT             */}
+      {/* ==================================================================== */}
+      {onOpenEdiPrototype && (
+        <div
+          onClick={onOpenEdiPrototype}
+          className="mt-7 group relative bg-gradient-to-r from-indigo-950 via-indigo-900 to-fuchsia-950 hover:from-indigo-900 hover:via-indigo-800 hover:to-fuchsia-900 text-white rounded-3xl p-6 sm:p-7 border-2 border-indigo-500/40 hover:border-fuchsia-400 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex items-start sm:items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-fuchsia-500 flex items-center justify-center text-3xl shadow-lg border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
+                📡
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 rounded-full">
+                    NOWOŚĆ · INTERAKTYWNY PROTOTYP
+                  </span>
+                  <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold bg-indigo-800/80 text-indigo-200 border border-indigo-600 rounded-full">
+                    DOZ Direct EDI + KSeF FA(3)
+                  </span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                  Centrum Komunikacji EDI – DOZ Direct (ORDERS • ORDRSP • DESADV • INVOIC)
+                </h3>
+                <p className="text-xs sm:text-sm text-indigo-200 mt-1 max-w-3xl leading-relaxed">
+                  Zobacz na żywo jak w naszej aplikacji będzie wyglądać automatyczny odbiór zamówienia EDI z DOZ, potwierdzenie ilości (<strong className="text-white">ORDRSP</strong>), elektroniczna awizacja dostawy z seriami LOT i datami ważności (<strong className="text-white">DESADV / e-WZ</strong>) oraz podwójny eksport faktury (<strong className="text-white">EDI INVOIC + KSeF FA(3)</strong>).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end lg:self-center shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenEdiPrototype();
+                }}
+                className="inline-flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-black text-slate-950 bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-300 hover:from-amber-200 hover:to-yellow-200 rounded-2xl shadow-md transition-all cursor-pointer"
+              >
+                <span>Uruchom Prototyp EDI DOZ</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
