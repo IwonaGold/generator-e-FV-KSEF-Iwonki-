@@ -457,11 +457,13 @@ const dataDir = path.join(process.cwd(), 'data');
 const ordersFilePath = path.join(dataDir, 'orders_history.json');
 const deletedIdsFilePath = path.join(dataDir, 'deleted_orders_ids.json');
 
-// Konfiguracja darmowej chmury GitHub (gałąź app-data, szyfrowanie AES-256-GCM)
+// Konfiguracja darmowej chmury GitHub (osobny prywatny sejf + szyfrowanie AES-256-GCM)
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
-const GITHUB_DATA_REPO = (process.env.GITHUB_DATA_REPO || 'IwonaGold/generator-e-FV-KSEF-Iwonki-').trim();
+const DEFAULT_VAULT_REPO_NAME = 'ksef-prywatny-sejf';
+let activeVaultRepo = (process.env.GITHUB_DATA_REPO || `IwonaGold/${DEFAULT_VAULT_REPO_NAME}`).trim();
 const GITHUB_DATA_BRANCH = (process.env.GITHUB_DATA_BRANCH || 'app-data').trim();
 const ENCRYPTION_SECRET = (process.env.DATA_ENCRYPTION_KEY || GITHUB_TOKEN || 'local-fallback-key').trim();
+let vaultRepoVerified = false;
 
 function getEncryptionKey(): Buffer {
   return crypto.scryptSync(ENCRYPTION_SECRET, 'ksef-iwonka-vault-salt-v1', 32);
@@ -517,8 +519,62 @@ function decryptVaultPayload(envelopeStr: string): { orders: any[]; deletedIds: 
   }
 }
 
+async function ensurePrivateVaultRepoExists(): Promise<void> {
+  if (!GITHUB_TOKEN || vaultRepoVerified) return;
+  try {
+    const checkRes = await fetch(`https://api.github.com/repos/${activeVaultRepo}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'Generator-KSeF-Iwonki-CloudVault',
+      },
+    });
+    if (checkRes.ok) {
+      vaultRepoVerified = true;
+      return;
+    }
+    if (checkRes.status === 404 && !process.env.GITHUB_DATA_REPO) {
+      // Automatycznie utwórz w 100% PRYWATNE repozytorium na sejf danych
+      const createRes = await fetch('https://api.github.com/user/repos', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Generator-KSeF-Iwonki-CloudVault',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: DEFAULT_VAULT_REPO_NAME,
+          private: true,
+          auto_init: true,
+          description: '🔒 Prywatny, zaszyfrowany sejf danych zamówień KSeF (AES-256-GCM)',
+        }),
+      });
+      if (createRes.ok) {
+        const createdRepo: any = await createRes.json();
+        if (createdRepo?.full_name) {
+          activeVaultRepo = createdRepo.full_name;
+        }
+        vaultRepoVerified = true;
+        console.log(`🔒 Automatycznie utworzono prywatne repozytorium sejfu: ${activeVaultRepo}`);
+        return;
+      }
+      // Fallback do głównego repozytorium, jeśli token nie pozwala tworzyć nowych repozytoriów
+      activeVaultRepo = 'IwonaGold/generator-e-FV-KSEF-Iwonki-';
+      vaultRepoVerified = true;
+    }
+  } catch (e) {
+    console.warn('Uwaga przy weryfikacji repozytorium sejfu, używam fallbacku:', e);
+    activeVaultRepo = 'IwonaGold/generator-e-FV-KSEF-Iwonki-';
+    vaultRepoVerified = true;
+  }
+}
+
 async function githubApiRequest(endpoint: string, options: RequestInit = {}): Promise< globalThis.Response > {
-  const url = `https://api.github.com/repos/${GITHUB_DATA_REPO}${endpoint}`;
+  await ensurePrivateVaultRepoExists();
+  const url = `https://api.github.com/repos/${activeVaultRepo}${endpoint}`;
   return fetch(url, {
     ...options,
     headers: {
@@ -830,7 +886,7 @@ app.get('/api/cloud-status', async (req: Request, res: Response) => {
   return res.json({
     enabled: Boolean(GITHUB_TOKEN),
     encryption: 'AES-256-GCM + GZIP',
-    repo: GITHUB_DATA_REPO,
+    repo: activeVaultRepo,
     branch: GITHUB_DATA_BRANCH,
     lastSyncAt: lastCloudSyncAt,
     lastError: lastCloudSyncError,
