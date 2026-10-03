@@ -16,39 +16,87 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
   ordersCount,
 }) => {
   const isInvoiceCenter = activeModule === 'invoice' || activeModule === 'correction';
+  const isKnowledgeCenter = activeModule === 'knowledge';
 
   return (
     <div className="mb-7 animate-in fade-in duration-150">
-      {/* GÓRNY PASEK POWROTU DO MENU GŁÓWNEGO */}
-      <div className="mb-4 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
+      {/* GÓRNY PASEK POWROTU DO MENU GŁÓWNEGO I SZYBKIEGO PRZEŁĄCZANIA CENTRÓW */}
+      <div className="mb-4 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={onNavigateHome}
           className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-rose-700 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition-all cursor-pointer shadow-2xs group shrink-0"
-          title="Wróć do strony startowej z dwoma kafelkami"
+          title="Wróć do strony startowej"
         >
           <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-rose-600 group-hover:-translate-x-0.5 transition-all" />
           <span>Wróć do menu głównego</span>
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Szybki przełącznik między trzema Centrami */}
+          <div className="hidden md:inline-flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => onSelectModule('invoice')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                isInvoiceCenter
+                  ? 'bg-white text-fuchsia-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              🧾 Centrum Faktur
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectModule('history')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeModule === 'history'
+                  ? 'bg-white text-rose-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              📦 Centrum Zamówień ({ordersCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectModule('knowledge')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                isKnowledgeCenter
+                  ? 'bg-white text-indigo-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              📚 Centrum Wiedzy (CRM)
+            </button>
+          </div>
+
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-50 border border-slate-200/70 text-slate-700">
-            <span>{isInvoiceCenter ? '🏛️ Centrum Faktur' : '📦 Centrum Zamówień'}</span>
+            <span>
+              {isInvoiceCenter
+                ? '🏛️ Centrum Faktur'
+                : isKnowledgeCenter
+                ? '📚 Centrum Wiedzy'
+                : '📦 Centrum Zamówień'}
+            </span>
             <span className="text-slate-300">/</span>
-            <span className={isInvoiceCenter ? 'text-fuchsia-700 font-black' : 'text-rose-700 font-black'}>
+            <span
+              className={
+                isInvoiceCenter
+                  ? 'text-fuchsia-700 font-black'
+                  : isKnowledgeCenter
+                  ? 'text-indigo-700 font-black'
+                  : 'text-rose-700 font-black'
+              }
+            >
               {activeModule === 'invoice'
                 ? '1. Wygeneruj Fakturę XML'
                 : activeModule === 'correction'
                 ? '2. Wygeneruj Korektę Faktury XML'
+                : isKnowledgeCenter
+                ? 'CRM Klientów Kluczowych'
                 : 'Historia Zamówień'}
             </span>
           </span>
-
-          {!isInvoiceCenter && (
-            <span className="hidden sm:inline-flex text-xs font-semibold text-slate-500">
-              Zamówień w rejestrze: <strong className="text-slate-900 font-bold ml-1">{ordersCount}</strong>
-            </span>
-          )}
         </div>
       </div>
 

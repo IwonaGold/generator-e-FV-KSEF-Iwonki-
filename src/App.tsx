@@ -40,6 +40,7 @@ import { HomePortalView } from './components/HomePortalView';
 import { SubpageHeaderBar } from './components/SubpageHeaderBar';
 import { InvoiceCorrectionView } from './components/InvoiceCorrectionView';
 import { OrderHistoryView } from './components/OrderHistoryView';
+import { KnowledgeCenterView } from './components/KnowledgeCenterView';
 import { ArchivedOrder } from './types/ordersHistory';
 import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
 import { extractInvoiceNumberFromXml } from './utils/ksefXmlParser';
@@ -794,6 +795,11 @@ export default function App() {
             onLoadOrderForInvoiceCreation={handleLoadOrderForInvoiceCreation}
           />
         )}
+
+        {/* ==================================================================== */}
+        {/* MODUŁ 4: 4. CENTRUM WIEDZY (CRM KLIENTÓW KLUCZOWYCH)                 */}
+        {/* ==================================================================== */}
+        {activeModule === 'knowledge' && <KnowledgeCenterView />}
       </main>
 
       {/* Modal weryfikacji i pobrania XML */}

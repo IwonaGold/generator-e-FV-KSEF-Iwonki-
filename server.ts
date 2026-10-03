@@ -456,6 +456,7 @@ import zlib from 'zlib';
 const dataDir = path.join(process.cwd(), 'data');
 const ordersFilePath = path.join(dataDir, 'orders_history.json');
 const deletedIdsFilePath = path.join(dataDir, 'deleted_orders_ids.json');
+const knowledgeFilePath = path.join(dataDir, 'knowledge_base.json');
 
 // Konfiguracja darmowej chmury GitHub (osobny prywatny sejf + szyfrowanie AES-256-GCM)
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
@@ -469,7 +470,12 @@ function getEncryptionKey(): Buffer {
   return crypto.scryptSync(ENCRYPTION_SECRET, 'ksef-iwonka-vault-salt-v1', 32);
 }
 
-function encryptVaultPayload(payload: { orders: any[]; deletedIds: string[]; updatedAt: string }): string {
+function encryptVaultPayload(payload: {
+  orders: any[];
+  deletedIds: string[];
+  knowledgeClients?: any[];
+  updatedAt: string;
+}): string {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -489,7 +495,11 @@ function encryptVaultPayload(payload: { orders: any[]; deletedIds: string[]; upd
   });
 }
 
-function decryptVaultPayload(envelopeStr: string): { orders: any[]; deletedIds: string[] } | null {
+function decryptVaultPayload(envelopeStr: string): {
+  orders: any[];
+  deletedIds: string[];
+  knowledgeClients: any[];
+} | null {
   try {
     const env = JSON.parse(envelopeStr);
     if (!env || !env.iv || !env.tag || !env.data) return null;
@@ -512,6 +522,7 @@ function decryptVaultPayload(envelopeStr: string): { orders: any[]; deletedIds: 
     return {
       orders: Array.isArray(parsed.orders) ? parsed.orders : [],
       deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
+      knowledgeClients: Array.isArray(parsed.knowledgeClients) ? parsed.knowledgeClients : [],
     };
   } catch (e) {
     console.error('Błąd odszyfrowywania bazy z chmury GitHub:', e);
@@ -590,7 +601,11 @@ async function githubApiRequest(endpoint: string, options: RequestInit = {}): Pr
 let lastCloudSyncAt: string | null = null;
 let lastCloudSyncError: string | null = null;
 
-async function loadVaultFromGitHubCloud(): Promise<{ orders: any[]; deletedIds: string[] } | null> {
+async function loadVaultFromGitHubCloud(): Promise<{
+  orders: any[];
+  deletedIds: string[];
+  knowledgeClients: any[];
+} | null> {
   if (!GITHUB_TOKEN) return null;
 
   try {
@@ -638,13 +653,18 @@ async function loadVaultFromGitHubCloud(): Promise<{ orders: any[]; deletedIds: 
   }
 }
 
-async function saveVaultToGitHubCloud(orders: any[], deletedIds: string[]): Promise<boolean> {
+async function saveVaultToGitHubCloud(
+  orders: any[],
+  deletedIds: string[],
+  knowledgeClients: any[]
+): Promise<boolean> {
   if (!GITHUB_TOKEN) return false;
 
   try {
     const encryptedEnvelope = encryptVaultPayload({
       orders,
       deletedIds,
+      knowledgeClients,
       updatedAt: new Date().toISOString(),
     });
 
@@ -679,7 +699,7 @@ async function saveVaultToGitHubCloud(orders: any[], deletedIds: string[]): Prom
             mode: '100644',
             type: 'blob',
             content:
-              '# 🔒 Zaszyfrowany Magazyn Danych (AES-256-GCM)\n\nPlik `orders_vault.enc` zawiera skompresowaną i zaszyfrowaną bazę zamówień (algorytm `AES-256-GCM` + `GZIP`).\nDane są całkowicie nieczytelne dla osób trzecich i mogą zostać odszyfrowane wyłącznie przez serwer aplikacji z kluczem prywatnym.\n',
+              '# 🔒 Zaszyfrowany Magazyn Danych (AES-256-GCM)\n\nPlik `orders_vault.enc` zawiera skompresowaną i zaszyfrowaną bazę zamówień oraz Centrum Wiedzy CRM (algorytm `AES-256-GCM` + `GZIP`).\nDane są całkowicie nieczytelne dla osób trzecich i mogą zostać odszyfrowane wyłącznie przez serwer aplikacji z kluczem prywatnym.\n',
           },
         ],
       }),
@@ -694,7 +714,7 @@ async function saveVaultToGitHubCloud(orders: any[], deletedIds: string[]): Prom
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: `🔒 Aktualizacja zaszyfrowanej bazy (${orders.length} zamówień)`,
+        message: `🔒 Aktualizacja zaszyfrowanej bazy (${orders.length} zamówień, ${knowledgeClients.length} kart CRM)`,
         tree: treeData.sha,
         parents: [],
       }),
@@ -756,7 +776,8 @@ function scheduleCloudSync() {
     try {
       const orders = readOrdersFromDisk();
       const deletedIds = readDeletedIdsFromDisk();
-      await saveVaultToGitHubCloud(orders, deletedIds);
+      const knowledgeClients = readKnowledgeFromDisk();
+      await saveVaultToGitHubCloud(orders, deletedIds, knowledgeClients);
     } finally {
       isSyncingCloud = false;
       if (pendingCloudSync) {
@@ -829,6 +850,35 @@ function writeOrdersToDisk(orders: any[], triggerCloud = true): boolean {
   }
 }
 
+function readKnowledgeFromDisk(): any[] {
+  ensureDataDir();
+  if (!fs.existsSync(knowledgeFilePath)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(knowledgeFilePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error('Błąd odczytu bazy Centrum Wiedzy:', e);
+    return [];
+  }
+}
+
+function writeKnowledgeToDisk(clients: any[], triggerCloud = true): boolean {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(knowledgeFilePath, JSON.stringify(clients, null, 2), 'utf8');
+    if (triggerCloud) {
+      scheduleCloudSync();
+    }
+    return true;
+  } catch (e) {
+    console.error('Błąd zapisu bazy Centrum Wiedzy:', e);
+    return false;
+  }
+}
+
 // Inicjalizacja bazy z chmury GitHub przy starcie serwera (np. po wybudzeniu na Renderze)
 let cloudInitPromise: Promise<void> | null = null;
 
@@ -837,6 +887,7 @@ async function ensureCloudInitialized(): Promise<void> {
   if (!cloudInitPromise) {
     cloudInitPromise = (async () => {
       const localOrders = readOrdersFromDisk();
+      const localKnowledge = readKnowledgeFromDisk();
       const cloudVault = await loadVaultFromGitHubCloud();
       if (cloudVault) {
         const localDeleted = readDeletedIdsFromDisk();
@@ -870,10 +921,31 @@ async function ensureCloudInitialized(): Promise<void> {
         }
         const mergedOrders = Array.from(map.values());
         writeOrdersToDisk(mergedOrders, false);
+
+        // Połącz karty klientów Centrum Wiedzy (CRM)
+        if (Array.isArray(cloudVault.knowledgeClients) && cloudVault.knowledgeClients.length > 0) {
+          const kMap = new Map<string, any>();
+          for (const kc of cloudVault.knowledgeClients) {
+            if (kc?.id) kMap.set(kc.id, kc);
+          }
+          for (const lk of localKnowledge) {
+            if (!lk?.id) continue;
+            const ex = kMap.get(lk.id);
+            if (!ex) {
+              kMap.set(lk.id, lk);
+            } else {
+              const tC = ex.updatedAt ? new Date(ex.updatedAt).getTime() : 0;
+              const tL = lk.updatedAt ? new Date(lk.updatedAt).getTime() : 0;
+              kMap.set(lk.id, tL >= tC ? lk : ex);
+            }
+          }
+          writeKnowledgeToDisk(Array.from(kMap.values()), false);
+        }
+
         console.log(`☁️ [GitHub Vault AES-256] Wczytano ${mergedOrders.length} zamówień z gałęzi '${GITHUB_DATA_BRANCH}'.`);
-      } else if (localOrders.length > 0) {
+      } else if (localOrders.length > 0 || localKnowledge.length > 0) {
         // Pierwsza synchronizacja — utwórz zaszyfrowany sejf na GitHubie
-        await saveVaultToGitHubCloud(localOrders, readDeletedIdsFromDisk());
+        await saveVaultToGitHubCloud(localOrders, readDeletedIdsFromDisk(), localKnowledge);
         console.log(`☁️ [GitHub Vault AES-256] Utworzono zaszyfrowany sejf w gałęzi '${GITHUB_DATA_BRANCH}'.`);
       }
     })();
@@ -999,6 +1071,71 @@ app.post('/api/orders-history/sync', async (req: Request, res: Response) => {
   const finalOrders = Array.from(map.values());
   writeOrdersToDisk(finalOrders);
   return res.json({ success: true, count: finalOrders.length });
+});
+
+/**
+ * CENTRUM WIEDZY (CRM KLIENTÓW KLUCZOWYCH) — ENDPOINTY API
+ */
+app.get('/api/knowledge-base', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const clients = readKnowledgeFromDisk();
+  return res.json(clients);
+});
+
+app.post('/api/knowledge-base', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const client = req.body;
+  if (!client || !client.id) {
+    return res.status(400).json({ error: 'Nieprawidłowe dane klienta (brak id)' });
+  }
+
+  const clients = readKnowledgeFromDisk();
+  const idx = clients.findIndex((c: any) => c.id === client.id);
+  if (idx >= 0) {
+    clients[idx] = { ...client, updatedAt: new Date().toISOString() };
+  } else {
+    clients.push({ ...client, updatedAt: new Date().toISOString() });
+  }
+
+  writeKnowledgeToDisk(clients);
+  return res.json({ success: true, client });
+});
+
+app.delete('/api/knowledge-base/:id', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const { id } = req.params;
+  const clients = readKnowledgeFromDisk().filter((c: any) => c.id !== id);
+  writeKnowledgeToDisk(clients);
+  return res.json({ success: true, deletedId: id });
+});
+
+app.post('/api/knowledge-base/sync', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const { clients } = req.body;
+  if (!Array.isArray(clients)) {
+    return res.status(400).json({ error: 'Nieprawidłowa lista klientów do synchronizacji' });
+  }
+
+  const existing = readKnowledgeFromDisk();
+  const map = new Map<string, any>();
+  for (const ex of existing) {
+    if (ex?.id) map.set(ex.id, ex);
+  }
+  for (const inc of clients) {
+    if (!inc?.id) continue;
+    const prev = map.get(inc.id);
+    if (!prev) {
+      map.set(inc.id, inc);
+    } else {
+      const tPrev = prev.updatedAt ? new Date(prev.updatedAt).getTime() : 0;
+      const tInc = inc.updatedAt ? new Date(inc.updatedAt).getTime() : 0;
+      map.set(inc.id, tInc >= tPrev ? inc : prev);
+    }
+  }
+
+  const finalClients = Array.from(map.values());
+  writeKnowledgeToDisk(finalClients);
+  return res.json({ success: true, count: finalClients.length });
 });
 
 async function startServer() {

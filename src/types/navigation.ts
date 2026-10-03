@@ -1,1 +1,1 @@
-export type AppModule = 'home' | 'invoice' | 'correction' | 'history';
+export type AppModule = 'home' | 'invoice' | 'correction' | 'history' | 'knowledge';
