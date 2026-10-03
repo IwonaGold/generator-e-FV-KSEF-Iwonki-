@@ -1419,39 +1419,187 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
         </div>
 
-        {/* KAFELKI / ZAKŁADKI SIECI FARMACEUTYCZNYCH */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-rose-100 pb-4 mb-4">
-          <span className="text-xs font-bold text-slate-500 uppercase mr-1">Sieć:</span>
-          {(['Wszystkie', 'DOZ', 'Dr. Max', 'Super-Pharm', 'Gemini', 'Inne'] as OrderChainFilter[]).map(
-            (chain) => {
-              const count = chainCounts[chain] || 0;
-              const isActive = chainFilter === chain;
-              return (
+        {/* FILTR ETAPU DOSTAWY — WYŚRODKOWANY NA GÓRZE DLA LEPSZEJ WIDOCZNOŚCI */}
+        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-rose-100 pb-4 mb-4">
+          <span className="text-xs font-bold text-slate-600 uppercase tracking-wider mr-1">
+            Dostawa:
+          </span>
+          <div className="inline-flex flex-wrap items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-1 gap-1 shadow-2xs">
+            {lifecycleTab === 'in_progress' ? (
+              <>
                 <button
-                  key={chain}
-                  onClick={() => setChainFilter(chain)}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-rose-600 text-white shadow-xs shadow-rose-300 scale-[1.02]'
-                      : 'bg-rose-50/70 hover:bg-rose-100 text-rose-900 border border-rose-200/60'
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'all'
+                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
+                  title="Wszystkie zamówienia będące w toku realizacji"
                 >
-                  <span>{chain}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-white text-rose-700 border border-rose-200'
-                    }`}
-                  >
-                    {count}
-                  </span>
+                  Wszystkie w toku ({inProgressCount})
                 </button>
-              );
-            }
-          )}
+                <button
+                  onClick={() => setStatusFilter('registered')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'registered'
+                      ? 'bg-slate-700 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
+                >
+                  📦 Do wysyłki ({deliveryCounts.registered})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('in_transit')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'in_transit'
+                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
+                >
+                  🚚 W drodze ({deliveryCounts.in_transit})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('out_for_delivery')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'out_for_delivery'
+                      ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Wydane kurierowi do doręczenia dzisiaj do apteki"
+                >
+                  ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
+                </button>
+                {deliveryCounts.exception > 0 ? (
+                  <button
+                    onClick={() => setStatusFilter('exception')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      statusFilter === 'exception'
+                        ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                        : 'text-rose-600 hover:text-rose-800'
+                    }`}
+                    title="Awizo lub problem z doręczeniem przesyłki"
+                  >
+                    ⚠️ Awizo ({deliveryCounts.exception})
+                  </button>
+                ) : null}
+              </>
+            ) : lifecycleTab === 'completed' ? (
+              <button
+                onClick={() => setStatusFilter('all')}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white shadow-2xs cursor-pointer"
+                title="Wszystkie zamówienia pomyślnie doręczone do odbiorcy"
+              >
+                ✅ Wszystkie doręczone ({completedCount})
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'all'
+                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Wszystkie zamówienia bez względu na status dostawy"
+                >
+                  Wszystkie ({deliveryCounts.all})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('registered')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'registered'
+                      ? 'bg-slate-700 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
+                >
+                  📦 Do wysyłki ({deliveryCounts.registered})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('in_transit')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'in_transit'
+                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
+                >
+                  🚚 W drodze ({deliveryCounts.in_transit})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('out_for_delivery')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'out_for_delivery'
+                      ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Wydane kurierowi do doręczenia dzisiaj do apteki"
+                >
+                  ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('delivered')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    statusFilter === 'delivered'
+                      ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Doręczone i odebrane przez aptekę"
+                >
+                  ✅ Doręczone ({deliveryCounts.delivered})
+                </button>
+                {deliveryCounts.exception > 0 ? (
+                  <button
+                    onClick={() => setStatusFilter('exception')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      statusFilter === 'exception'
+                        ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                        : 'text-rose-600 hover:text-rose-800'
+                    }`}
+                    title="Awizo lub problem z doręczeniem przesyłki"
+                  >
+                    ⚠️ Awizo ({deliveryCounts.exception})
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
 
-        {/* FILTRY: WYSZUKIWARKA, STATUS DOSTAWY ORAZ ROZLICZENIE PŁATNOŚCI */}
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-3 text-xs">
+        {/* KAFELKI SIECI FARMACEUTYCZNYCH ORAZ WYSZUKIWARKA */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase mr-1">Sieć:</span>
+            {(['Wszystkie', 'DOZ', 'Dr. Max', 'Super-Pharm', 'Gemini', 'Inne'] as OrderChainFilter[]).map(
+              (chain) => {
+                const count = chainCounts[chain] || 0;
+                const isActive = chainFilter === chain;
+                return (
+                  <button
+                    key={chain}
+                    onClick={() => setChainFilter(chain)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-rose-600 text-white shadow-xs shadow-rose-300 scale-[1.02]'
+                        : 'bg-rose-50/70 hover:bg-rose-100 text-rose-900 border border-rose-200/60'
+                    }`}
+                  >
+                    <span>{chain}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isActive ? 'bg-white/20 text-white' : 'bg-white text-rose-700 border border-rose-200'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              }
+            )}
+          </div>
+
           <div className="relative w-full lg:w-80">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -1461,200 +1609,6 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-rose-500"
             />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
-            {/* Filtr dostawy (Statusy logistyczne) */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-slate-500 font-medium text-[11px]">Dostawa:</span>
-              <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
-                {lifecycleTab === 'in_progress' ? (
-                  <>
-                    <button
-                      onClick={() => setStatusFilter('all')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'all'
-                          ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Wszystkie zamówienia będące w toku realizacji"
-                    >
-                      Wszystkie w toku ({inProgressCount})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('registered')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'registered'
-                          ? 'bg-slate-700 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
-                    >
-                      📦 Do wysyłki ({deliveryCounts.registered})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('in_transit')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'in_transit'
-                          ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
-                    >
-                      🚚 W drodze ({deliveryCounts.in_transit})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('out_for_delivery')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'out_for_delivery'
-                          ? 'bg-blue-600 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Wydane kurierowi do doręczenia dzisiaj do apteki"
-                    >
-                      ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
-                    </button>
-                    {deliveryCounts.exception > 0 ? (
-                      <button
-                        onClick={() => setStatusFilter('exception')}
-                        className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                          statusFilter === 'exception'
-                            ? 'bg-rose-600 text-white shadow-2xs font-bold'
-                            : 'text-rose-600 hover:text-rose-800'
-                        }`}
-                        title="Awizo lub problem z doręczeniem przesyłki"
-                      >
-                        ⚠️ Awizo ({deliveryCounts.exception})
-                      </button>
-                    ) : null}
-                  </>
-                ) : lifecycleTab === 'completed' ? (
-                  <button
-                    onClick={() => setStatusFilter('all')}
-                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-2xs cursor-pointer"
-                    title="Wszystkie zamówienia pomyślnie doręczone do odbiorcy"
-                  >
-                    ✅ Wszystkie doręczone ({completedCount})
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => setStatusFilter('all')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'all'
-                          ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                      title="Wszystkie zamówienia bez względu na status dostawy"
-                    >
-                      Wszystkie ({deliveryCounts.all})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('registered')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'registered'
-                          ? 'bg-slate-700 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Nowe zamówienia / przygotowane do wysyłki (jeszcze nieprzekazane kurierowi)"
-                    >
-                      📦 Do wysyłki ({deliveryCounts.registered})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('in_transit')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'in_transit'
-                          ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Przesyłki w drodze (odebrane przez kuriera w transporcie)"
-                    >
-                      🚚 W drodze ({deliveryCounts.in_transit})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('out_for_delivery')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'out_for_delivery'
-                          ? 'bg-blue-600 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Wydane kurierowi do doręczenia dzisiaj do apteki"
-                    >
-                      ⚡ W doręczeniu ({deliveryCounts.out_for_delivery})
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter('delivered')}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        statusFilter === 'delivered'
-                          ? 'bg-emerald-600 text-white shadow-2xs font-bold'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Doręczone i odebrane przez aptekę"
-                    >
-                      ✅ Doręczone ({deliveryCounts.delivered})
-                    </button>
-                    {deliveryCounts.exception > 0 ? (
-                      <button
-                        onClick={() => setStatusFilter('exception')}
-                        className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                          statusFilter === 'exception'
-                            ? 'bg-rose-600 text-white shadow-2xs font-bold'
-                            : 'text-rose-600 hover:text-rose-800'
-                        }`}
-                        title="Awizo lub problem z doręczeniem przesyłki"
-                      >
-                        ⚠️ Awizo ({deliveryCounts.exception})
-                      </button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Filtr płatności */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500 font-medium text-[11px]">Płatność:</span>
-              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
-                <button
-                  onClick={() => setPaymentFilter('all')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    paymentFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Wszystkie ({paymentCounts.all})
-                </button>
-                <button
-                  onClick={() => setPaymentFilter('paid')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    paymentFilter === 'paid'
-                      ? 'bg-emerald-600 text-white shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  ✅ Opłacone ({paymentCounts.paid})
-                </button>
-                <button
-                  onClick={() => setPaymentFilter('pending')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    paymentFilter === 'pending'
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  ⏳ Do zapłaty ({paymentCounts.pending})
-                </button>
-                <button
-                  onClick={() => setPaymentFilter('overdue')}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    paymentFilter === 'overdue'
-                      ? 'bg-red-600 text-white shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  🚨 Po terminie ({paymentCounts.overdue})
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 
