@@ -155,6 +155,7 @@ export default function App() {
 
   const [archivedOrders, setArchivedOrders] = useState<ArchivedOrder[]>([]);
   const [preloadedOrderForCorrection, setPreloadedOrderForCorrection] = useState<ArchivedOrder | null>(null);
+  const [pendingOrderSourceId, setPendingOrderSourceId] = useState<string | null>(null);
 
   // Pobranie historii przy starcie
   useEffect(() => {
@@ -174,6 +175,32 @@ export default function App() {
 
   const handleOrderSaved = (savedOrder: ArchivedOrder) => {
     setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
+  };
+
+  const handleLoadOrderForInvoiceCreation = (order: ArchivedOrder) => {
+    setPendingOrderSourceId(order.id);
+    setSelectedChain(order.chain || 'Custom');
+    if (order.seller) setSeller(order.seller);
+    if (order.buyer) setBuyer(order.buyer);
+    setThirdParty(order.thirdParty || null);
+    if (order.items && order.items.length > 0) {
+      setItems([...order.items]);
+    }
+    setMeta((prev) => ({
+      ...prev,
+      orderNumber: order.orderNumber || prev.orderNumber,
+      orderDate: order.orderDate || prev.orderDate,
+      deliveryDate: order.avisoDate || order.deliveryDate || prev.deliveryDate,
+      invoiceNumber:
+        order.invoiceNumber && !order.invoiceNumber.startsWith('ZAM:')
+          ? order.invoiceNumber
+          : '',
+    }));
+    setActiveModule('invoice');
+    setPriceNotice(
+      `⚡ Załadowano dane zamówienia ${order.orderNumber || order.id} do Generatora e-Faktur KSeF!`
+    );
+    setTimeout(() => setPriceNotice(null), 5000);
   };
 
   const handleSaveInvoiceToHistory = async () => {
@@ -200,17 +227,23 @@ export default function App() {
     const xmlInvoiceNum = extractInvoiceNumberFromXml(xmlPayload);
     const resolvedInvoiceNumber = meta.invoiceNumber?.trim() || xmlInvoiceNum || 'FAKTURA';
 
-    const newOrder: ArchivedOrder = {
-      id: `ord-${Date.now()}`,
+    const existingOrder = pendingOrderSourceId
+      ? archivedOrders.find((o) => o.id === pendingOrderSourceId)
+      : null;
+
+    const savedOrder: ArchivedOrder = {
+      ...(existingOrder || {}),
+      id: existingOrder?.id || `ord-${Date.now()}`,
       chain: resolvedChain,
       documentType: 'FV',
+      invoiceStatus: 'issued',
       invoiceNumber: resolvedInvoiceNumber,
-      orderNumber: meta.orderNumber,
-      orderDate: meta.orderDate || undefined,
+      orderNumber: meta.orderNumber || existingOrder?.orderNumber,
+      orderDate: meta.orderDate || existingOrder?.orderDate,
       issueDate: meta.issueDate,
-      avisoDate: meta.deliveryDate || undefined,
-      deliveryDate: meta.deliveryDate || undefined,
-      dueDate: meta.dueDate,
+      avisoDate: meta.deliveryDate || existingOrder?.avisoDate,
+      deliveryDate: meta.deliveryDate || existingOrder?.deliveryDate,
+      dueDate: meta.dueDate || existingOrder?.dueDate,
       seller,
       buyer,
       thirdParty,
@@ -221,18 +254,24 @@ export default function App() {
       totalGross,
       currency: meta.currency || 'PLN',
       xmlContent: xmlPayload,
-      isDelivered: false,
-      deliveredAt: null,
-      notes: orderFile ? `Z pliku zamówienia: ${orderFile.name}` : '',
-      originalFileName: orderFile?.name,
-      createdAt: new Date().toISOString(),
+      isDelivered: existingOrder?.isDelivered || false,
+      deliveredAt: existingOrder?.deliveredAt || null,
+      shippingStatus: existingOrder?.shippingStatus || 'registered',
+      trackingNumber: existingOrder?.trackingNumber,
+      courierName: existingOrder?.courierName,
+      notes:
+        (existingOrder?.notes ? `${existingOrder.notes} | ` : '') +
+        (orderFile ? `Z pliku: ${orderFile.name}` : 'Wystawiono fakturę KSeF'),
+      originalFileName: orderFile?.name || existingOrder?.originalFileName,
+      createdAt: existingOrder?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      parcelPhotos: [],
+      parcelPhotos: existingOrder?.parcelPhotos || [],
     };
 
-    await saveArchivedOrder(newOrder);
-    setArchivedOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
-    setPriceNotice(`💾 Pomyślnie zapisano fakturę ${newOrder.invoiceNumber} (${newOrder.chain}) w Historii Zamówień Sieciowych!`);
+    await saveArchivedOrder(savedOrder);
+    setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
+    setPendingOrderSourceId(null);
+    setPriceNotice(`💾 Pomyślnie zapisano fakturę ${savedOrder.invoiceNumber} (${savedOrder.chain}) w Historii Zamówień Sieciowych!`);
     setTimeout(() => setPriceNotice(null), 6000);
   };
 
@@ -752,6 +791,7 @@ export default function App() {
               setActiveModule('correction');
             }}
             onNavigateToInvoiceCreation={() => setActiveModule('invoice')}
+            onLoadOrderForInvoiceCreation={handleLoadOrderForInvoiceCreation}
           />
         )}
       </main>

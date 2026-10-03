@@ -1,12 +1,17 @@
 import { EntityDetails, ThirdPartyEntity, InvoiceItem, PharmacyChain } from './ksef';
 
-export type InvoiceDocumentType = 'FV' | 'KOR';
+export type InvoiceDocumentType = 'FV' | 'KOR' | 'ZAM';
+
+export type OrderInvoiceStatus = 'issued' | 'awaiting_invoice' | 'external_billing';
 
 export interface ArchivedOrder {
   id: string;
   chain: PharmacyChain;
   documentType: InvoiceDocumentType;
   invoiceNumber: string;
+  invoiceStatus?: OrderInvoiceStatus;
+  externalInvoiceNumber?: string;
+  sourceOrderId?: string;
   orderNumber?: string;
   orderDate?: string;
   issueDate: string;

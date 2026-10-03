@@ -12,11 +12,25 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   return list.map((ord) => {
-    const xmlInv = extractInvoiceNumberFromXml(ord.xmlContent);
-    const invoiceNumber =
-      ord.invoiceNumber && ord.invoiceNumber !== 'FAKTURA'
-        ? ord.invoiceNumber
-        : xmlInv || ord.invoiceNumber || 'FAKTURA';
+    const isOrderWithoutXml = ord.documentType === 'ZAM' || !ord.xmlContent;
+    let effectiveInvoiceStatus = ord.invoiceStatus || (isOrderWithoutXml ? 'awaiting_invoice' : 'issued');
+    if (!ord.invoiceStatus && ord.documentType === 'ZAM') {
+      if (ord.notes?.toLowerCase().includes('zewnętrzn') || ord.notes?.toLowerCase().includes('zewnetrzn')) {
+        effectiveInvoiceStatus = 'external_billing';
+      }
+    }
+
+    const xmlInv = ord.xmlContent ? extractInvoiceNumberFromXml(ord.xmlContent) : null;
+    let invoiceNumber = ord.invoiceNumber;
+    if (!invoiceNumber || invoiceNumber === 'FAKTURA') {
+      if (xmlInv) {
+        invoiceNumber = xmlInv;
+      } else if (ord.documentType === 'ZAM') {
+        invoiceNumber = ord.externalInvoiceNumber || (ord.orderNumber ? `ZAM ${ord.orderNumber}` : 'ZAMÓWIENIE');
+      } else {
+        invoiceNumber = 'FAKTURA';
+      }
+    }
 
     // Domyślny termin płatności: jeśli brak, data dueDate lub issueDate + 30 dni
     let effectiveDueDate = ord.paymentDueDate || ord.dueDate;
@@ -61,6 +75,9 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
 
     return {
       ...ord,
+      documentType: ord.documentType || 'FV',
+      invoiceStatus: effectiveInvoiceStatus,
+      externalInvoiceNumber: ord.externalInvoiceNumber,
       chain: detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain),
       invoiceNumber,
       orderDate: effectiveOrderDate,

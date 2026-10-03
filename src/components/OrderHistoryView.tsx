@@ -32,6 +32,7 @@ import {
   Camera,
   Eye,
   ZoomIn,
+  Globe,
 } from 'lucide-react';
 import {
   ArchivedOrder,
@@ -61,12 +62,14 @@ import {
   getOrderEffectiveShippingStatus,
 } from '../utils/shippingTracking';
 import { compressImageToDataUrl, downloadImageDataUrl } from '../utils/imageUtils';
+import { ImportOrderModal } from './ImportOrderModal';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
   onRefreshOrders: () => void;
   onCreateCorrectionForOrder: (order: ArchivedOrder) => void;
   onNavigateToInvoiceCreation: () => void;
+  onLoadOrderForInvoiceCreation?: (order: ArchivedOrder) => void;
 }
 
 export type OrderLifecycleTab = 'in_progress' | 'completed' | 'all';
@@ -76,7 +79,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   onRefreshOrders,
   onCreateCorrectionForOrder,
   onNavigateToInvoiceCreation,
+  onLoadOrderForInvoiceCreation,
 }) => {
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [lifecycleTab, setLifecycleTab] = useState<OrderLifecycleTab>('in_progress');
   const [chainFilter, setChainFilter] = useState<OrderChainFilter>('Wszystkie');
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
@@ -1244,6 +1249,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             </label>
 
             <button
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-amber-950 bg-gradient-to-r from-amber-200 via-orange-200 to-amber-300 hover:from-amber-300 hover:to-orange-300 border border-amber-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer hover:scale-[1.02]"
+              title="Wczytaj zamówienie (PDF, TXT, Excel) do realizacji — zaplanuj pakowanie bez wystawiania faktury lub dla sieci zewnętrznej"
+            >
+              <Upload className="w-3.5 h-3.5 text-amber-800" />
+              <span>📥 Wczytaj zamówienie (PDF/TXT/XLSX)</span>
+            </button>
+
+            <button
               onClick={onNavigateToInvoiceCreation}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
@@ -1813,26 +1828,62 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                 {/* GŁÓWNA KARTA ZAMÓWIENIA */}
                 <div className="p-5">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    {/* LEWA STRONA: BADGE SIECI, NUMERY, DATY, NABYWCA */}
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                    {/* LEWA STRONA: GŁÓWNY NAGŁÓWEK ZAMÓWIENIA, BADGE, NUMERY, DATY, NABYWCA */}
+                    <div className="space-y-2.5">
+                      {/* ==================================================================== */}
+                      {/* GŁÓWNY DUŻY NAGŁÓWEK NA SAMEJ GÓRZE: NAZWA SIECI - ZAMÓWIENIE NR ... Z DNIA ... */}
+                      {/* ==================================================================== */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pb-1 border-b border-slate-100">
                         <span
-                          className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full border ${getChainBadgeStyle(
+                          className={`text-xs font-black px-2.5 py-0.5 rounded-lg border uppercase tracking-wider ${getChainBadgeStyle(
                             displayChain
                           )}`}
                         >
-                          {displayChain === 'Inne' ? 'Inne (Klient)' : displayChain}
+                          {displayChain === 'Inne' ? 'Inne' : displayChain}
                         </span>
 
-                        <span
-                          className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${
-                            ord.documentType === 'KOR'
-                              ? 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200'
-                              : 'bg-rose-100 text-rose-800 border-rose-200'
-                          }`}
-                        >
-                          {ord.documentType === 'KOR' ? '📝 Korekta KOR' : '📄 Faktura VAT FA(3)'}
-                        </span>
+                        <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-1.5">
+                          <span className="text-slate-800">{displayChain}</span>
+                          <span className="text-slate-300 font-normal">—</span>
+                          <span className="text-slate-700 font-bold">Zamówienie nr:</span>
+                          <span className="font-mono text-rose-700 bg-rose-50/70 border border-rose-200/80 px-2 py-0.5 rounded-lg select-all shadow-2xs">
+                            {ord.orderNumber || 'Brak numeru'}
+                          </span>
+                          {(ord.orderDate || ord.issueDate) && (
+                            <span className="text-xs sm:text-sm font-bold text-slate-500 font-sans ml-0.5">
+                              z dnia{' '}
+                              <span className="font-mono font-bold text-slate-800">
+                                {ord.orderDate || ord.issueDate}
+                              </span>
+                            </span>
+                          )}
+                        </h3>
+                      </div>
+
+                      {/* DRUGI WIERSZ: TYP DOKUMENTU, NR FAKTURY, ZDJĘCIA PACZKI */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* BADGE TYPU DOKUMENTU */}
+                        {ord.documentType === 'KOR' ? (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200">
+                            📝 Korekta KOR
+                          </span>
+                        ) : ord.documentType === 'ZAM' ? (
+                          ord.invoiceStatus === 'external_billing' ? (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-indigo-100 text-indigo-900 border-indigo-200 flex items-center gap-1">
+                              <Globe className="w-3 h-3 text-indigo-600" />
+                              <span>🌐 Zamówienie (FV zewnętrzna)</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-amber-100 text-amber-900 border-amber-300 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>⏳ Zamówienie (Oczekuje na FV)</span>
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-rose-100 text-rose-800 border-rose-200">
+                            📄 Faktura VAT FA(3)
+                          </span>
+                        )}
 
                         {/* BADGE ZDJĘĆ PRZESYŁKI */}
                         {ord.parcelPhotos && ord.parcelPhotos.length > 0 ? (
@@ -1853,7 +1904,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         {isEditingThisInvoice ? (
                           <div className="inline-flex items-center gap-1.5 bg-rose-50/90 border border-rose-300 rounded-xl px-2.5 py-1 shadow-2xs">
                             <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                            <span className="text-[11px] font-bold text-rose-800">Nr faktury:</span>
+                            <span className="text-[11px] font-bold text-rose-800">
+                              {ord.invoiceStatus === 'external_billing' ? 'Nr FV zewn.:' : 'Nr faktury:'}
+                            </span>
                             <input
                               type="text"
                               value={currentEditingInvoiceVal}
@@ -1897,9 +1950,13 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         ) : (
                           <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-rose-50 via-white to-pink-50 border border-rose-200 rounded-xl px-2.5 py-1 shadow-2xs">
                             <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nr faktury:</span>
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                              {ord.invoiceStatus === 'external_billing' ? 'FV zewn.:' : 'Nr faktury:'}
+                            </span>
                             <span className="text-sm font-black text-slate-900 font-mono tracking-tight select-all">
-                              {effectiveInvoiceNumber}
+                              {ord.documentType === 'ZAM' && ord.invoiceStatus === 'awaiting_invoice' && (!ord.invoiceNumber || ord.invoiceNumber.startsWith('ZAM:'))
+                                ? '⏳ Wystaw przed awizacją'
+                                : effectiveInvoiceNumber}
                             </span>
                             {xmlInvoiceNo && (
                               <span
@@ -1928,12 +1985,6 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                               </button>
                             )}
                           </div>
-                        )}
-
-                        {ord.orderNumber && (
-                          <span className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded-md">
-                            Zamówienie: {ord.orderNumber}
-                          </span>
                         )}
                       </div>
 
@@ -2493,16 +2544,37 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     </button>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* WYGENERUJ KOREKTĘ */}
-                      <button
-                        type="button"
-                        onClick={() => onCreateCorrectionForOrder(ord)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100 border border-fuchsia-200 rounded-xl transition-colors cursor-pointer"
-                        title="Wygeneruj oficjalną fakturę korygującą (KOR) do tej faktury"
-                      >
-                        <FileEdit className="w-3.5 h-3.5 text-fuchsia-600" />
-                        <span>Wygeneruj Korektę</span>
-                      </button>
+                      {/* PRZYCISK: WYSTAW FAKTURĘ KSEF DLA ZAMÓWIENIA OCZEKUJĄCEGO */}
+                      {ord.documentType === 'ZAM' && ord.invoiceStatus !== 'external_billing' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onLoadOrderForInvoiceCreation) {
+                              onLoadOrderForInvoiceCreation(ord);
+                            } else {
+                              onNavigateToInvoiceCreation();
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black text-white bg-gradient-to-r from-amber-500 via-rose-500 to-pink-500 hover:from-amber-600 hover:to-pink-600 rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer hover:scale-[1.02]"
+                          title="Wystaw e-Fakturę KSeF dla tego zamówienia przed awizacją — automatycznie wczyta dane i pozycje"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>⚡ Wystaw Fakturę KSeF</span>
+                        </button>
+                      )}
+
+                      {/* WYGENERUJ KOREKTĘ (tylko dla wystawionych faktur FV) */}
+                      {ord.documentType !== 'ZAM' && (
+                        <button
+                          type="button"
+                          onClick={() => onCreateCorrectionForOrder(ord)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100 border border-fuchsia-200 rounded-xl transition-colors cursor-pointer"
+                          title="Wygeneruj oficjalną fakturę korygującą (KOR) do tej faktury"
+                        >
+                          <FileEdit className="w-3.5 h-3.5 text-fuchsia-600" />
+                          <span>Wygeneruj Korektę</span>
+                        </button>
+                      )}
 
                       {/* WGRAJ XML DLA ZAMÓWIENIA */}
                       <label
@@ -2519,25 +2591,32 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         />
                       </label>
 
-                      {/* PODGLĄD XML */}
-                      <button
-                        type="button"
-                        onClick={() => setViewXmlOrder(ord)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-                      >
-                        <FileCode className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Podgląd XML</span>
-                      </button>
+                      {/* PODGLĄD XML I POBIERZ XML (jeśli plik XML istnieje) */}
+                      {ord.xmlContent ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setViewXmlOrder(ord)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                          >
+                            <FileCode className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Podgląd XML</span>
+                          </button>
 
-                      {/* POBIERZ XML */}
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadXml(ord)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Pobierz XML</span>
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadXml(ord)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Pobierz XML</span>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-2 py-1 rounded-xl">
+                          Brak pliku XML
+                        </span>
+                      )}
 
                       {/* USUŃ */}
                       <button
@@ -2989,6 +3068,19 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL WCZYTYWANIA ZAMÓWIENIA Z WYPRZEDZENIEM / DLA SIECI ZEWNĘTRZNEJ */}
+      <ImportOrderModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onOrderSaved={(newOrder) => {
+          onRefreshOrders();
+          setInvoiceNotice(
+            `Pomyślnie dodano zamówienie ${newOrder.orderNumber || newOrder.id} (${newOrder.chain}) do realizacji!`
+          );
+          setTimeout(() => setInvoiceNotice(null), 4000);
+        }}
+      />
     </div>
   );
 };
