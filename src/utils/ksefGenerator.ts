@@ -428,29 +428,26 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
       vatSummaryXml += `\n        <P_13_7>${netZw.toFixed(2)}</P_13_7>`;
     }
 
-    // 3. Podmiot 3 (kolejność w FA3: DaneIdentyfikacyjne, Adres, Rola)
+    // 3. Podmiot 3 (kolejność w FA3: DaneIdentyfikacyjne, Adres, Rola) — wyłącznie dla jednostek z ID-Wew (np. Super-Pharm) lub odrębnym NIP (nigdy dla DOZ)
     let podmiot3Xml = '';
-    if (thirdParty && thirdParty.name && thirdParty.name.trim()) {
-      let idSection = '';
+    const isDozBuyer = cleanNumeric(buyer.nip) === '8271807718' || (buyer.name || '').toLowerCase().includes('doz');
+    if (!isDozBuyer && thirdParty && thirdParty.name && thirdParty.name.trim()) {
       const cleanNip = thirdParty.nip ? cleanNumeric(thirdParty.nip) : '';
       const rawIdWew = (thirdParty.idWew || '').trim();
 
       // Oficjalny wzorzec KSeF dla IDWew (TNIPIdWew): 10 cyfr NIP - 5 cyfr identyfikatora wewnętrznego
       const isValidIdWew = /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(rawIdWew);
 
-      if (cleanNip.length === 10) {
-        idSection = `\n            <NIP>${cleanNip}</NIP>`;
-      } else if (isValidIdWew) {
-        idSection = `\n            <IDWew>${escapeXml(rawIdWew)}</IDWew>`;
-      } else {
-        idSection = `\n            <BrakID>1</BrakID>`;
-      }
+      if (cleanNip.length === 10 || isValidIdWew) {
+        const idSection =
+          cleanNip.length === 10
+            ? `\n            <NIP>${cleanNip}</NIP>`
+            : `\n            <IDWew>${escapeXml(rawIdWew)}</IDWew>`;
 
-      // Jeśli podano GLN (1-13 cyfr, np. z zamówienia 5909000848054) lub idWew jest w formacie GLN
-      const rawGln = (thirdParty.gln || (!isValidIdWew && /^\d{1,13}$/.test(rawIdWew) ? rawIdWew : '')).trim();
-      const glnXml = rawGln && /^\d{1,13}$/.test(rawGln) ? `\n            <GLN>${escapeXml(rawGln)}</GLN>` : '';
+        const rawGln = (thirdParty.gln || '').trim();
+        const glnXml = rawGln && /^\d{1,13}$/.test(rawGln) ? `\n            <GLN>${escapeXml(rawGln)}</GLN>` : '';
 
-      podmiot3Xml = `\n    <Podmiot3>
+        podmiot3Xml = `\n    <Podmiot3>
         <DaneIdentyfikacyjne>${idSection}
             <Nazwa>${escapeXml(thirdParty.name.trim())}</Nazwa>
         </DaneIdentyfikacyjne>
@@ -460,6 +457,7 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
         </Adres>
         <Rola>${thirdParty.role || '2'}</Rola>
     </Podmiot3>`;
+      }
     }
 
     // 4. Warunki transakcji / Zamówienie

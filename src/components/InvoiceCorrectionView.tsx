@@ -40,8 +40,14 @@ import {
   CorrectedInvoiceReference,
   FormalCorrectionField,
 } from '../types/correction';
-import { PriceListItem } from '../types/priceList';
-import { parsePriceListFile, SAMPLE_XLSX_PRICE_LIST, cleanGtinValue } from '../utils/priceListParser';
+import { PriceListItem, PriceComparisonItem } from '../types/priceList';
+import {
+  parsePriceListFile,
+  SAMPLE_XLSX_PRICE_LIST,
+  cleanGtinValue,
+  convertKnowledgePriceListToItems,
+  comparePricesWithInvoice,
+} from '../utils/priceListParser';
 import { ArchivedOrder } from '../types/ordersHistory';
 import { DEFAULT_SELLER, PHARMACY_CHAINS } from '../utils/sampleData';
 import { generateKSeFCorrectionXML } from '../utils/ksefCorrectionGenerator';
@@ -51,6 +57,14 @@ import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
 import { saveArchivedOrder } from '../utils/ordersStorage';
 import { parseAddressString } from '../utils/ksefPdfInvoiceParser';
 import { detectPharmacyChain } from '../utils/orderParser';
+import {
+  INITIAL_KEY_CLIENTS,
+  DOZ_SPECIAL_PRICE_LIST,
+  STANDARD_Q3_PRICE_LIST,
+  KeyClientProfile,
+  ClientCorrectionCode,
+} from '../types/knowledgeBase';
+import { getKeyClients } from '../utils/knowledgeStorage';
 
 const EMPTY_FORMAL_FIELDS: Record<
   FormalCorrectionField,
@@ -255,11 +269,16 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     >
   >(SAMPLE_FORMAL_FIELDS);
 
-  // Stan cennika do automatycznej korekty cen (1-kliknięciem)
+  // Stan cennika do automatycznej korekty cen i EAN (automatycznie z Centrum Wiedzy lub ręczny XLSX)
   const [priceList, setPriceList] = useState<PriceListItem[] | null>(null);
   const [priceListFileName, setPriceListFileName] = useState<string | null>(null);
+  const [knowledgePriceListOverride, setKnowledgePriceListOverride] = useState<'DOZ_SPECIAL' | 'Q3_STANDARD' | null>(null);
   const [isPriceListLoading, setIsPriceListLoading] = useState<boolean>(false);
   const priceListInputRef = useRef<HTMLInputElement>(null);
+
+  // Baza kart odbiorców z Centrum Wiedzy
+  const [knowledgeClients, setKnowledgeClients] = useState<KeyClientProfile[]>(INITIAL_KEY_CLIENTS);
+  const [previewCorrectionClientId, setPreviewCorrectionClientId] = useState<string | null>(null);
 
   // Przypisana sieć apteczna / kategoria w historii (Dr. Max, DOZ, Super-Pharm, Gemini, Inne)
   const [selectedChain, setSelectedChain] = useState<PharmacyChain>('Dr. Max');
@@ -286,6 +305,151 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   const [xsdResult, setXsdResult] = useState<XsdValidationResult | null>(null);
   const [isValidatingXsd, setIsValidatingXsd] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Pobranie kart klientów z Centrum Wiedzy przy starcie
+  useEffect(() => {
+    getKeyClients()
+      .then((clients) => {
+        if (clients && Array.isArray(clients) && clients.length > 0) {
+          setKnowledgeClients(clients);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Rozpoznanie profilu odbiorcy w Centrum Wiedzy na podstawie Nabywcy / NIP / Wybranej sieci
+  const matchedKnowledgeClient = useMemo<KeyClientProfile | null>(() => {
+    const cleanNip = (buyer.nip || '').replace(/\D/g, '');
+    const combinedText = `${buyer.name || ''} ${thirdParty?.name || ''} ${selectedChain || ''}`.toLowerCase();
+
+    if (cleanNip) {
+      const byNip = knowledgeClients.find((kc) => kc.nip.replace(/\D/g, '') === cleanNip);
+      if (byNip) return byNip;
+    }
+
+    if (selectedChain === 'DOZ' || combinedText.includes('doz') || combinedText.includes('cefarm')) {
+      return knowledgeClients.find((kc) => kc.id === 'client-doz') || INITIAL_KEY_CLIENTS[0];
+    }
+    if (selectedChain === 'Dr. Max' || combinedText.includes('dr. max') || combinedText.includes('dr max') || combinedText.includes('lekomat')) {
+      return knowledgeClients.find((kc) => kc.id === 'client-drmax') || INITIAL_KEY_CLIENTS[1];
+    }
+    if (selectedChain === 'Super-Pharm' || combinedText.includes('super-pharm') || combinedText.includes('super pharm') || combinedText.includes('superpharm')) {
+      return knowledgeClients.find((kc) => kc.id === 'client-superpharm') || INITIAL_KEY_CLIENTS[2];
+    }
+    if (selectedChain === 'Gemini' || combinedText.includes('gemini')) {
+      return knowledgeClients.find((kc) => kc.id === 'client-gemini') || INITIAL_KEY_CLIENTS[3];
+    }
+    if (combinedText.includes('modum')) {
+      return knowledgeClients.find((kc) => kc.id === 'client-modumpharma') || INITIAL_KEY_CLIENTS[4];
+    }
+
+    return null;
+  }, [buyer.nip, buyer.name, thirdParty?.name, selectedChain, knowledgeClients]);
+
+  // Automatyczne przeliczenie terminu płatności (dueDate) oraz weryfikacja Podmiot 3 (ID-Wew) wg Centrum Wiedzy
+  useEffect(() => {
+    if (!matchedKnowledgeClient) return;
+
+    // 1. Automatyczne ustawienie terminu płatności z Centrum Wiedzy (np. 60 dni DOZ/Dr.Max/Super-Pharm, 45 dni Gemini, 30 dni Modum)
+    if (matchedKnowledgeClient.paymentDays > 0) {
+      const baseDateStr = issueDate || today;
+      const d = new Date(baseDateStr);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + matchedKnowledgeClient.paymentDays);
+        setDueDate(d.toISOString().slice(0, 10));
+      }
+    }
+
+    // 2. DOZ Direct NIE posiada ID-Wew (Podmiot 3) — automatycznie czyścimy ewentualny błędny Podmiot 3
+    if (matchedKnowledgeClient.id === 'client-doz' && thirdParty !== null) {
+      setThirdParty(null);
+    }
+  }, [matchedKnowledgeClient?.id, matchedKnowledgeClient?.paymentDays, issueDate]);
+
+  // Obsługa zmiany sieci w dropdownie (aktualizuje również Nabywcę, Podmiot 3 i cennik)
+  const handleSelectChainInCorrection = (chain: PharmacyChain) => {
+    setSelectedChain(chain);
+    setPreviewCorrectionClientId(null);
+    setKnowledgePriceListOverride(null);
+    if (chain !== 'Inne' && chain !== 'Custom' && PHARMACY_CHAINS[chain]) {
+      const profile = PHARMACY_CHAINS[chain];
+      setBuyer({ ...profile.buyer });
+      setThirdParty(profile.thirdParty ? { ...profile.thirdParty } : null);
+    }
+  };
+
+  // Szybki wybór pełnego profilu z Centrum Wiedzy (w tym Modum Pharma)
+  const handleSelectKnowledgeClientProfile = (client: KeyClientProfile) => {
+    setPreviewCorrectionClientId(client.id);
+    setKnowledgePriceListOverride(null);
+    if (client.id === 'client-doz') {
+      setSelectedChain('DOZ');
+      setBuyer({ ...PHARMACY_CHAINS['DOZ'].buyer });
+      setThirdParty(null);
+    } else if (client.id === 'client-drmax') {
+      setSelectedChain('Dr. Max');
+      setBuyer({ ...PHARMACY_CHAINS['Dr. Max'].buyer });
+      setThirdParty(null);
+    } else if (client.id === 'client-superpharm') {
+      setSelectedChain('Super-Pharm');
+      setBuyer({ ...PHARMACY_CHAINS['Super-Pharm'].buyer });
+      setThirdParty(PHARMACY_CHAINS['Super-Pharm'].thirdParty ? { ...PHARMACY_CHAINS['Super-Pharm'].thirdParty } : null);
+    } else if (client.id === 'client-gemini') {
+      setSelectedChain('Gemini');
+      setBuyer({ ...PHARMACY_CHAINS['Gemini'].buyer });
+      setThirdParty(null);
+    } else if (client.id === 'client-modumpharma') {
+      setSelectedChain('Inne');
+      setBuyer({
+        nip: '5272758526',
+        name: 'MODUM PHARMA SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
+        countryCode: 'PL',
+        addressLine1: 'ul. Konstruktorska 13',
+        postalCode: '02-673',
+        city: 'Warszawa',
+        gln: '5903111457006',
+      });
+      setThirdParty(null);
+    }
+  };
+
+  // Zastosowanie kodu / szablonu korekty z Centrum Wiedzy (1-kliknięciem)
+  const handleApplyClientCorrectionCode = (codeObj: ClientCorrectionCode, clientShortName: string) => {
+    setCorrectionMode(codeObj.mode);
+    setTypKorekty(codeObj.defaultTypKorekty);
+    setReasonCategory('Wg kodu / wytycznych odbiorcy (Centrum Wiedzy)');
+    setReasonDescription(codeObj.reasonText);
+
+    // Jeśli wybrano korektę adresu DOZ (ul. Kinga C. Gillette 1, 9 i 11), automatycznie uzupełnij pola formalne i adres
+    if (codeObj.code.includes('ADRES') && codeObj.reasonText.includes('Gillette')) {
+      const newAddr = 'ul. Kinga C. Gillette 1, 9 i 11, 94-406 Łódź';
+      setBuyer((prev) => ({
+        ...prev,
+        addressLine1: 'ul. Kinga C. Gillette 1, 9 i 11',
+        postalCode: '94-406',
+        city: 'Łódź',
+      }));
+      setFormalFields((prev) => ({
+        ...prev,
+        buyer_address: {
+          ...prev.buyer_address,
+          active: true,
+          origValue: prev.buyer_address.origValue || 'ul. Kinga C. Gillette 11, 94-406 Łódź',
+          corrValue: newAddr,
+        },
+      }));
+    }
+
+    // Jeśli wybrano korektę Podmiotu 3 w Super-Pharm, automatycznie ustaw poprawny Podmiot 3 z ID-Wew
+    if (codeObj.code.includes('PODMIOT3') && PHARMACY_CHAINS['Super-Pharm'].thirdParty) {
+      setThirdParty({ ...PHARMACY_CHAINS['Super-Pharm'].thirdParty });
+    }
+
+    setNotification(
+      `⚡ Zastosowano kod korekty [${codeObj.code}] dla ${clientShortName}: ustawiono <TypKorekty>${codeObj.defaultTypKorekty}</TypKorekty> oraz <PrzyczynaKorekty>${codeObj.reasonText}</PrzyczynaKorekty>.`
+    );
+    setTimeout(() => setNotification(null), 7000);
+  };
 
   // Jeśli przekazano zamówienie z historii (np. kliknięto "Wystaw korektę" w Module 3)
   useEffect(() => {
@@ -1123,8 +1287,66 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
   };
 
   // =========================================================================
-  // OBSŁUGA CENNIKA I KOREKTY CEN JEDNYM KLIKNIĘCIEM
+  // AUTOMATYCZNA WERYFIKACJA CEN I KODÓW EAN WG CENNIKA Z CENTRUM WIEDZY
   // =========================================================================
+  const {
+    effectivePriceList,
+    effectivePriceListName,
+    activeKnowledgePriceListType,
+  } = useMemo(() => {
+    const isDozRecipient =
+      matchedKnowledgeClient?.priceListType === 'DOZ_SPECIAL' ||
+      matchedKnowledgeClient?.id === 'client-doz' ||
+      selectedChain === 'DOZ';
+
+    const resolvedType: 'DOZ_SPECIAL' | 'Q3_STANDARD' =
+      knowledgePriceListOverride || (isDozRecipient ? 'DOZ_SPECIAL' : 'Q3_STANDARD');
+
+    if (priceList && priceList.length > 0) {
+      return {
+        effectivePriceList: priceList,
+        effectivePriceListName: priceListFileName || 'Wgrany cennik własny (XLSX/CSV)',
+        activeKnowledgePriceListType: resolvedType,
+      };
+    }
+
+    const knowledgeItems =
+      resolvedType === 'DOZ_SPECIAL'
+        ? convertKnowledgePriceListToItems(DOZ_SPECIAL_PRICE_LIST)
+        : convertKnowledgePriceListToItems(STANDARD_Q3_PRICE_LIST);
+
+    const knowledgeName =
+      resolvedType === 'DOZ_SPECIAL'
+        ? 'Nowy Cennik DOZ Direct od 08.2026 (Kolumna O — rabat 12% netto na FV)'
+        : `Cennik Standardowy Q3 2026 (${matchedKnowledgeClient?.shortName || selectedChain} — rabat 5% netto na FV)`;
+
+    return {
+      effectivePriceList: knowledgeItems,
+      effectivePriceListName: knowledgeName,
+      activeKnowledgePriceListType: resolvedType,
+    };
+  }, [matchedKnowledgeClient, selectedChain, knowledgePriceListOverride, priceList, priceListFileName]);
+
+  // Automatyczne porównanie pozycji na korekcie z aktywnym cennikiem (Ceny netto + Kody EAN/GTIN)
+  const { priceComparisons, priceAuditSummary } = useMemo(() => {
+    if (!effectivePriceList || effectivePriceList.length === 0 || items.length === 0) {
+      return { priceComparisons: new Map<string, PriceComparisonItem>(), priceAuditSummary: null };
+    }
+    const mappedForComparison: InvoiceItem[] = items.map((it) => ({
+      id: it.id,
+      name: it.name,
+      gtin: it.gtin || '',
+      unit: it.unit,
+      quantity: it.correctedQuantity,
+      netPrice: it.correctedNetPrice,
+      vatRate: ((it.correctedVatRate || it.vatRate) as VatRate) || '8%',
+      batchNumber: it.correctedBatchNumber || it.batchNumber,
+      expiryDate: it.correctedExpiryDate || it.expiryDate,
+    }));
+    const res = comparePricesWithInvoice(mappedForComparison, effectivePriceList);
+    return { priceComparisons: res.comparisons, priceAuditSummary: res.summary };
+  }, [items, effectivePriceList]);
+
   const handleUploadPriceListFile = async (file: File) => {
     if (!file) return;
     setIsPriceListLoading(true);
@@ -1137,7 +1359,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       setPriceList(loaded);
       const displayName = res.fileName || file.name || 'Cennik';
       setPriceListFileName(displayName);
-      setNotification(`✅ Wczytano cennik "${displayName}" (${loaded.length} pozycji). Kliknij "Skoryguj ceny 1-kliknięciem"!`);
+      setNotification(`✅ Wczytano własny cennik "${displayName}" (${loaded.length} pozycji).`);
       setTimeout(() => setNotification(null), 6000);
     } catch (err: any) {
       alert('Błąd odczytu cennika: ' + (err.message || 'Nieznany błąd'));
@@ -1146,18 +1368,22 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     }
   };
 
-  const handleLoadSamplePriceList = () => {
-    setPriceList(SAMPLE_XLSX_PRICE_LIST);
-    setPriceListFileName('Cennik_Standardowy_OMNi-BiOTiC_2026.xlsx');
-    setNotification(`✅ Załadowano standardowy cennik OMNi-BiOTiC® (${SAMPLE_XLSX_PRICE_LIST.length} pozycji).`);
+  const handleSwitchKnowledgePriceListInCorrection = (type: 'DOZ_SPECIAL' | 'Q3_STANDARD' | 'AUTO') => {
+    setPriceList(null);
+    setPriceListFileName(null);
+    setKnowledgePriceListOverride(type === 'AUTO' ? null : type);
+    setNotification(
+      type === 'DOZ_SPECIAL'
+        ? '✅ Przełączono na Nowy Cennik DOZ Direct od 08.2026 (Kolumna O — rabat 12% netto).'
+        : type === 'Q3_STANDARD'
+        ? '✅ Przełączono na Cennik Standardowy Q3 2026 (rabat 5% netto).'
+        : '✅ Przywrócono automatyczny dobór cennika wg rozpoznanego odbiorcy z Centrum Wiedzy.'
+    );
     setTimeout(() => setNotification(null), 5000);
   };
 
   const handleApplyPriceListToOneClick = () => {
-    if (!priceList || priceList.length === 0) {
-      alert('Najpierw wgraj cennik lub załaduj standardowy cennik.');
-      return;
-    }
+    if (!effectivePriceList || effectivePriceList.length === 0) return;
 
     let updatedCount = 0;
     let oldSum = 0;
@@ -1165,32 +1391,9 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
     setItems((prev) =>
       prev.map((item) => {
-        const cleanInvoiceGtin = cleanGtinValue(item.gtin);
-        const cleanInvoiceName = (item.name || '').toLowerCase().trim();
-
-        // 1. Dopasowanie po GTIN
-        let matched = priceList.find((p) => {
-          const pGtin = cleanGtinValue(p.gtin);
-          return (
-            cleanInvoiceGtin &&
-            pGtin &&
-            (cleanInvoiceGtin === pGtin || cleanInvoiceGtin.includes(pGtin) || pGtin.includes(cleanInvoiceGtin))
-          );
-        });
-
-        // 2. Dopasowanie po nazwie
-        if (!matched && cleanInvoiceName) {
-          matched = priceList.find((p) => {
-            const pName = (p.name || '').toLowerCase().trim();
-            if (pName === cleanInvoiceName) return true;
-            const itemWords = cleanInvoiceName.split(/\s+/).slice(0, 3).join(' ');
-            const pWords = pName.split(/\s+/).slice(0, 3).join(' ');
-            return itemWords.length >= 6 && (pName.includes(itemWords) || cleanInvoiceName.includes(pWords));
-          });
-        }
-
-        if (matched && matched.discountedNetPrice !== undefined) {
-          const newPrice = matched.discountedNetPrice;
+        const comp = priceComparisons.get(item.id);
+        if (comp && comp.priceListPrice !== null && comp.priceListPrice > 0) {
+          const newPrice = comp.priceListPrice;
           oldSum += item.correctedQuantity * item.correctedNetPrice;
           newSum += item.correctedQuantity * newPrice;
 
@@ -1211,12 +1414,86 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     const diff = Math.round((newSum - oldSum) * 100) / 100;
     if (updatedCount > 0) {
       setNotification(
-        `✨ Skorygowano ceny dla ${updatedCount} pozycji wg cennika! Różnica: ${diff > 0 ? '+' : ''}${diff.toFixed(2)} PLN netto.`
+        `✨ Skorygowano ceny netto po rabacie dla ${updatedCount} pozycji wg cennika (${effectivePriceListName})! Różnica: ${diff > 0 ? '+' : ''}${diff.toFixed(2)} PLN netto.`
       );
     } else {
-      setNotification('ℹ️ Wszystkie ceny na fakturze są już w 100% zgodne z wczytanym cennikiem!');
+      setNotification('ℹ️ Wszystkie ceny na korekcie są już w 100% zgodne z aktywnym cennikiem z Centrum Wiedzy!');
     }
     setTimeout(() => setNotification(null), 8000);
+  };
+
+  const handleApplyGtinFromPriceList = () => {
+    if (!effectivePriceList || effectivePriceList.length === 0) return;
+
+    let updatedGtinCount = 0;
+    setItems((prev) =>
+      prev.map((item) => {
+        const comp = priceComparisons.get(item.id);
+        if (
+          comp &&
+          comp.priceListGtin &&
+          (comp.gtinStatus === 'discrepancy' || comp.gtinStatus === 'missing_in_order')
+        ) {
+          updatedGtinCount++;
+          const updated = {
+            ...item,
+            gtin: comp.priceListGtin,
+          };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return item;
+      })
+    );
+
+    if (updatedGtinCount > 0) {
+      setNotification(`✅ Automatycznie uzupełniono / poprawiono ${updatedGtinCount} kodów EAN/GTIN na podstawie cennika!`);
+    } else {
+      setNotification('ℹ️ Wszystkie kody EAN/GTIN są już zgodne z cennikiem!');
+    }
+    setTimeout(() => setNotification(null), 6000);
+  };
+
+  const handleApplyAllPriceAndGtinFromPriceList = () => {
+    if (!effectivePriceList || effectivePriceList.length === 0) return;
+
+    let updatedPrices = 0;
+    let updatedGtins = 0;
+
+    setItems((prev) =>
+      prev.map((item) => {
+        const comp = priceComparisons.get(item.id);
+        if (!comp) return item;
+
+        let nextPrice = item.correctedNetPrice;
+        let nextGtin = item.gtin;
+
+        if (comp.priceListPrice !== null && comp.priceListPrice > 0 && Math.abs(item.correctedNetPrice - comp.priceListPrice) > 0.001) {
+          nextPrice = comp.priceListPrice;
+          updatedPrices++;
+        }
+        if (comp.priceListGtin && (comp.gtinStatus === 'discrepancy' || comp.gtinStatus === 'missing_in_order')) {
+          nextGtin = comp.priceListGtin;
+          updatedGtins++;
+        }
+
+        if (nextPrice !== item.correctedNetPrice || nextGtin !== item.gtin) {
+          const updated = {
+            ...item,
+            correctedNetPrice: nextPrice,
+            gtin: nextGtin,
+          };
+          recalculateItemDeltas(updated);
+          return updated;
+        }
+        return item;
+      })
+    );
+
+    setNotification(
+      `⚡ Zaktualizowano z cennika Centrum Wiedzy: ${updatedPrices} cen netto po rabacie oraz ${updatedGtins} kodów EAN/GTIN!`
+    );
+    setTimeout(() => setNotification(null), 7000);
   };
 
   // Łączne sumy różnic (delty)
@@ -1675,17 +1952,22 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         </div>
 
         {/* ROZPOZNANY KONTRAHENT (PODMIOT 2) I PRZYPISANA SIEĆ FARMACEUTYCZNA */}
-        <div className="mt-3.5 p-3.5 bg-gradient-to-r from-fuchsia-50/70 via-pink-50/40 to-white rounded-xl border border-fuchsia-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="mt-3.5 p-3.5 bg-gradient-to-r from-fuchsia-50/70 via-pink-50/40 to-white rounded-xl border border-fuchsia-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shrink-0">
               🏢
             </div>
             <div>
-              <div className="font-bold text-slate-900 flex items-center gap-2">
+              <div className="font-bold text-slate-900 flex flex-wrap items-center gap-2">
                 <span>Nabywca: {buyer.name || 'Brak danych'}</span>
                 <span className="text-[10px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 font-semibold">
                   NIP: {buyer.nip || 'Brak NIP'}
                 </span>
+                {matchedKnowledgeClient && (
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                    ✓ Rozpoznano z Centrum Wiedzy: {matchedKnowledgeClient.shortName}
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-slate-500 mt-0.5">
                 Korekta zostanie przypisana do historii zamówień: <strong className="text-fuchsia-900 font-bold">{selectedChain}</strong>
@@ -1693,12 +1975,32 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[11px] font-bold text-slate-700">Przypisz do sieci w Historii:</span>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <span className="text-[11px] font-bold text-slate-700">Szybki wybór odbiorcy (Centrum Wiedzy):</span>
+            <div className="flex flex-wrap items-center gap-1">
+              {knowledgeClients.map((kc) => {
+                const isSelected = matchedKnowledgeClient?.id === kc.id;
+                return (
+                  <button
+                    key={kc.id}
+                    type="button"
+                    onClick={() => handleSelectKnowledgeClientProfile(kc)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-2xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-fuchsia-300 hover:bg-fuchsia-50/60'
+                    }`}
+                  >
+                    {kc.shortName}
+                  </button>
+                );
+              })}
+            </div>
             <select
               value={selectedChain}
-              onChange={(e) => setSelectedChain(e.target.value as PharmacyChain)}
-              className="px-3 py-1.5 text-xs font-bold text-fuchsia-950 bg-white border border-fuchsia-300 rounded-xl shadow-2xs focus:outline-fuchsia-500 cursor-pointer"
+              onChange={(e) => handleSelectChainInCorrection(e.target.value as PharmacyChain)}
+              className="px-2.5 py-1 text-xs font-bold text-fuchsia-950 bg-white border border-fuchsia-300 rounded-lg shadow-2xs focus:outline-fuchsia-500 cursor-pointer"
+              title="Kategoria sieci w Historii Zamówień"
             >
               <option value="Dr. Max">Dr. Max</option>
               <option value="DOZ">DOZ</option>
@@ -1708,6 +2010,123 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
             </select>
           </div>
         </div>
+
+        {/* ===================================================================== */}
+        {/* MINI-NOTATKA / ŚCIĄGA DO KOREKTY Z CENTRUM WIEDZY DLA WYSTAWIAJĄCEGO   */}
+        {/* ===================================================================== */}
+        {matchedKnowledgeClient && (
+          <div className="mt-3 p-4 rounded-xl bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-white border-2 border-amber-300/90 shadow-2xs text-xs animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 mb-3 border-b border-amber-200/80">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📌</span>
+                <span className="font-black text-amber-950 uppercase tracking-wide text-xs">
+                  ŚCIĄGA DO KOREKTY FAKTURY (CENTRUM WIEDZY) — {matchedKnowledgeClient.shortName}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-full">
+                  Termin płatności: {matchedKnowledgeClient.paymentDays} dni (auto)
+                </span>
+                <span className="text-[10px] font-bold bg-fuchsia-100 text-fuchsia-900 px-2 py-0.5 rounded-full border border-fuchsia-200">
+                  {matchedKnowledgeClient.priceListType === 'DOZ_SPECIAL'
+                    ? 'Cennik DOZ od 08.2026 (Kolumna O -12%)'
+                    : 'Cennik Standardowy Q3 (-5%)'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* 1. KODY I ZASADY KOREKT */}
+              <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/90">
+                <div className="text-[10px] font-extrabold text-amber-900 uppercase mb-1">
+                  1. Kody korekt (&lt;PrzyczynaKorekty&gt;):
+                </div>
+                <p className="text-[11px] text-slate-700 leading-snug font-medium">
+                  {matchedKnowledgeClient.correctionRulesSummary ||
+                    'Standardowe uzasadnienie przyczyny korekty w polu <PrzyczynaKorekty>.'}
+                </p>
+              </div>
+
+              {/* 2. TERMIN PŁATNOŚCI I PODMIOT 3 (ID-WEW) */}
+              <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/90">
+                <div className="text-[10px] font-extrabold text-amber-900 uppercase mb-1">
+                  2. Termin płatności &amp; Podmiot 3 (ID-Wew):
+                </div>
+                <div className="text-[11px] text-slate-700 space-y-1">
+                  <div>
+                    • Termin: <strong className="text-slate-900">{matchedKnowledgeClient.paymentDays} dni</strong> (ustawiono:{' '}
+                    <span className="font-mono font-bold text-fuchsia-900">{dueDate}</span>)
+                  </div>
+                  <div>
+                    • Podmiot 3 (ID-Wew):{' '}
+                    {matchedKnowledgeClient.idWew ? (
+                      <span className="font-bold text-emerald-800">
+                        WYMAGANY ({matchedKnowledgeClient.idWew}, Rola 10)
+                      </span>
+                    ) : (
+                      <span className="font-bold text-slate-800">
+                        NIE WYMAGANY (Brak ID-Wew — tylko Podmiot 1 i 2)
+                      </span>
+                    )}
+                  </div>
+                  {matchedKnowledgeClient.idWew && thirdParty?.idWew !== matchedKnowledgeClient.idWew && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (PHARMACY_CHAINS['Super-Pharm'].thirdParty) {
+                          setThirdParty({ ...PHARMACY_CHAINS['Super-Pharm'].thirdParty });
+                        }
+                      }}
+                      className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold cursor-pointer"
+                    >
+                      ⚡ Ustaw wymagany ID-Wew ({matchedKnowledgeClient.idWew})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. CENNIK NA KOREKCIE I SERIA / MHD */}
+              <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/90">
+                <div className="text-[10px] font-extrabold text-amber-900 uppercase mb-1">
+                  3. Cennik na FV/KOR &amp; Seria / MHD:
+                </div>
+                <div className="text-[11px] text-slate-700 space-y-1 leading-snug">
+                  <div>
+                    • Cennik:{' '}
+                    <strong className="text-purple-900">
+                      {matchedKnowledgeClient.priceListType === 'DOZ_SPECIAL'
+                        ? 'Nowy Cennik DOZ 08.2026 — Kolumna O (-12% netto)'
+                        : 'Cennik Standardowy Q3 2026 (-5% netto)'}
+                    </strong>
+                  </div>
+                  <div>
+                    • Seria/MHD: <span className="font-medium">{matchedKnowledgeClient.ksefLogisticsFormat}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. GDZIE WYSŁAĆ KOREKTĘ / KONTAKT */}
+              <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/90">
+                <div className="text-[10px] font-extrabold text-amber-900 uppercase mb-1">
+                  4. Adresy e-mail (Korekty / Księgowość / KPD):
+                </div>
+                <div className="space-y-1 text-[11px]">
+                  {matchedKnowledgeClient.contacts.map((c) => (
+                    <div key={c.id} className="truncate" title={`${c.role}: ${c.email}`}>
+                      <span className="text-slate-500">{c.role.split('/')[0].trim()}:</span>{' '}
+                      <a
+                        href={`mailto:${c.email}`}
+                        className="font-mono font-bold text-blue-700 hover:underline"
+                      >
+                        {c.email}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===================================================================== */}
@@ -1720,10 +2139,10 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900">
-              Wybierz Rodzaj Błędu / Procedurę Korekty KSeF
+              Wybierz Rodzaj Błędu, Kod Odbiorcy i Procedurę Korekty KSeF
             </h3>
             <p className="text-xs text-slate-500">
-              Zgodnie z oficjalnymi wytycznymi Ministerstwa Finansów wybierz właściwy tryb korekty w strukturze FA(3).
+              Wybierz tryb korekty wg wytycznych MF lub kliknij gotowy kod / szablon przyczyny korekty przypisany do odbiorcy w Centrum Wiedzy.
             </p>
           </div>
         </div>
@@ -1823,6 +2242,128 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           </button>
         </div>
 
+        {/* ===================================================================== */}
+        {/* AUTOMATYCZNE PODPOWIEDZI KODÓW I PRZYCZYN KOREKTY Z CENTRUM WIEDZY     */}
+        {/* ===================================================================== */}
+        {(() => {
+          const activeCodeClient =
+            knowledgeClients.find((kc) => kc.id === (previewCorrectionClientId || matchedKnowledgeClient?.id)) ||
+            matchedKnowledgeClient ||
+            knowledgeClients[0];
+
+          const codes = activeCodeClient?.correctionCodes || [];
+
+          return (
+            <div className="mb-5 p-4 rounded-2xl bg-gradient-to-br from-fuchsia-50/90 via-purple-50/50 to-white border-2 border-fuchsia-200 shadow-2xs">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-3 mb-3 border-b border-fuchsia-200/80">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-fuchsia-600 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-black text-fuchsia-950 uppercase tracking-wide flex items-center gap-2">
+                      <span>Automatyczne podpowiedzi kodów i przyczyn korekty (&lt;PrzyczynaKorekty&gt;)</span>
+                      <span className="text-[10px] font-bold bg-fuchsia-600 text-white px-2 py-0.5 rounded-full">
+                        Odbiorca: {activeCodeClient?.shortName}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Kliknij właściwy kod lub szablon poniżej — system automatycznie ustawi <strong>&lt;TypKorekty&gt;</strong> oraz wymaganą przez odbiorcę treść w <strong>&lt;PrzyczynaKorekty&gt;</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Przełącznik podglądu kodów dla innych sieci */}
+                <div className="flex flex-wrap items-center gap-1 shrink-0">
+                  <span className="text-[10px] font-bold text-slate-500 mr-1">Pokaż kody dla:</span>
+                  {knowledgeClients.map((kc) => {
+                    const isCurrent = activeCodeClient?.id === kc.id;
+                    return (
+                      <button
+                        key={kc.id}
+                        type="button"
+                        onClick={() => setPreviewCorrectionClientId(kc.id)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          isCurrent
+                            ? 'bg-fuchsia-700 text-white border-fuchsia-700 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-fuchsia-300'
+                        }`}
+                      >
+                        {kc.shortName}
+                        {kc.id === 'client-gemini' ? ' (GEM.K01–K08)' : kc.id === 'client-drmax' ? ' (Frazy KSeF)' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Informacja o zasadach kodów korekt u wybranego odbiorcy */}
+              {activeCodeClient?.correctionRulesSummary && (
+                <div className="mb-3 p-2.5 rounded-xl bg-white/90 border border-fuchsia-200/90 text-[11px] text-slate-700 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-fuchsia-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-fuchsia-950">
+                      Wytyczne z Centrum Wiedzy ({activeCodeClient.shortName}):
+                    </strong>{' '}
+                    {activeCodeClient.correctionRulesSummary}
+                  </div>
+                </div>
+              )}
+
+              {/* Siatka przycisków 1-click z kodami korekt */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {codes.map((c, idx) => {
+                  const isActiveCode = reasonDescription.trim() === c.reasonText.trim();
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleApplyClientCorrectionCode(c, activeCodeClient.shortName)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        isActiveCode
+                          ? 'bg-fuchsia-600 text-white border-fuchsia-700 shadow-sm ring-2 ring-fuchsia-300'
+                          : 'bg-white hover:bg-fuchsia-50/70 border-fuchsia-200/90 hover:border-fuchsia-400 text-slate-800'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-1.5 mb-1">
+                          <span
+                            className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded ${
+                              isActiveCode
+                                ? 'bg-white text-fuchsia-800'
+                                : c.isOfficialClientCode
+                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : 'bg-fuchsia-100 text-fuchsia-900'
+                            }`}
+                          >
+                            {c.code}
+                          </span>
+                          <span
+                            className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                              isActiveCode ? 'bg-fuchsia-800 text-fuchsia-100' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            Typ: {c.defaultTypKorekty}
+                          </span>
+                        </div>
+                        <div className={`text-xs font-bold leading-snug ${isActiveCode ? 'text-white' : 'text-slate-900'}`}>
+                          {c.label}
+                        </div>
+                      </div>
+                      <div
+                        className={`mt-1.5 pt-1.5 border-t text-[10px] font-mono truncate ${
+                          isActiveCode ? 'border-fuchsia-500 text-fuchsia-100' : 'border-slate-100 text-slate-500'
+                        }`}
+                        title={c.reasonText}
+                      >
+                        &lt;PrzyczynaKorekty&gt;: {c.reasonText}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* OSTRZEŻENIE PROCEDURY DLA BŁĘDNEGO NIP */}
         {correctionMode === 'zero_nip' && (
           <div className="mb-4 p-3.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-start gap-2.5 animate-in fade-in">
@@ -1837,7 +2378,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
         )}
 
         {/* FORMULARZ DANYCH KOREKTY */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4 text-xs">
           <div>
             <label className="block text-slate-700 font-semibold mb-1">
               Numer faktury korygującej (&lt;P_2&gt;):
@@ -1858,6 +2399,23 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
               type="date"
               value={issueDate}
               onChange={(e) => setIssueDate(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-semibold text-slate-800 focus:outline-fuchsia-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1 flex items-center justify-between">
+              <span>Termin płatności (&lt;Termin&gt;):</span>
+              {matchedKnowledgeClient && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  {matchedKnowledgeClient.paymentDays} dni (CW)
+                </span>
+              )}
+            </label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-semibold text-slate-800 focus:outline-fuchsia-500"
             />
           </div>
@@ -1899,14 +2457,14 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
           <div>
             <label className="block text-slate-700 font-semibold mb-1">
-              Uzasadnienie tekstowe (&lt;PrzyczynaKorekty&gt;):
+              Uzasadnienie tekstowe (&lt;PrzyczynaKorekty&gt; w XML):
             </label>
             <input
               type="text"
               value={reasonDescription}
               onChange={(e) => setReasonDescription(e.target.value)}
-              placeholder="np. Zwrot 2 sztuk towaru z powodu uszkodzenia w transporcie"
-              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-800 focus:outline-fuchsia-500"
+              placeholder="np. GEM.K02 - Korekta cenowa - błędna cena na fakturze"
+              className="w-full px-3 py-2 bg-white border border-fuchsia-300 rounded-xl font-bold text-slate-900 focus:outline-fuchsia-500"
             />
           </div>
         </div>
@@ -2352,28 +2910,26 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
           </div>
         </div>
 
-        {/* MODUŁ CENNIKA: KOREKTA CEN 1-KLIKNIĘCIEM */}
+        {/* MODUŁ CENNIKA Z CENTRUM WIEDZY: AUTOMATYCZNA WERYFIKACJA CEN I EAN (1-KLIKNIĘCIEM) */}
         {typKorekty === '1' && (
-          <div className="mb-4 p-3.5 bg-gradient-to-r from-purple-50 via-pink-50/50 to-fuchsia-50 rounded-xl border border-purple-200 shadow-2xs">
+          <div className="mb-4 p-4 bg-gradient-to-r from-purple-50 via-pink-50/50 to-fuchsia-50 rounded-xl border border-purple-200 shadow-2xs space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-purple-600" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-purple-600 shrink-0" />
                   <span className="text-xs font-bold text-purple-950">
-                    Automatyczna korekta cen z cennika (1-kliknięciem):
+                    Automatyczna weryfikacja cen i kodów EAN z Centrum Wiedzy:
                   </span>
-                  {priceList && (
-                    <span className="text-[10px] bg-purple-200 text-purple-900 px-2 py-0.5 rounded-full font-bold">
-                      {priceListFileName || 'Wczytano cennik'} ({priceList.length} poz.)
-                    </span>
-                  )}
+                  <span className="text-[10px] bg-purple-200 text-purple-900 px-2.5 py-0.5 rounded-full font-extrabold">
+                    {effectivePriceListName} ({effectivePriceList.length} poz.)
+                  </span>
                 </div>
                 <p className="text-[11px] text-slate-600 mt-0.5">
-                  Wgraj plik cennika (Excel .xlsx / .csv) lub użyj cennika OMNi-BiOTiC®. Jednym kliknięciem system dopasuje produkty po GTIN/Nazwie i zaktualizuje ceny netto do stawek z cennika.
+                  System automatycznie porównuje ceny jednostkowe netto i kody EAN na korekcie z cennikiem przypisanym do odbiorcy w Centrum Wiedzy. Możesz skorygować rozbieżności jednym kliknięciem.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                 <input
                   ref={priceListInputRef}
                   type="file"
@@ -2388,33 +2944,105 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => handleSwitchKnowledgePriceListInCorrection('DOZ_SPECIAL')}
+                  className={`px-2.5 py-1.5 text-[11px] font-bold rounded-xl border transition-all cursor-pointer ${
+                    !priceList && activeKnowledgePriceListType === 'DOZ_SPECIAL'
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
+                  }`}
+                >
+                  🔥 DOZ 08.2026 (Kol. O -12%)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSwitchKnowledgePriceListInCorrection('Q3_STANDARD')}
+                  className={`px-2.5 py-1.5 text-[11px] font-bold rounded-xl border transition-all cursor-pointer ${
+                    !priceList && activeKnowledgePriceListType === 'Q3_STANDARD'
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-purple-50'
+                  }`}
+                >
+                  📋 Cennik Q3 (-5% reszta sieci)
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => priceListInputRef.current?.click()}
                   disabled={isPriceListLoading}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-900 bg-white hover:bg-purple-50 border border-purple-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-purple-900 bg-white hover:bg-purple-50 border border-purple-300 rounded-xl transition-colors cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5 text-purple-600" />
-                  <span>{isPriceListLoading ? 'Wczytywanie...' : 'Wgraj cennik (Excel/CSV)'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleLoadSamplePriceList}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-                  title="Wczytaj oficjalny cennik hurtowy OMNi-BiOTiC 2026"
-                >
-                  <span>⭐ Cennik OMNi-BiOTiC</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleApplyPriceListToOneClick}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl transition-all cursor-pointer shadow-xs shadow-fuchsia-200"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Skoryguj ceny 1-kliknięciem wg cennika ✨</span>
+                  <span>{isPriceListLoading ? 'Wczytywanie...' : 'Własny XLSX'}</span>
                 </button>
               </div>
             </div>
+
+            {/* Pasek wyników audytu cen i EAN oraz przyciski 1-click */}
+            {priceAuditSummary && (
+              <div className="pt-2.5 border-t border-purple-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${
+                      priceAuditSummary.discrepanciesCount > 0
+                        ? 'bg-amber-100 text-amber-950 border-amber-300'
+                        : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                    }`}
+                  >
+                    {priceAuditSummary.discrepanciesCount > 0
+                      ? `⚠️ Rozbieżności cenowe z cennikiem: ${priceAuditSummary.discrepanciesCount} poz.`
+                      : `✓ Wszystkie ceny zgodne z cennikiem (${priceAuditSummary.matchedCount} poz.)`}
+                  </span>
+
+                  <span
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${
+                      priceAuditSummary.gtinDiscrepanciesCount + priceAuditSummary.gtinMissingCount > 0
+                        ? 'bg-rose-100 text-rose-950 border-rose-300'
+                        : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                    }`}
+                  >
+                    {priceAuditSummary.gtinDiscrepanciesCount + priceAuditSummary.gtinMissingCount > 0
+                      ? `⚠️ Do poprawy / uzupełnienia EAN: ${priceAuditSummary.gtinDiscrepanciesCount + priceAuditSummary.gtinMissingCount} poz.`
+                      : `✓ Kody EAN zgodne z cennikiem`}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {(priceAuditSummary.gtinDiscrepanciesCount > 0 || priceAuditSummary.gtinMissingCount > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleApplyGtinFromPriceList}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-purple-900 bg-white hover:bg-purple-100 border border-purple-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <Barcode className="w-3.5 h-3.5 text-purple-700" />
+                      <span>⚡ Uzupełnij / popraw EAN z cennika</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleApplyPriceListToOneClick}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl transition-all cursor-pointer shadow-xs shadow-fuchsia-200"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Skoryguj ceny 1-kliknięciem wg cennika ✨</span>
+                  </button>
+
+                  {(priceAuditSummary.discrepanciesCount > 0 ||
+                    priceAuditSummary.gtinDiscrepanciesCount > 0 ||
+                    priceAuditSummary.gtinMissingCount > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleApplyAllPriceAndGtinFromPriceList}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-400 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Ustaw Ceny + EAN z cennika</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2479,7 +3107,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                   <th className="py-2.5 px-3 min-w-[140px]">
                     <div className="flex items-center gap-1">
                       <Barcode className="w-3.5 h-3.5 text-slate-400" />
-                      <span>GTIN</span>
+                      <span>GTIN / EAN</span>
                     </div>
                   </th>
                   <th className="py-2.5 px-3 min-w-[200px]">Nazwa towaru lub usługi</th>
@@ -2492,7 +3120,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                       <span>Data ważności / Seria</span>
                     </div>
                   </th>
-                  <th className="py-2.5 px-3 min-w-[140px] text-center bg-fuchsia-50/50 border-r border-fuchsia-200">
+                  <th className="py-2.5 px-3 min-w-[160px] text-center bg-fuchsia-50/50 border-r border-fuchsia-200">
                     Cena jedn. netto (Przed → Po)
                   </th>
                   <th className="py-2.5 px-2.5 w-24 text-center">Stawka VAT</th>
@@ -2503,7 +3131,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {items.map((it, idx) => {
                   const effectiveVat = it.correctedVatRate || it.vatRate;
-                  const hasExpOrBatch = Boolean(it.expiryDate || it.correctedExpiryDate || it.batchNumber || it.correctedBatchNumber);
+                  const comp = priceComparisons.get(it.id);
 
                   return (
                     <tr
@@ -2517,7 +3145,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                         {idx + 1}
                       </td>
 
-                      {/* 2. GTIN */}
+                      {/* 2. GTIN + WERYFIKACJA EAN WG CENNIKA */}
                       <td className="py-3 px-3 font-mono">
                         <input
                           type="text"
@@ -2525,8 +3153,27 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                           maxLength={14}
                           placeholder="np. 9120117912773"
                           onChange={(e) => handleUpdateItemGtin(it.id, e.target.value)}
-                          className="w-full font-mono text-xs text-slate-800 bg-white border border-slate-200 hover:border-slate-300 focus:border-fuchsia-500 rounded px-2 py-1"
+                          className={`w-full font-mono text-xs bg-white border rounded px-2 py-1 ${
+                            comp && (comp.gtinStatus === 'discrepancy' || comp.gtinStatus === 'missing_in_order')
+                              ? 'border-amber-400 text-amber-950 font-bold bg-amber-50/40'
+                              : 'border-slate-200 text-slate-800 hover:border-slate-300 focus:border-fuchsia-500'
+                          }`}
                         />
+                        {comp && comp.priceListGtin && (comp.gtinStatus === 'discrepancy' || comp.gtinStatus === 'missing_in_order') && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateItemGtin(it.id, comp.priceListGtin!)}
+                            className="mt-1 w-full inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 text-[10px] font-bold cursor-pointer"
+                            title="Kliknij, aby podstawić poprawny kod EAN z cennika"
+                          >
+                            ⚡ EAN: {comp.priceListGtin}
+                          </button>
+                        )}
+                        {comp && comp.gtinStatus === 'match' && (
+                          <div className="mt-0.5 text-[9px] text-emerald-700 font-sans font-semibold">
+                            ✓ EAN zgodny z cennikiem
+                          </div>
+                        )}
                       </td>
 
                       {/* 3. NAZWA PRODUKTU */}
@@ -2597,7 +3244,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                         </div>
                       </td>
 
-                      {/* 6. CENA JEDNOSTKOWA NETTO */}
+                      {/* 6. CENA JEDNOSTKOWA NETTO + AUTOMATYCZNA PODPOWIEDŹ Z CENNIKA */}
                       <td className="py-3 px-3 bg-fuchsia-50/20 border-r border-fuchsia-200 text-center">
                         <div className="text-[11px] text-slate-500 mb-0.5">
                           Było: <strong className="font-mono text-slate-700">{it.originalNetPrice.toFixed(2)}</strong> zł
@@ -2624,6 +3271,24 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
                             }`}
                           >
                             Δ: {(it.correctedNetPrice - it.originalNetPrice).toFixed(2)} zł
+                          </div>
+                        )}
+                        {comp && comp.priceListPrice !== null && (
+                          <div className="mt-1">
+                            {Math.abs(it.correctedNetPrice - comp.priceListPrice) > 0.01 ? (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateItemPrice(it.id, comp.priceListPrice!)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300 text-[10px] font-bold cursor-pointer transition-colors"
+                                title="Kliknij, aby ustawić cenę po rabacie netto z cennika odbiorcy"
+                              >
+                                ⚡ Wg cennika: {comp.priceListPrice.toFixed(2)} zł
+                              </button>
+                            ) : (
+                              <span className="inline-block text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                ✓ Cennik: {comp.priceListPrice.toFixed(2)} zł
+                              </span>
+                            )}
                           </div>
                         )}
                       </td>

@@ -63,12 +63,17 @@ function mergeServerAndLocalClients(
           notes: [...customNotes, ...def.notes],
           contacts: [...def.contacts, ...customContacts],
         });
-      } else if (!current.priceListType) {
+      } else if (!current.priceListType || !current.correctionCodes || current.correctionCodes.length === 0) {
         map.set(def.id, {
           ...current,
-          priceListType: def.priceListType,
-          priceListTitle: def.priceListTitle,
-          priceListRule: def.priceListRule,
+          priceListType: current.priceListType || def.priceListType,
+          priceListTitle: current.priceListTitle || def.priceListTitle,
+          priceListRule: current.priceListRule || def.priceListRule,
+          correctionRulesSummary: current.correctionRulesSummary || def.correctionRulesSummary,
+          correctionCodes:
+            current.correctionCodes && current.correctionCodes.length > 0
+              ? current.correctionCodes
+              : def.correctionCodes,
         });
       }
     }

@@ -31,7 +31,14 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
   } = data;
 
   const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const fullReason = [reasonCategory, reasonDescription].filter(Boolean).join(': ').trim() || 'Korekta pozycji faktury';
+  const isCustomOrClientCode =
+    !reasonCategory ||
+    reasonCategory.startsWith('Wg kodu') ||
+    reasonCategory === 'Inna przyczyna' ||
+    (reasonDescription && reasonDescription.toLowerCase().includes(reasonCategory.toLowerCase()));
+  const fullReason = isCustomOrClientCode
+    ? (reasonDescription || reasonCategory || 'Korekta pozycji faktury').trim()
+    : [reasonCategory, reasonDescription].filter(Boolean).join(': ').trim() || 'Korekta pozycji faktury';
 
   // Wyliczanie delty (różnicy) podatku VAT i kwot netto dla poszczególnych stawek
   let deltaNet23 = 0, deltaVat23 = 0;
@@ -242,26 +249,24 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
         </DaneFaKorygowanej>`;
   }).join('\n') + okresXml;
 
-  // Podmiot 3 (Odbiorca / Apteka)
+  // Podmiot 3 (Odbiorca / Apteka — wyłącznie dla jednostek z ID-Wew lub odrębnym NIP, nigdy dla DOZ)
   let podmiot3Xml = '';
-  if (thirdParty && thirdParty.name && thirdParty.name.trim()) {
-    let idSection = '';
+  const isDozBuyer = cleanNumeric(buyer.nip) === '8271807718' || (buyer.name || '').toLowerCase().includes('doz');
+  if (!isDozBuyer && thirdParty && thirdParty.name && thirdParty.name.trim()) {
     const cleanNip = thirdParty.nip ? cleanNumeric(thirdParty.nip) : '';
     const rawIdWew = (thirdParty.idWew || '').trim();
     const isValidIdWew = /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(rawIdWew);
 
-    if (cleanNip.length === 10) {
-      idSection = `\n            <NIP>${cleanNip}</NIP>`;
-    } else if (isValidIdWew) {
-      idSection = `\n            <IDWew>${escapeXml(rawIdWew)}</IDWew>`;
-    } else {
-      idSection = `\n            <BrakID>1</BrakID>`;
-    }
+    if (cleanNip.length === 10 || isValidIdWew) {
+      const idSection =
+        cleanNip.length === 10
+          ? `\n            <NIP>${cleanNip}</NIP>`
+          : `\n            <IDWew>${escapeXml(rawIdWew)}</IDWew>`;
 
-    const rawGln = (thirdParty.gln || (!isValidIdWew && /^\d{1,13}$/.test(rawIdWew) ? rawIdWew : '')).trim();
-    const glnXml = rawGln && /^\d{1,13}$/.test(rawGln) ? `\n            <GLN>${escapeXml(rawGln)}</GLN>` : '';
+      const rawGln = (thirdParty.gln || '').trim();
+      const glnXml = rawGln && /^\d{1,13}$/.test(rawGln) ? `\n            <GLN>${escapeXml(rawGln)}</GLN>` : '';
 
-    podmiot3Xml = `\n    <Podmiot3>
+      podmiot3Xml = `\n    <Podmiot3>
         <DaneIdentyfikacyjne>${idSection}
             <Nazwa>${escapeXml(thirdParty.name.trim())}</Nazwa>
         </DaneIdentyfikacyjne>
@@ -271,6 +276,7 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
         </Adres>
         <Rola>${thirdParty.role || '2'}</Rola>
     </Podmiot3>`;
+    }
   }
 
   // Warunki transakcji

@@ -29,9 +29,19 @@ export interface ClientPriceListItem {
   unitsPerCarton?: number; // Ilość w kartonie zbiorczym (opcjonalnie)
 }
 
+export interface ClientCorrectionCode {
+  code: string; // np. "GEM.K01", "Korekta - rabat", "DOZ-CENA"
+  label: string; // Krótka nazwa na przycisku
+  reasonText: string; // Dokładny tekst wstawiany do <PrzyczynaKorekty>
+  categoryLabel: string; // Kategoria przyczyny
+  defaultTypKorekty: '1' | '2' | '3';
+  mode: 'value' | 'formal' | 'period_bulk';
+  isOfficialClientCode?: boolean; // true jeśli klient narzuca ten dokładny kod/frazę w swojej specyfikacji (np. Gemini GEM.K01..K08, Dr. Max)
+}
+
 export interface KeyClientProfile {
   id: string;
-  shortName: string; // np. "DOZ Direct", "Dr. Max", "Super-Pharm", "Gemini", "Nabea", "Modum Pharma"
+  shortName: string; // np. "DOZ Direct", "Dr. Max", "Super-Pharm", "Gemini", "Modum Pharma"
   fullName: string;
   nip: string;
   glnBuyer?: string;
@@ -43,6 +53,10 @@ export interface KeyClientProfile {
   priceListType?: 'DOZ_SPECIAL' | 'Q3_STANDARD';
   priceListTitle?: string;
   priceListRule?: string;
+
+  // Kody i wytyczne dotyczące korekt faktur (KOR)
+  correctionRulesSummary?: string;
+  correctionCodes?: ClientCorrectionCode[];
 
   // 1. Wymagania dotyczące wystawiania FV
   invoiceSystem: 'KSeF_FA3' | 'ZEWNETRZNY_SYSTEM' | 'KSEF_I_PORTAL';
@@ -169,6 +183,55 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     priceListType: 'DOZ_SPECIAL',
     priceListTitle: 'Nowy Cennik DOZ Direct od sierpnia 2026 (Kolumna O: Cena zakupu_DD_nowa – rabat 12% netto na FV)',
     priceListRule: 'WAŻNE: Na fakturze VAT (FV) dla DOZ obowiązuje NOWY CENNIK od 05.08.2026 – KOLUMNA O (Cena zakupu_DD_nowa = CENA PO RABACIE 12% NETTO przy terminie 60 dni)!',
+    correctionRulesSummary:
+      'DOZ Direct nie narzuca specjalnych kodów literowo-cyfrowych w <PrzyczynaKorekty> (jak Gemini GEM.K01). Obowiązuje standardowy opis KSeF FA(3), brak Podmiot3 (brak ID-Wew), klucz GS1 (NumerSeriiDataPrzydatnosciIlosc), termin 60 dni oraz wysyłka korekty na kpd_dd@doz.pl i dwd_dd@doz.pl.',
+    correctionCodes: [
+      {
+        code: 'DOZ • CENNIK 08.2026 (Kol. O -12%)',
+        label: 'Korekta cenowa wg Nowego Cennika DOZ (Kolumna O -12%)',
+        reasonText: 'Korekta cenowa – dostosowanie cen jednostkowych netto do obowiązującego cennika DOZ Direct od sierpnia 2026 (rabat 12%)',
+        categoryLabel: 'Korekta błędnej ceny jednostkowej na fakturze pierwotnej',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'DOZ • ILOŚCIOWA (KPD)',
+        label: 'Korekta ilościowa (rozbieżność / zwrot w dostawie KPD)',
+        reasonText: 'Korekta ilościowa – rozbieżność ilościowa / zwrot towaru w dostawie do magazynu DOZ Direct',
+        categoryLabel: 'Korekta ilościowa (niedobór towaru w dostawie)',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'DOZ • ADRES (Gillette 1, 9 i 11)',
+        label: 'Korekta formalna adresu (ul. Kinga C. Gillette 1, 9 i 11)',
+        reasonText: 'Korekta formalna – aktualizacja adresu dostawy na ul. Kinga C. Gillette 1, 9 i 11, 94-406 Łódź. Bez wpływu na podstawę opodatkowania.',
+        categoryLabel: 'Korekta formalna – błąd w danych adresowych bez wpływu na kwoty',
+        defaultTypKorekty: '2',
+        mode: 'formal',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'DOZ • SERIA / MHD (GS1)',
+        label: 'Korekta formalna numeru serii / daty ważności (GS1)',
+        reasonText: 'Korekta formalna – korekta numeru serii (LOT) i daty ważności (MHD) w standardzie GS1 na fakturze pierwotnej',
+        categoryLabel: 'Korekta formalna – błąd w danych adresowych bez wpływu na kwoty',
+        defaultTypKorekty: '2',
+        mode: 'formal',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'DOZ • RABAT OKRESOWY',
+        label: 'Korekta zbiorcza – rabat potransakcyjny za okres',
+        reasonText: 'Udzielenie rabatu potransakcyjnego za zrealizowany obrót w okresie rozliczeniowym',
+        categoryLabel: 'Udzielenie dodatkowego rabatu / upustu cenowego',
+        defaultTypKorekty: '3',
+        mode: 'period_bulk',
+        isOfficialClientCode: false,
+      },
+    ],
     invoiceSystem: 'KSeF_FA3',
     invoiceSystemLabel: 'FV KSeF (+ MHD, seria GS1) – bez osobnej tabeli specyfikacji (dane są już na FV)',
     paymentDays: 60,
@@ -178,7 +241,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
       '• Termin płatności: 60 dni.\n' +
       '• Wystawiamy: FV KSeF (+ MHD, seria w standardzie GS1). Nie trzeba już wysyłać osobnej tabeli specyfikacji, ponieważ wszystkie wymagane dane znajdują się bezpośrednio na FV.\n' +
       '• Po wystawieniu wysłać FV na adresy: kpd_dd@doz.pl oraz dwd_dd@doz.pl.\n' +
-      '• Na fakturze obowiązkowe: numer i data zamówienia, nazwa i postać produktu, kod EAN, numer serii/partii, data ważności, ilość, termin płatności oraz dane Nabywcy (ILN: 5909000828476) i Miejsca dostawy: ul. Kinga C. Gillette 1, 9 i 11 (ILN: 5909000848054, Nr zezwolenia: GIF-N-411/820/MSH/14).\n' +
+      '• Na fakturze obowiązkowe: numer i data zamówienia, nazwa i postać produktu, kod EAN, numer serii/partii, data ważności, ilość, termin płatności oraz dane Nabywcy (ILN: 5909000828476). W KSeF brak Podmiot3 (brak ID-Wew).\n' +
       '• Dokumenty przy dostawie umieścić NA BOKU palety/kartonu (zakaz wkładania do środka zaklejonego kartonu!).',
     minExpiryRequirement:
       'Produkty o całkowitym okresie > 12 msc: min. 75% całkowitego okresu przydatności i NIE MNIEJ NIŻ 12 MIESIĘCY. (Produkty < 12 msc: min. 75% okresu i nie mniej niż 6 miesięcy).',
@@ -257,7 +320,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
           'WYMOGI MAGAZYNOWE DOZ:\n• Jeden karton = Jeden termin ważności = Jedna seria.\n• Kartony niepełne oklejać taśmą „MIX”.\n• Paleta EUR/EPAL max 160 cm wysokości i max 900 kg wagi, owinięta przezroczystym stretchem (etykiety kartonów widoczne na zewnątrz).\n• Zmiany EAN, gramatury, VAT lub wymiarów zgłaszać min. 30 dni wcześniej do Opiekuna Dostawcy.',
       },
     ],
-    updatedAt: '2026-10-03T16:25:00.000Z',
+    updatedAt: '2026-10-03T18:00:00.000Z',
   },
 
   // ==========================================================================
@@ -272,6 +335,55 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     priceListType: 'Q3_STANDARD',
     priceListTitle: 'Cennik Q3 (Oferta Handlowa – rabat 5% na fakturze)',
     priceListRule: 'WAŻNE: Na fakturze VAT (FV) zawsze musi być CENA PO RABACIE NETTO (kolumna „Cena po rabacie 5% netto na FV”)!',
+    correctionRulesSummary:
+      'OFICJALNE WYTYCZNE KSeF GRUPY DR. MAX: W polu <PrzyczynaKorekty> należy stosować dokładnie rekomendowane frazy: „Korekta - rabat” (lub „Rabat za okres”), „Korekta - gazetka” (rozliczenia gazetki Lekomat) lub „Korekta - program lekowy”. Wysyłka na dostawyecom@drmax.com.pl i zamowieniaecom@drmax.com.pl.',
+    correctionCodes: [
+      {
+        code: 'Korekta - rabat',
+        label: 'Rabaty / Korekta cenowa (wymóg KSeF Dr. Max)',
+        reasonText: 'Korekta - rabat',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'Rabat za okres',
+        label: 'Rabat za okres (Korekta zbiorcza Dr. Max)',
+        reasonText: 'Rabat za okres',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '3',
+        mode: 'period_bulk',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'Korekta - gazetka',
+        label: 'Lekomat – rozliczenia z tytułu gazetki',
+        reasonText: 'Korekta - gazetka',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'Korekta - program lekowy',
+        label: 'Program lekowy (wymóg KSeF Dr. Max)',
+        reasonText: 'Korekta - program lekowy',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'DR.MAX • ILOŚCIOWA',
+        label: 'Korekta ilościowa (rozbieżność w dostawie Łubna)',
+        reasonText: 'Korekta ilościowa – rozbieżność ilościowa w dostawie do magazynu Dr. Max Lekomat',
+        categoryLabel: 'Korekta ilościowa (niedobór towaru w dostawie)',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+    ],
     invoiceSystem: 'KSeF_FA3',
     invoiceSystemLabel: 'FV KSeF (Hurtownia Drogeryjna Lekomat: bez MHD/serii lub wg wytycznych GS1)',
     paymentDays: 30,
@@ -339,7 +451,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
           'WYTYCZNE KOREKT KSeF DR. MAX (<PrzyczynaKorekty>):\n• Program lekowy: „Korekta - program lekowy”\n• Rabaty: „Korekta – rabat” lub „Rabat za okres”\n• Rozliczenia z tytułu gazetki Lekomat: „Korekta – gazetka”',
       },
     ],
-    updatedAt: '2026-10-03T15:50:00.000Z',
+    updatedAt: '2026-10-03T18:00:00.000Z',
   },
 
   // ==========================================================================
@@ -354,6 +466,82 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     priceListType: 'Q3_STANDARD',
     priceListTitle: 'Cennik Q3 (Oferta Handlowa – rabat 5% na fakturze)',
     priceListRule: 'WAŻNE: Na fakturze VAT (FV) zawsze musi być CENA PO RABACIE NETTO (kolumna „Cena po rabacie 5% netto na FV”)!',
+    correctionRulesSummary:
+      'OBOWIĄZKOWA TABELA KODÓW PRZYCZYN KOREKTY GEMINI (GEM.K01 – GEM.K08): Każda korekta dla Gemini musi zawierać przypisany kod przyczyny korekty (np. GEM.K01 dla ilościowej, GEM.K02 dla błędu ceny, GEM.K04 dla danych niewartościowych). Wysyłka XML/PDF na faktury@gemini.pl oraz ri@gemini.pl i aleksandra.teclaw@gemini.pl.',
+    correctionCodes: [
+      {
+        code: 'GEM.K01',
+        label: 'Korekta ilościowa (zmiana ilości towaru lub usługi)',
+        reasonText: 'GEM.K01 - Korekta ilościowa - zmiana ilości towaru lub usługi',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K02',
+        label: 'Korekta cenowa (błąd wystawiającego fakturę)',
+        reasonText: 'GEM.K02 - Korekta cenowa - zmiana ceny jednostkowej towaru lub usługi wynikająca z błędu wystawiającego fakturę',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K03',
+        label: 'Korekta cenowa (zmiana stawki VAT)',
+        reasonText: 'GEM.K03 - Korekta cenowa - zmiana stawki VAT',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K04',
+        label: 'Korekta danych niewartościowych (seria, MHD, opis, adres)',
+        reasonText: 'GEM.K04 - Korekta danych niewartościowych - błędy w danych na fakturze (np. seria, data ważności, opis, dane adresowe)',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '2',
+        mode: 'formal',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K05',
+        label: 'Korekta wartościowa z ustaleń stron (np. FUS)',
+        reasonText: 'GEM.K05 - Korekta wartościowa wynikająca z ustaleń stron (np. FUS)',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K06',
+        label: 'Korekta cenowa dla produktów specjalnych',
+        reasonText: 'GEM.K06 - Korekta cenowa dla produktów specjalnych (programy specjalne)',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K07',
+        label: 'Korekta cenowa z umowy / udział w akcji sprzedażowej',
+        reasonText: 'GEM.K07 - Korekta cenowa wynikająca z umowy lub porozumienia / udział w akcji sprzedażowej',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: true,
+      },
+      {
+        code: 'GEM.K08',
+        label: 'Korekta wartościowa z umowy lub porozumienia – rabat',
+        reasonText: 'GEM.K08 - Korekta wartościowa wynikająca z umowy lub porozumienia - rabat',
+        categoryLabel: 'Wg kodu / wytycznych odbiorcy',
+        defaultTypKorekty: '3',
+        mode: 'period_bulk',
+        isOfficialClientCode: true,
+      },
+    ],
     invoiceSystem: 'ZEWNETRZNY_SYSTEM',
     invoiceSystemLabel: 'FV w-Firma + specyfikacja (oraz kopia XML/PDF + papierowa FV do dostawy)',
     paymentDays: 45,
@@ -366,7 +554,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
       '• Po potwierdzeniu awizacji wysłać informację (kiedy wysyłamy, jak, fakturę oraz tabelę/specyfikację) na: ri@gemini.pl oraz aleksandra.teclaw@gemini.pl (oraz kopię XML/PDF na faktury@gemini.pl).\n' +
       '• OBOWIĄZKOWE PRZY DOSTAWIE FIZYCZNEJ (Standard Dostaw str. 3): Do każdej dostawy MUSI być dołączona PAPIEROWA wersja faktury VAT (pomimo wysłania elektronicznej!) oraz dokument WZ z indywidualnymi kodami GTIN produktów.\n' +
       '• Papierową fakturę umieścić na OZNACZONYM kartonie lub na górze/boku OZNACZONEJ palety (zakaz wkładania papierowej FV w środek opakowania zbiorczego na palecie!).\n' +
-      '• Kody przyczyn korekt Gemini: GEM.K01 (ilościowa), GEM.K02 (błąd ceny), GEM.K03 (stawka VAT), GEM.K04 (błędy w danych niewartościowych np. seria/data), GEM.K05 (ustalenia stron/FUS), GEM.K06 (programy specjalne), GEM.K07 (akcja sprzedażowa), GEM.K08 (rabat).',
+      '• Kody przyczyn korekt Gemini: GEM.K01 (ilościowa), GEM.K02 (błąd ceny), GEM.K03 (stawka VAT), GEM.K04 (błędy w danych niewartościowych np. seria/data), GEM.K05 (ustalenia stron/FUS), GEM.K06 (programy specjalne), GEM.K07 (akcja sprzedażowej), GEM.K08 (rabat).',
     minExpiryRequirement:
       'Zgodnie z umową handlową. Każdy produkt musi posiadać serię i datę ważności na opakowaniu oraz na etykiecie kartonu zbiorczego (*data ważności nieobowiązkowa dla kosmetyków).',
     shortExpiryPolicy:
@@ -442,7 +630,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
           'TABELA KODÓW PRZYCZYN KOREKTY GEMINI:\n• GEM.K01 – Korekta ilościowa (zmiana ilości towaru)\n• GEM.K02 – Korekta cenowa (błąd wystawiającego fakturę)\n• GEM.K03 – Korekta cenowa (zmiana stawki VAT)\n• GEM.K04 – Korekta danych niewartościowych (błędy w serii, dacie ważności, opisie, adresie)\n• GEM.K05 – Korekta wartościowa z ustaleń stron (np. FUS)\n• GEM.K06 – Korekta cenowa dla produktów specjalnych\n• GEM.K07 – Korekta cenowa z umowy / akcji sprzedażowej\n• GEM.K08 – Korekta wartościowa z umowy – rabat',
       },
     ],
-    updatedAt: '2026-10-03T15:50:00.000Z',
+    updatedAt: '2026-10-03T18:00:00.000Z',
   },
 
   // ==========================================================================
@@ -458,6 +646,46 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     priceListType: 'Q3_STANDARD',
     priceListTitle: 'Cennik Q3 (Oferta Handlowa – rabat 5% na fakturze)',
     priceListRule: 'WAŻNE: Na fakturze VAT (FV) zawsze musi być CENA PO RABACIE NETTO (kolumna „Cena po rabacie 5% netto na FV”)!',
+    correctionRulesSummary:
+      'Super-Pharm wymaga na korekcie KSeF FA(3) zachowania węzła <Podmiot3> z <IDWew>5213842837-54936</IDWew> (Magazyn Centralny Teresin). Obowiązuje cennik Q3 (-5% netto), termin 45 dni oraz wysyłka korekty na dsiwinski@superpharm.pl.',
+    correctionCodes: [
+      {
+        code: 'SP • CENNIK Q3 (-5%)',
+        label: 'Korekta cenowa wg Cennika Q3 (rabat 5% netto)',
+        reasonText: 'Korekta cenowa – dostosowanie cen jednostkowych netto do obowiązującego cennika Q3 (rabat 5%)',
+        categoryLabel: 'Korekta błędnej ceny jednostkowej na fakturze pierwotnej',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'SP • ILOŚCIOWA (Teresin)',
+        label: 'Korekta ilościowa (rozbieżność w dostawie Magazyn Teresin)',
+        reasonText: 'Korekta ilościowa – rozbieżność ilościowa w dostawie do Magazynu Centralnego Super-Pharm w Teresinie',
+        categoryLabel: 'Korekta ilościowa (niedobór towaru w dostawie)',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'SP • PODMIOT3 (ID-Wew)',
+        label: 'Korekta formalna – uzupełnienie Podmiot3 (ID-Wew: 5213842837-54936)',
+        reasonText: 'Korekta formalna – uzupełnienie danych Odbiorcy (Podmiot3) o wymagany identyfikator wewnętrzny IDWew: 5213842837-54936. Bez wpływu na kwoty.',
+        categoryLabel: 'Korekta formalna – błąd w danych adresowych bez wpływu na kwoty',
+        defaultTypKorekty: '2',
+        mode: 'formal',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'SP • SERIA / MHD',
+        label: 'Korekta formalna daty ważności / serii',
+        reasonText: 'Korekta formalna – korekta daty ważności (MHD) oraz numeru serii produktu na fakturze pierwotnej',
+        categoryLabel: 'Korekta formalna – błąd w danych adresowych bez wpływu na kwoty',
+        defaultTypKorekty: '2',
+        mode: 'formal',
+        isOfficialClientCode: false,
+      },
+    ],
     invoiceSystem: 'KSeF_FA3',
     invoiceSystemLabel: 'FV KSeF (+ MHD, seria w osobnych wierszach) + wysyłka na dsiwinski@superpharm.pl',
     paymentDays: 45,
@@ -502,7 +730,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
           'ŚCIĄGA OPERACYJNA SUPER-PHARM:\n• Obowiązuje Cennik Q3 — na FV musi być CENA PO RABACIE NETTO (rabat 5%)!\n• Termin płatności: 45 dni, FV KSeF (+ MHD, seria w osobnych wierszach)\n• Awizacja w systemie DMS\n• dsiwinski@superpharm.pl – potwierdzenie realizacji zamówienia oraz faktura\n• Na palecie MUSI być nazwa firmy oraz nr zamówienia!\n• MIX – osobne kartony.',
       },
     ],
-    updatedAt: '2026-10-03T15:50:00.000Z',
+    updatedAt: '2026-10-03T18:00:00.000Z',
   },
 
   // ==========================================================================
@@ -517,6 +745,28 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     priceListType: 'Q3_STANDARD',
     priceListTitle: 'Cennik Q3 (Oferta Handlowa – rabat 5% na fakturze)',
     priceListRule: 'WAŻNE: Na fakturze VAT (FV) zawsze musi być CENA PO RABACIE NETTO (kolumna „Cena po rabacie 5% netto na FV”)!',
+    correctionRulesSummary:
+      'Dla Modum Pharma korekty wystawiamy w w-Firma + specyfikacja (lub KSeF XML). Obowiązuje cennik Q3 (-5% netto), produkty min. 13 msc ważności. Wysyłka korekty na zakupy.sprzedaz@modumpharma.pl.',
+    correctionCodes: [
+      {
+        code: 'MODUM • CENNIK Q3 (-5%)',
+        label: 'Korekta cenowa wg Cennika Q3 (rabat 5% netto)',
+        reasonText: 'Korekta cenowa – dostosowanie cen jednostkowych netto do cennika Q3 (rabat 5%)',
+        categoryLabel: 'Korekta błędnej ceny jednostkowej na fakturze pierwotnej',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'MODUM • ILOŚCIOWA / MHD (<13 msc)',
+        label: 'Zwrot / korekta ilościowa (wymóg min. 13 msc ważności)',
+        reasonText: 'Korekta ilościowa – zwrot części towaru przez odbiorcę',
+        categoryLabel: 'Zwrot towaru przez odbiorcę (uszkodzenie w transporcie / reklamacja)',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+    ],
     invoiceSystem: 'ZEWNETRZNY_SYSTEM',
     invoiceSystemLabel: 'FV w-Firma + specyfikacja (wysyłka na zakupy.sprzedaz@modumpharma.pl)',
     paymentDays: 60,
@@ -572,6 +822,6 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
           'ŚCIĄGA OPERACYJNA MODUM PHARMA:\n• Obowiązuje Cennik Q3 — na FV musi być CENA PO RABACIE NETTO (rabat 5%)!\n• Termin płatności: 60 dni, FV w-Firma + specyfikacja\n• Produkty MINIMUM 13 MIESIĘCY ważności!\n• Proponowany termin awizacji -> dzialhandlowy@modumpharma.pl , logistyka@modumpharma.pl\n• FV i specyfikacja -> zakupy.sprzedaz@modumpharma.pl',
       },
     ],
-    updatedAt: '2026-10-03T15:50:00.000Z',
+    updatedAt: '2026-10-03T18:00:00.000Z',
   },
 ];

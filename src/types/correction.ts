@@ -134,6 +134,7 @@ export interface KSeFCorrectionData {
 }
 
 export const COMMON_CORRECTION_REASONS = [
+  'Wg kodu / wytycznych odbiorcy (Centrum Wiedzy)',
   'Zwrot towaru przez odbiorcę (uszkodzenie w transporcie / reklamacja)',
   'Korekta ilościowa (niedobór towaru w dostawie)',
   'Udzielenie dodatkowego rabatu / upustu cenowego',
@@ -143,3 +144,4 @@ export const COMMON_CORRECTION_REASONS = [
   'Pomyłkowe zdublowanie pozycji na fakturze pierwotnej',
   'Inna przyczyna',
 ] as const;
+

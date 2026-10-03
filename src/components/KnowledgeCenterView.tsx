@@ -1279,6 +1279,67 @@ export const KnowledgeCenterView: React.FC = () => {
                 </div>
               </div>
 
+              {/* SEKCJA KOREKT: KODY I WYTYCZNE DO WYSTAWIANIA KOREKT FAKTUR (KOR) */}
+              {(activeClient.correctionRulesSummary || (activeClient.correctionCodes && activeClient.correctionCodes.length > 0)) && (
+                <div className="bg-gradient-to-br from-purple-50/70 via-fuchsia-50/40 to-white rounded-2xl border border-purple-200/90 p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📑</span>
+                      <h3 className="text-xs font-black uppercase tracking-wider text-purple-950">
+                        Wytyczne i kody do wystawiania KOREKT FAKTUR (KSeF FA(3) KOR — &lt;PrzyczynaKorekty&gt;)
+                      </h3>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                      Automatycznie podpowiadane w Module 2 (Korekty Faktur)
+                    </span>
+                  </div>
+
+                  {activeClient.correctionRulesSummary && (
+                    <div className="mb-3 p-3 bg-white/90 rounded-xl border border-purple-200/80 text-xs text-slate-800 leading-relaxed font-medium">
+                      {activeClient.correctionRulesSummary}
+                    </div>
+                  )}
+
+                  {activeClient.correctionCodes && activeClient.correctionCodes.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                      {activeClient.correctionCodes.map((cc, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-xl bg-white border border-purple-200/90 flex flex-col justify-between text-xs shadow-2xs"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1.5 mb-1">
+                              <span
+                                className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded ${
+                                  cc.isOfficialClientCode
+                                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                    : 'bg-purple-100 text-purple-900'
+                                }`}
+                              >
+                                {cc.code}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(cc.reasonText, `Kod korekty ${cc.code}`)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-purple-700 hover:bg-purple-50 cursor-pointer"
+                                title="Skopiuj treść <PrzyczynaKorekty>"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Kopiuj</span>
+                              </button>
+                            </div>
+                            <div className="font-bold text-slate-900 text-xs leading-snug">{cc.label}</div>
+                          </div>
+                          <div className="mt-1.5 pt-1.5 border-t border-slate-100 text-[10px] font-mono text-slate-600 break-words">
+                            &lt;PrzyczynaKorekty&gt;: <strong>{cc.reasonText}</strong>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* SEKCJA 5: CENNIK KONTRAHENTA (NA FV CENA PO RABACIE NETTO) */}
               <div
                 className={`rounded-2xl border p-5 ${
