@@ -247,9 +247,13 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return counts;
   }, [orders]);
 
-  // Obliczenia liczników dla okresów z uwzględnieniem wybranego pola daty
+  // Obliczenia liczników dla okresów z uwzględnieniem wybranego pola daty (wyłącznie dla ZAKOŃCZONYCH)
   const periodCounts = useMemo(() => {
-    const mappedOrders = orders.map((o) => {
+    const completedOrders = orders.filter((ord) => {
+      const effectiveShipping = getOrderEffectiveShippingStatus(ord);
+      return ord.isDelivered || effectiveShipping === 'delivered';
+    });
+    const mappedOrders = completedOrders.map((o) => {
       const targetDate =
         dateFilterField === 'orderDate'
           ? (o.orderDate || o.issueDate)
@@ -309,8 +313,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         if (paymentFilter === 'overdue' && !isOverdue) return false;
       }
 
-      // 2c. Filtr okresu / wybranego typu daty
-      if (periodFilter !== 'all') {
+      // 2c. Filtr okresu / wybranego typu daty (wyłącznie w sekcji ZAKOŃCZONE)
+      if (lifecycleTab === 'completed' && periodFilter !== 'all') {
         const targetDate =
           dateFilterField === 'orderDate'
             ? (ord.orderDate || ord.issueDate)
@@ -1557,206 +1561,208 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
         </div>
 
-        {/* FILTR OKRESU (DATA WYSTAWIENIA FAKTURY / ZAMÓWIENIA / AWIZACJI) */}
-        <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
-          {/* PRZEŁĄCZNIK TYPU DATY DO FILTROWANIA */}
-          <div className="inline-flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-xl border border-slate-200">
-            <span className="text-[10px] font-bold text-slate-500 px-1.5 uppercase tracking-wider">
-              Wg daty:
-            </span>
-            <button
-              type="button"
-              onClick={() => setDateFilterField('issueDate')}
-              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                dateFilterField === 'issueDate'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Filtruj wg daty wystawienia faktury (<P_1>)"
-            >
-              📅 Wystawienia
-            </button>
-            <button
-              type="button"
-              onClick={() => setDateFilterField('orderDate')}
-              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                dateFilterField === 'orderDate'
-                  ? 'bg-fuchsia-600 text-white shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Filtruj wg daty złożenia zamówienia (<DataZamowienia>)"
-            >
-              📝 Zamówienia
-            </button>
-            <button
-              type="button"
-              onClick={() => setDateFilterField('avisoDate')}
-              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                dateFilterField === 'avisoDate'
-                  ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Filtruj wg daty awizacji dostawy (<P_6>)"
-            >
-              🚚 Awizacji
-            </button>
-          </div>
-
-          <span className="text-slate-300 hidden sm:inline">|</span>
-
-          {/* NAPIS OKRES BEZPOŚREDNIO PRZY DACIE I ZAKRESIE OD-DO */}
-          <div className="inline-flex flex-wrap items-center gap-1.5">
-            <span className="text-slate-500 font-medium text-[11px] flex items-center gap-1 shrink-0">
-              <Calendar className="w-3.5 h-3.5 text-rose-500" />
-              <span>Okres:</span>
-            </span>
-
-            {activePeriodInfo && (
-              <span className="text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-1 rounded-lg font-mono">
-                📅 {activePeriodInfo.prettyRange}
+        {/* FILTR OKRESU (DATA WYSTAWIENIA FAKTURY / ZAMÓWIENIA / AWIZACJI) — WYŁĄCZNIE W SEKCJI ZAKOŃCZONE */}
+        {lifecycleTab === 'completed' && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+            {/* PRZEŁĄCZNIK TYPU DATY DO FILTROWANIA */}
+            <div className="inline-flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-xl border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-500 px-1.5 uppercase tracking-wider">
+                Wg daty:
               </span>
-            )}
+              <button
+                type="button"
+                onClick={() => setDateFilterField('issueDate')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                  dateFilterField === 'issueDate'
+                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Filtruj wg daty wystawienia faktury (<P_1>)"
+              >
+                📅 Wystawienia
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterField('orderDate')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                  dateFilterField === 'orderDate'
+                    ? 'bg-fuchsia-600 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Filtruj wg daty złożenia zamówienia (<DataZamowienia>)"
+              >
+                📝 Zamówienia
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterField('avisoDate')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                  dateFilterField === 'avisoDate'
+                    ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Filtruj wg daty awizacji dostawy (<P_6>)"
+              >
+                🚚 Awizacji
+              </button>
+            </div>
 
-            <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
-              <span className="text-[11px] font-semibold text-slate-500">Od:</span>
-              <input
-                type="date"
-                value={customDateFrom}
-                onChange={(e) => {
-                  setCustomDateFrom(e.target.value);
-                  setPeriodFilter('custom');
-                }}
-                className="px-1.5 py-0.5 text-xs font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-800 cursor-pointer"
-                title="Wybierz datę początkową (Od)"
-              />
+            <span className="text-slate-300 hidden sm:inline">|</span>
 
-              <span className="text-[11px] font-semibold text-slate-500 ml-1">Do:</span>
-              <input
-                type="date"
-                value={customDateTo}
-                onChange={(e) => {
-                  setCustomDateTo(e.target.value);
-                  setPeriodFilter('custom');
-                }}
-                className="px-1.5 py-0.5 text-xs font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-800 cursor-pointer"
-                title="Wybierz datę końcową (Do)"
-              />
+            {/* NAPIS OKRES BEZPOŚREDNIO PRZY DACIE I ZAKRESIE OD-DO */}
+            <div className="inline-flex flex-wrap items-center gap-1.5">
+              <span className="text-slate-500 font-medium text-[11px] flex items-center gap-1 shrink-0">
+                <Calendar className="w-3.5 h-3.5 text-rose-500" />
+                <span>Okres:</span>
+              </span>
 
-              {(periodFilter !== 'all' || customDateFrom || customDateTo) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPeriodFilter('all');
-                    setCustomDateFrom('');
-                    setCustomDateTo('');
-                  }}
-                  className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
-                  title="Wyczyść filtr daty i pokaż wszystkie okresy"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+              {activePeriodInfo && (
+                <span className="text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-1 rounded-lg font-mono">
+                  📅 {activePeriodInfo.prettyRange}
+                </span>
               )}
+
+              <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+                <span className="text-[11px] font-semibold text-slate-500">Od:</span>
+                <input
+                  type="date"
+                  value={customDateFrom}
+                  onChange={(e) => {
+                    setCustomDateFrom(e.target.value);
+                    setPeriodFilter('custom');
+                  }}
+                  className="px-1.5 py-0.5 text-xs font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-800 cursor-pointer"
+                  title="Wybierz datę początkową (Od)"
+                />
+
+                <span className="text-[11px] font-semibold text-slate-500 ml-1">Do:</span>
+                <input
+                  type="date"
+                  value={customDateTo}
+                  onChange={(e) => {
+                    setCustomDateTo(e.target.value);
+                    setPeriodFilter('custom');
+                  }}
+                  className="px-1.5 py-0.5 text-xs font-mono bg-white border border-slate-300 rounded focus:border-rose-400 focus:outline-none text-slate-800 cursor-pointer"
+                  title="Wybierz datę końcową (Do)"
+                />
+
+                {(periodFilter !== 'all' || customDateFrom || customDateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPeriodFilter('all');
+                      setCustomDateFrom('');
+                      setCustomDateTo('');
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                    title="Wyczyść filtr daty i pokaż wszystkie okresy"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodFilter('all');
+                  setCustomDateFrom('');
+                  setCustomDateTo('');
+                }}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Wszystkie ({periodCounts.all})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('this_month')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'this_month'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Ten miesiąc ({periodCounts.this_month})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('last_month')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'last_month'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Poprzedni miesiąc ({periodCounts.last_month})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('this_quarter')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'this_quarter'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Ten kwartał ({periodCounts.this_quarter})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('last_quarter')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'last_quarter'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Poprzedni kwartał ({periodCounts.last_quarter})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodFilter('this_year')}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'this_year'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Ten rok ({periodCounts.this_year})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodFilter('custom');
+                  if (!customDateFrom && activePeriodInfo?.start) {
+                    setCustomDateFrom(activePeriodInfo.start);
+                  }
+                  if (!customDateTo && activePeriodInfo?.end) {
+                    setCustomDateTo(activePeriodInfo.end);
+                  }
+                }}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  periodFilter === 'custom'
+                    ? 'bg-slate-800 text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                📅 Własny zakres
+              </button>
             </div>
           </div>
-
-          <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                setPeriodFilter('all');
-                setCustomDateFrom('');
-                setCustomDateTo('');
-              }}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'all'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Wszystkie ({periodCounts.all})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPeriodFilter('this_month')}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'this_month'
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Ten miesiąc ({periodCounts.this_month})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPeriodFilter('last_month')}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'last_month'
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Poprzedni miesiąc ({periodCounts.last_month})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPeriodFilter('this_quarter')}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'this_quarter'
-                  ? 'bg-purple-600 text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Ten kwartał ({periodCounts.this_quarter})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPeriodFilter('last_quarter')}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'last_quarter'
-                  ? 'bg-purple-600 text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Poprzedni kwartał ({periodCounts.last_quarter})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPeriodFilter('this_year')}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'this_year'
-                  ? 'bg-indigo-600 text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Ten rok ({periodCounts.this_year})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setPeriodFilter('custom');
-                if (!customDateFrom && activePeriodInfo?.start) {
-                  setCustomDateFrom(activePeriodInfo.start);
-                }
-                if (!customDateTo && activePeriodInfo?.end) {
-                  setCustomDateTo(activePeriodInfo.end);
-                }
-              }}
-              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                periodFilter === 'custom'
-                  ? 'bg-slate-800 text-white shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              📅 Własny zakres
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* POWIADOMIENIE O AKTUALIZACJI NUMERU FAKTURY / XML */}
