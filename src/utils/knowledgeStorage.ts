@@ -52,7 +52,9 @@ function mergeServerAndLocalClients(
     } else {
       const tDef = def.updatedAt ? new Date(def.updatedAt).getTime() : 0;
       const tCur = current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
-      if (tDef > tCur) {
+      const isOldDrMaxExpiry =
+        def.id === 'client-drmax' && current.minExpiryRequirement?.includes('12 miesięcy');
+      if (tDef > tCur || isOldDrMaxExpiry) {
         // Zachowaj ewentualne własne notatki i kontakty dodane przez użytkownika
         const defNoteIds = new Set(def.notes.map((n) => n.id));
         const customNotes = (current.notes || []).filter((n) => !defNoteIds.has(n.id));

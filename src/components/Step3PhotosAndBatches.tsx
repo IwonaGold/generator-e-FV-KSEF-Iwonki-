@@ -23,13 +23,16 @@ import {
   formatDateToDisplay,
   normalizeManualDate,
 } from '../utils/twoStageOcrService';
-import { evaluateShelfLife } from '../utils/expiryDateValidator';
+import { evaluateShelfLife, getRequiredShelfLifeRule } from '../utils/expiryDateValidator';
 import { PhotoZoomCropModal } from './PhotoZoomCropModal';
 
 interface Step3PhotosAndBatchesProps {
   logisticsFormat: LogisticsFormat;
   onToggleLogisticsFormat: (format: LogisticsFormat) => void;
   items: InvoiceItem[];
+  selectedChain?: string;
+  buyerName?: string;
+  buyerNip?: string;
   onUpdateItem: (id: string, updatedFields: Partial<InvoiceItem>) => void;
   onOcrCompleted?: (ocrResults: any[]) => void;
   onOpenAiGuide?: () => void;
@@ -39,8 +42,12 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   logisticsFormat,
   onToggleLogisticsFormat,
   items,
+  selectedChain,
+  buyerName,
+  buyerNip,
   onUpdateItem,
 }) => {
+  const shelfLifeRule = getRequiredShelfLifeRule(selectedChain, buyerName, buyerNip);
   const [photoItems, setPhotoItems] = useState<PhotoVerificationItem[]>([]);
   const [isDraggingPhotos, setIsDraggingPhotos] = useState(false);
   const [changingMatchPhotoId, setChangingMatchPhotoId] = useState<string | null>(null);
@@ -970,10 +977,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                             W fakturze KSeF: <strong>{batch.mhd}</strong>
                                           </span>
                                           {(() => {
-                                            const evalRes = evaluateShelfLife(batch.mhd);
+                                            const evalRes = evaluateShelfLife(batch.mhd, new Date(), shelfLifeRule.minMonths);
                                             if (evalRes.status === 'valid') {
                                               return (
-                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" title={evalRes.warningMessage}>
                                                   ✓ {evalRes.formattedMonths} (OK)
                                                 </span>
                                               );
@@ -981,7 +988,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                             if (evalRes.status === 'short_warning') {
                                               return (
                                                 <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 shadow-2xs" title={evalRes.warningMessage}>
-                                                  ⚠️ &lt; 12 msc ({evalRes.formattedMonths})
+                                                  ⚠️ &lt; {evalRes.requiredMonths} msc ({evalRes.formattedMonths})
                                                 </span>
                                               );
                                             }

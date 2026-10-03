@@ -1054,6 +1054,9 @@ export default function App() {
               onOcrCompleted={handleOcrCompleted}
               onOpenAiGuide={() => setIsAiGuideOpen(true)}
               items={items}
+              selectedChain={selectedChain}
+              buyerName={buyer.name}
+              buyerNip={buyer.nip}
               onUpdateItem={handleUpdateItem}
             />
 
@@ -1083,6 +1086,9 @@ export default function App() {
             <ItemsPreviewTable
               items={items}
               logisticsFormat={logisticsFormat}
+              selectedChain={selectedChain}
+              buyerName={buyer.name}
+              buyerNip={buyer.nip}
               onToggleLogisticsFormat={setLogisticsFormat}
               onUpdateItem={handleUpdateItem}
               onDeleteItem={handleDeleteItem}

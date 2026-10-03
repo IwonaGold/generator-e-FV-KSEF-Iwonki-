@@ -2,12 +2,15 @@ import React from 'react';
 import { InvoiceItem, LogisticsFormat, VatRate } from '../types/ksef';
 import { formatGS1CompositeString } from '../utils/ksefGenerator';
 import { PriceComparisonItem } from '../types/priceList';
-import { evaluateShelfLife } from '../utils/expiryDateValidator';
+import { evaluateShelfLife, getRequiredShelfLifeRule } from '../utils/expiryDateValidator';
 import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus, Clock, FileText } from 'lucide-react';
 
 interface ItemsPreviewTableProps {
   items: InvoiceItem[];
   logisticsFormat: LogisticsFormat;
+  selectedChain?: string;
+  buyerName?: string;
+  buyerNip?: string;
   onUpdateItem: (id: string, updatedFields: Partial<InvoiceItem>) => void;
   onDeleteItem: (id: string) => void;
   onAddItem: () => void;
@@ -26,6 +29,9 @@ interface ItemsPreviewTableProps {
 export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   items,
   logisticsFormat,
+  selectedChain,
+  buyerName,
+  buyerNip,
   onUpdateItem,
   onDeleteItem,
   onAddItem,
@@ -40,10 +46,12 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   onOpenWzModal,
   onSaveToHistory,
 }) => {
-  // Weryfikacja dat ważności pod kątem wymogu min. 12 miesięcy w sieciach aptecznych
+  const shelfLifeRule = getRequiredShelfLifeRule(selectedChain, buyerName, buyerNip);
+
+  // Weryfikacja dat ważności pod kątem wymogu odbiorcy (np. Dr. Max > 6 msc, DOZ / Super-Pharm min. 12 msc, Modum min. 13 msc)
   const shelfLifeWarnings = items.filter((it) => {
     if (!it.expiryDate) return false;
-    const res = evaluateShelfLife(it.expiryDate);
+    const res = evaluateShelfLife(it.expiryDate, new Date(), shelfLifeRule.minMonths);
     return res.status === 'short_warning' || res.status === 'expired';
   });
 
@@ -193,22 +201,22 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
         </div>
       </div>
 
-      {/* ALERT KRÓTKICH DAT WAŻNOŚCI (WYMÓG MIN. 12 MSC) */}
+      {/* ALERT KRÓTKICH DAT WAŻNOŚCI (WG WYMOGU ODBIORCY: DR. MAX > 6 MSC, DOZ/SUPER-PHARM MIN. 12 MSC, MODUM MIN. 13 MSC) */}
       {shelfLifeWarnings.length > 0 && (
         <div className="mx-4 sm:mx-5 my-3 p-3.5 rounded-xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-amber-900">
-                ⚠️ Uwaga logistyczna: Wykryto {shelfLifeWarnings.length}{' '}
-                {shelfLifeWarnings.length === 1 ? 'pozycję' : 'pozycji'} z terminem ważności krótszym niż 12 miesięcy!
+                ⚠️ Uwaga logistyczna ({shelfLifeRule.chainLabel}): Wykryto {shelfLifeWarnings.length}{' '}
+                {shelfLifeWarnings.length === 1 ? 'pozycję' : 'pozycji'} z terminem ważności krótszym niż {shelfLifeRule.minMonths} miesięcy!
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
-                Wymóg sieci: min. 12 msc
+                Wymóg {shelfLifeRule.chainLabel}: min. {shelfLifeRule.minMonths} msc
               </span>
             </div>
             <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-              Sieci farmaceutyczne (DOZ, Dr. Max, Super-Pharm, Gemini) odrzucają na magazynie centralnym dostawy z terminem ważności krótszym niż 1 rok. Sprawdź pozycje oznaczone poniżej czerwoną lub żółtą etykietą.
+              {shelfLifeRule.ruleDescription} Sprawdź pozycje oznaczone poniżej czerwoną lub żółtą etykietą.
             </p>
           </div>
         </div>
@@ -275,7 +283,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                 );
 
                 const comparison = priceComparisons?.get(item.id);
-                const shelfLife = evaluateShelfLife(item.expiryDate);
+                const shelfLife = evaluateShelfLife(item.expiryDate, new Date(), shelfLifeRule.minMonths);
 
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
@@ -432,7 +440,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                               title={shelfLife.warningMessage}
                             >
                               <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
-                              <span>&lt; 12 msc ({shelfLife.formattedMonths})</span>
+                              <span>&lt; {shelfLife.requiredMonths} msc ({shelfLife.formattedMonths})</span>
                             </span>
                           )}
                           {shelfLife.status === 'expired' && (

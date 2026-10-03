@@ -397,19 +397,22 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
       '  – Numer zamówienia na poziomie pozycji w <DodatkowyOpis>: <Klucz>NrZamowieniaZew</Klucz> (numer zamówienia Dr. Max, max 30 znaków) lub <Klucz>NrZamowieniaWew</Klucz>.\n' +
       '  – Dla spółek aptecznych w nagłówku <DodatkowyOpis>: <Klucz>NrApteki</Klucz> lub <Klucz>KamsoftID</Klucz>.\n' +
       '  – Kody przyczyn korekt w KSeF (<PrzyczynaKorekty>): „Korekta - program lekowy”, „Korekta – rabat” (lub „Rabat za okres”), „Korekta – gazetka” (rozliczenia z tytułu gazetki Lekomat).',
-    minExpiryRequirement: 'Minimum 12 miesięcy od daty dostawy (zgodnie z umową handlową)',
+    minExpiryRequirement:
+      'Powyżej 6 miesięcy (termin przydatności nie krótszy niż 6 miesięcy w dniu dostawy do magazynu Dr. Max)',
     shortExpiryPolicy:
-      'Krótsza data ważności wymaga wcześniejszej akceptacji przed wysłaniem formularza awizacji.',
+      '„Prosimy o wysyłkę produktów z datą ważności powyżej 6 miesięcy. Produkty z datą krótszą będą reklamowane.” Zgodnie z Poradnikiem Dostawcy Dr. Max (rozdz. VII): towary z terminem przydatności poniżej 6 miesięcy nie są przyjmowane do magazynu Dr. Max.',
     avisoMethod:
-      'lekomat.dostawy@drmax.com.pl – potwierdzenie zamówienia, FORMULARZ awizacji oraz ustalenie formy wysyłki',
+      'lekomat.dostawy@drmax.com.pl (OEX Fulfilio, pn.–pt. 8:00–14:00, najpóźniej do godz. 14:00 dnia poprzedzającego dostawę)',
     avisoDetails:
-      '• Przed dostawą wysłać wypełniony FORMULARZ awizacji oraz potwierdzenie i formę wysyłki na adres: lekomat.dostawy@drmax.com.pl.\n' +
-      '• Dokument logistyczny (WZ) powinien zawierać: NIP Dostawcy, NIP Odbiorcy, numer faktury dostawcy, KSeF ID (jeśli już nadany), numer zamówienia Dr. Max oraz pozycje (EAN, BLOZ, nazwa, ilość, cena netto, stawka VAT, seria i data ważności).',
+      '• Awizacja najpóźniej do godz. 14:00 dnia poprzedzającego dostawę na adres: lekomat.dostawy@drmax.com.pl (wypełniony FORMULARZ awizacji: nazwa dostawcy, nr zamówienia Dr. Max, ilość referencji, kartonów i palet, data i godzina, warunki składowania).\n' +
+      '• Wymóg daty ważności (z maila z zamówieniem i Poradnika Dostawcy): POWYŻEJ 6 MIESIĘCY (produkty z datą krótszą niż 6 msc nie są przyjmowane i będą reklamowane!).\n' +
+      '• Kartony i palety: w obrębie jednego kartonu zbiorczego może być tylko JEDNA data ważności; na zewnątrz kartonu opis: kod EAN, ilość sztuk i data ważności. Karton MIX na wierzchu palety z napisem „MIX”. Palety EURO max 180 cm wysokości i max 900 kg wagi (opisane nazwą dostawcy i nr zamówienia Dr. Max).\n' +
+      '• Dokument WZ (zawsze na zewnątrz opakowania/palety!): zasada 1 dostawa = 1 WZ = 1 faktura, obowiązkowy numer zamówienia Dr. Max, brak ręcznych dopisków.',
     headquartersAddress: 'ul. Krzemieniecka 60A, 54-613 Wrocław (NIP: 8943149010)',
-    shippingWarehouseName: 'Magazyn Dr. Max Lekomat (FM Logistic Łubna)',
+    shippingWarehouseName: 'Magazyn Dr. Max Lekomat (OEX Fulfilio / Łubna)',
     shippingAddress: 'ul. Łubińska 1a, 05-532 Łubna (lub ul. Krzemieniecka 60A, 54-613 Wrocław wg zamówienia)',
     shippingRemarks:
-      'Sprawdzić na zamówieniu lokalizację magazynu docelowego (Łubna: ul. Łubińska 1a, 05-532 Łubna). Awizacja przez formularz na lekomat.dostawy@drmax.com.pl.',
+      'Lokalizacja magazynu docelowego: ul. Łubińska 1a, 05-532 Łubna · Awizacja do godz. 14:00 dzień wcześniej na lekomat.dostawy@drmax.com.pl · Data ważności produktów: POWYŻEJ 6 MIESIĘCY.',
     contacts: [
       {
         id: 'drmax-c1',
@@ -436,11 +439,11 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     notes: [
       {
         id: 'drmax-n1',
-        createdAt: '2026-10-03 15:45',
+        createdAt: '2026-10-03 20:05',
         category: 'ustalenia',
         isPinned: true,
         content:
-          'ŚCIĄGA OPERACYJNA DR. MAX HURTOWNIA DROGERYJNA LEKOMAT:\n• Obowiązuje Cennik Q3 — na FV musi być CENA PO RABACIE NETTO (rabat 5%)!\n• Termin płatności: 30 dni, FV KSeF (bez MHD/serii)\n• lekomat.dostawy@drmax.com.pl – potwierdzenie, FORMULARZ awizacji, forma wysyłki\n• dostawyecom@ , zamowieniaecom@ – wysyłka FV\n• Lokalizacja magazynu: ul. Łubińska 1a, 05-532 Łubna.',
+          'ŚCIĄGA OPERACYJNA DR. MAX HURTOWNIA DROGERYJNA LEKOMAT:\n• Data ważności produktów (MHD): POWYŻEJ 6 MIESIĘCY! („Prosimy o wysyłkę produktów z datą ważności powyżej 6 miesięcy. Produkty z datą krótszą będą reklamowane.”)\n• Obowiązuje Cennik Q3 — na FV musi być CENA PO RABACIE NETTO (rabat 5%)!\n• Termin płatności: 30 dni, FV KSeF (bez MHD/serii)\n• lekomat.dostawy@drmax.com.pl – potwierdzenie, FORMULARZ awizacji (do godz. 14:00 dzień przed dostawą), forma wysyłki\n• dostawyecom@ , zamowieniaecom@ – wysyłka FV\n• Lokalizacja magazynu: ul. Łubińska 1a, 05-532 Łubna.',
       },
       {
         id: 'drmax-n2',
@@ -451,7 +454,7 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
           'WYTYCZNE KOREKT KSeF DR. MAX (<PrzyczynaKorekty>):\n• Program lekowy: „Korekta - program lekowy”\n• Rabaty: „Korekta – rabat” lub „Rabat za okres”\n• Rozliczenia z tytułu gazetki Lekomat: „Korekta – gazetka”',
       },
     ],
-    updatedAt: '2026-10-03T18:00:00.000Z',
+    updatedAt: '2026-10-03T21:15:00.000Z',
   },
 
   // ==========================================================================

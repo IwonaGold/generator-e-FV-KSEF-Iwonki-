@@ -1,12 +1,16 @@
 /**
  * Narzędzie weryfikacji dat ważności (MHD / EXP) w dystrybucji farmaceutycznej
- * Wymóg sieci farmaceutycznych (DOZ, Dr. Max, Super-Pharm, Gemini):
- * Towar przyjmowany na magazyn centralny musi posiadać minimum 12 miesięcy ważności!
+ * Wymogi sieci farmaceutycznych:
+ * - Dr. Max (Lekomat): powyżej 6 miesięcy (nie krótszy niż 6 miesięcy — Załącznik nr 1 do Umowy dostawy rozdz. VII + stopka zamówień e-mail)
+ * - DOZ Direct: minimum 12 miesięcy (oraz min. 75% całkowitego okresu przydatności)
+ * - Super-Pharm / Gemini: minimum 12 miesięcy
+ * - Modum Pharma: minimum 13 miesięcy
  */
 
 export interface ShelfLifeEvaluation {
   status: 'valid' | 'short_warning' | 'expired' | 'missing';
   monthsRemaining: number;
+  requiredMonths: number;
   formattedMonths: string;
   isAtLeast12Months: boolean;
   warningMessage: string;
@@ -15,6 +19,68 @@ export interface ShelfLifeEvaluation {
     text: string;
     border: string;
     icon: string;
+  };
+}
+
+export interface RecipientShelfLifeRule {
+  minMonths: number;
+  chainLabel: string;
+  ruleDescription: string;
+}
+
+/**
+ * Zwraca wymagany minimalny termin ważności (w miesiącach) dla danego odbiorcy/sieci
+ */
+export function getRequiredShelfLifeRule(
+  chain?: string,
+  buyerName?: string,
+  buyerNip?: string
+): RecipientShelfLifeRule {
+  const combined = `${chain || ''} ${buyerName || ''} ${buyerNip || ''}`.toLowerCase();
+  const cleanNip = (buyerNip || '').replace(/[^0-9]/g, '');
+
+  // 1. Dr. Max Sp. z o.o. / Lekomat (NIP 8943149010) -> powyżej 6 miesięcy (min. 6 msc)
+  if (
+    cleanNip === '8943149010' ||
+    combined.includes('dr. max') ||
+    combined.includes('dr max') ||
+    combined.includes('drmax') ||
+    combined.includes('lekomat')
+  ) {
+    return {
+      minMonths: 6,
+      chainLabel: 'Dr. Max',
+      ruleDescription:
+        'Dr. Max wymaga produktów z datą ważności powyżej 6 miesięcy (nie krótszą niż 6 miesięcy — zgodnie z Poradnikiem Dostawcy Dr. Max rozdz. VII oraz adnotacją w zamówieniach: „Prosimy o wysyłkę produktów z datą ważności powyżej 6 miesięcy. Produkty z datą krótszą będą reklamowane.”).',
+    };
+  }
+
+  // 2. ModumUp / Modum Pharma (NIP 5213783559) -> min. 13 miesięcy
+  if (cleanNip === '5213783559' || combined.includes('modum')) {
+    return {
+      minMonths: 13,
+      chainLabel: 'Modum Pharma',
+      ruleDescription:
+        'Modum Pharma wymaga towaru z terminem ważności minimum 13 miesięcy w dniu dostawy.',
+    };
+  }
+
+  // 3. DOZ Direct (NIP 8271807718) -> min. 12 miesięcy
+  if (cleanNip === '8271807718' || combined.includes('doz')) {
+    return {
+      minMonths: 12,
+      chainLabel: 'DOZ Direct',
+      ruleDescription:
+        'DOZ Direct wymaga towaru z datą ważności minimum 12 miesięcy (1 rok) oraz min. 75% całkowitego okresu przydatności.',
+    };
+  }
+
+  // 4. Super-Pharm / Gemini / Pozostali -> domyślnie min. 12 miesięcy
+  return {
+    minMonths: 12,
+    chainLabel: chain && chain !== 'Domyślny' ? chain : 'Sieci farmaceutyczne',
+    ruleDescription:
+      'Sieci farmaceutyczne (DOZ Direct, Super-Pharm, Gemini) wymagają terminu ważności min. 12 miesięcy (Dr. Max: > 6 msc, Modum Pharma: min. 13 msc).',
   };
 }
 
@@ -61,11 +127,12 @@ export function parseExpiryDate(dateStr?: string | null): Date | null {
 }
 
 /**
- * Oblicza pozostałą ważność w miesiącach i weryfikuje wymóg minimum 12 miesięcy
+ * Oblicza pozostałą ważność w miesiącach i weryfikuje wymóg minimalnej daty ważności (domyślnie 12 msc, dla Dr. Max 6 msc, dla Modum 13 msc)
  */
 export function evaluateShelfLife(
   expiryDateStr?: string | null,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  minMonthsRequired: number = 12
 ): ShelfLifeEvaluation {
   const parsed = parseExpiryDate(expiryDateStr);
 
@@ -73,6 +140,7 @@ export function evaluateShelfLife(
     return {
       status: 'missing',
       monthsRemaining: 0,
+      requiredMonths: minMonthsRequired,
       formattedMonths: 'Brak daty',
       isAtLeast12Months: false,
       warningMessage: 'Brak wprowadzonej daty ważności',
@@ -99,6 +167,7 @@ export function evaluateShelfLife(
     return {
       status: 'expired',
       monthsRemaining: 0,
+      requiredMonths: minMonthsRequired,
       formattedMonths: 'Przeterminowany!',
       isAtLeast12Months: false,
       warningMessage: '🚨 Produkt jest przeterminowany!',
@@ -111,14 +180,15 @@ export function evaluateShelfLife(
     };
   }
 
-  if (monthsRemaining < 12) {
+  if (monthsRemaining < minMonthsRequired) {
     const mRound = Math.floor(monthsRemaining);
     return {
       status: 'short_warning',
       monthsRemaining,
+      requiredMonths: minMonthsRequired,
       formattedMonths: `${mRound} msc`,
-      isAtLeast12Months: false,
-      warningMessage: `⚠️ Krótka data: pozostało ok. ${mRound} msc ważności (wymóg sieci farmaceutycznych: min. 12 msc!)`,
+      isAtLeast12Months: monthsRemaining >= 12,
+      warningMessage: `⚠️ Krótka data: pozostało ok. ${mRound} msc ważności (wymóg odbiorcy: min. ${minMonthsRequired} msc!)`,
       badgeStyle: {
         bg: 'bg-amber-50',
         text: 'text-amber-800',
@@ -132,9 +202,10 @@ export function evaluateShelfLife(
   return {
     status: 'valid',
     monthsRemaining,
+    requiredMonths: minMonthsRequired,
     formattedMonths: `${mRound} msc`,
-    isAtLeast12Months: true,
-    warningMessage: `Data ważności prawidłowa: ${mRound} msc (spełnia wymóg min. 12 msc)`,
+    isAtLeast12Months: monthsRemaining >= 12,
+    warningMessage: `Data ważności prawidłowa: ${mRound} msc (spełnia wymóg min. ${minMonthsRequired} msc)`,
     badgeStyle: {
       bg: 'bg-emerald-50',
       text: 'text-emerald-700',
