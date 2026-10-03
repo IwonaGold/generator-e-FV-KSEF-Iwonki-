@@ -6,6 +6,9 @@ interface HeaderProps {
   onOpenXmlModal: () => void;
   onOpenWzModal?: () => void;
   onOpenAiGuide: () => void;
+  onOpenCloudModal?: () => void;
+  activeUsersCount?: number;
+  sharedDraftsCount?: number;
   onNavigateHome?: () => void;
   itemCount: number;
   username?: string;
@@ -16,6 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenXmlModal,
   onOpenWzModal,
   onOpenAiGuide,
+  onOpenCloudModal,
+  activeUsersCount = 1,
+  sharedDraftsCount = 0,
   onNavigateHome,
   itemCount,
   username = 'Eubiosis',
@@ -45,7 +51,26 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Zone 2: Clean text navigation links / status */}
-        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600">
+        <nav className="hidden lg:flex items-center gap-4 text-xs font-medium text-slate-600">
+          {onOpenCloudModal && (
+            <button
+              type="button"
+              onClick={onOpenCloudModal}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 font-bold transition-all cursor-pointer shadow-2xs"
+              title="Współdzielona Baza Danych w Chmurze (Multi-User Sync + Wspólny Stół Roboczy)"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span>☁️ Chmura Live ({activeUsersCount} online)</span>
+              {sharedDraftsCount > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-black bg-indigo-600 text-white rounded-md">
+                  Stół: {sharedDraftsCount}
+                </span>
+              )}
+            </button>
+          )}
           <span className="bg-rose-50/80 px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 text-xs">
             Pozycji: <strong className="text-rose-950 font-mono tabular-nums font-bold">{itemCount}</strong>
           </span>
@@ -61,6 +86,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 3: Primary action button & Logout */}
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {onOpenCloudModal && (
+            <button
+              type="button"
+              onClick={onOpenCloudModal}
+              className="lg:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold cursor-pointer"
+              title="Współdzielona Baza w Chmurze"
+            >
+              <span>☁️</span>
+              <span>{activeUsersCount}</span>
+            </button>
+          )}
           <button
             onClick={onOpenAiGuide}
             className="md:hidden p-2 text-rose-600 hover:text-rose-900 rounded-lg hover:bg-rose-50 transition-colors"

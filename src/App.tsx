@@ -10,7 +10,13 @@ import { KSeFXMLModal } from './components/KSeFXMLModal';
 import { WZDocumentModal } from './components/WZDocumentModal';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
 import { EdiDozPrototypeModal } from './components/EdiDozPrototypeModal';
+import { CloudSyncModal } from './components/CloudSyncModal';
 import { DozEdiOrderSample } from './utils/ediGenerator';
+import {
+  SharedInvoiceDraft,
+  getSharedDrafts,
+  subscribeToMultiUserSync,
+} from './utils/cloudSyncService';
 import {
   PharmacyChain,
   LogisticsFormat,
@@ -149,6 +155,10 @@ export default function App() {
   const [isWzModalOpen, setIsWzModalOpen] = useState(false);
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
   const [isEdiModalOpen, setIsEdiModalOpen] = useState(false);
+  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
+  const [sharedDraftsCount, setSharedDraftsCount] = useState<number>(0);
+  const [liveSyncToast, setLiveSyncToast] = useState<string | null>(null);
 
   // --- Moduł Aplikacji: 'home' (Strona startowa z 2 kafelkami) | 'invoice' | 'correction' | 'history' | 'knowledge' ---
   const [activeModule, setActiveModule] = useState<AppModule>(() => {
@@ -181,21 +191,48 @@ export default function App() {
   const [preloadedOrderForCorrection, setPreloadedOrderForCorrection] = useState<ArchivedOrder | null>(null);
   const [pendingOrderSourceId, setPendingOrderSourceId] = useState<string | null>(null);
 
+  const refreshAllCloudData = async () => {
+    try {
+      const [ordersData, clientsData, draftsData] = await Promise.all([
+        getArchivedOrders(),
+        getKeyClients(),
+        getSharedDrafts(),
+      ]);
+      if (ordersData && Array.isArray(ordersData)) {
+        setArchivedOrders(ordersData);
+      }
+      if (clientsData && Array.isArray(clientsData) && clientsData.length > 0) {
+        setKnowledgeClients(clientsData);
+      }
+      if (draftsData && Array.isArray(draftsData)) {
+        setSharedDraftsCount(draftsData.length);
+      }
+    } catch {}
+  };
+
   // Pobranie historii oraz kart klientów z Centrum Wiedzy przy starcie
   useEffect(() => {
-    getArchivedOrders().then((data) => {
-      if (data && Array.isArray(data)) {
-        setArchivedOrders(data);
-      }
-    });
-    getKeyClients()
-      .then((clients) => {
-        if (clients && Array.isArray(clients) && clients.length > 0) {
-          setKnowledgeClients(clients);
-        }
-      })
-      .catch(() => {});
+    refreshAllCloudData();
   }, [activeModule]);
+
+  // Subskrypcja Real-Time Multi-User Sync (SSE + BroadcastChannel)
+  useEffect(() => {
+    const unsubscribe = subscribeToMultiUserSync({
+      onRemoteUpdate: (ev) => {
+        if (typeof ev.activeUsersCount === 'number' && ev.activeUsersCount > 0) {
+          setActiveUsersCount(ev.activeUsersCount);
+        }
+        if (ev.activity && ev.activity.type !== 'INIT') {
+          refreshAllCloudData();
+          setLiveSyncToast(
+            `☁️ Synchronizacja na żywo: ${ev.activity.summary} (${ev.activity.workstation})`
+          );
+          setTimeout(() => setLiveSyncToast(null), 5000);
+        }
+      },
+    });
+    return () => unsubscribe();
+  }, []);
 
   const refreshArchivedOrders = async () => {
     const data = await getArchivedOrders();
@@ -206,6 +243,29 @@ export default function App() {
 
   const handleOrderSaved = (savedOrder: ArchivedOrder) => {
     setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
+  };
+
+  const handleLoadSharedDraft = (draft: SharedInvoiceDraft) => {
+    setSelectedChain(draft.selectedChain || 'Custom');
+    setLogisticsFormat(draft.logisticsFormat || 'gs1_composite');
+    if (draft.seller) setSeller(draft.seller);
+    if (draft.buyer) setBuyer(draft.buyer);
+    setThirdParty(draft.thirdParty || null);
+    if (draft.meta) setMeta(draft.meta);
+    if (draft.items && Array.isArray(draft.items)) {
+      setItems([...draft.items]);
+    }
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
+    setOrderFile({
+      name: `Wspólny_Stół_${draft.title.replace(/\s+/g, '_')}.json`,
+      size: `od: ${draft.authorWorkstation}`,
+    });
+    setActiveModule('invoice');
+    setPriceNotice(
+      `🤝 Wczytano formularz ze Wspólnego Stołu Roboczego: "${draft.title}" (od: ${draft.authorWorkstation}).`
+    );
+    setTimeout(() => setPriceNotice(null), 6500);
   };
 
   const handleLoadOrderForInvoiceCreation = (order: ArchivedOrder) => {
@@ -914,6 +974,9 @@ export default function App() {
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
+        onOpenCloudModal={() => setIsCloudModalOpen(true)}
+        activeUsersCount={activeUsersCount}
+        sharedDraftsCount={sharedDraftsCount}
         onNavigateHome={() => setActiveModule('home')}
         itemCount={items.length}
         username="Eubiosis"
@@ -1115,6 +1178,34 @@ export default function App() {
         ksefXmlContent={xmlPayload}
         onLoadEdiOrderToApp={handleLoadEdiOrderToApp}
       />
+
+      {/* Modal Współdzielonej Bazy Danych w Chmurze (Multi-User Sync + Wspólny Stół Roboczy) */}
+      <CloudSyncModal
+        isOpen={isCloudModalOpen}
+        onClose={() => setIsCloudModalOpen(false)}
+        currentChain={selectedChain}
+        currentLogisticsFormat={logisticsFormat}
+        seller={seller}
+        buyer={buyer}
+        thirdParty={thirdParty}
+        meta={meta}
+        items={items}
+        archivedOrders={archivedOrders}
+        knowledgeClients={knowledgeClients}
+        onLoadSharedDraft={handleLoadSharedDraft}
+        onManualSyncComplete={refreshAllCloudData}
+      />
+
+      {/* Pływające powiadomienie Real-Time Multi-User Sync */}
+      {liveSyncToast && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-md bg-emerald-950 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 flex items-center gap-3 text-xs font-bold animate-in fade-in slide-in-from-bottom-3">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
+          </span>
+          <span>{liveSyncToast}</span>
+        </div>
+      )}
 
       {/* Dyskretna kwiecista stopka */}
       <footer className="bg-white/80 backdrop-blur-sm border-t border-rose-100 py-6 text-xs text-slate-500 mt-10">

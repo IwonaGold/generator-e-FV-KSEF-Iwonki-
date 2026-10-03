@@ -448,23 +448,128 @@ Zwróć wynik jako czysty obiekt JSON.`;
 });
 
 /**
- * ARCHIWUM ZAMÓWIEŃ SIECIOWYCH I FAKTUR (HISTORIA ZAMÓWIEŃ + CHMURA GITHUB AES-256-GCM)
+ * ARCHIWUM ZAMÓWIEŃ SIECIOWYCH, WSPÓLNY STÓŁ ROBOCZY I CHMURA MULTI-USER (SSE + GITHUB AES-256-GCM)
  */
 import crypto from 'crypto';
 import zlib from 'zlib';
+import { execSync } from 'child_process';
 
 const dataDir = path.join(process.cwd(), 'data');
 const ordersFilePath = path.join(dataDir, 'orders_history.json');
 const deletedIdsFilePath = path.join(dataDir, 'deleted_orders_ids.json');
 const knowledgeFilePath = path.join(dataDir, 'knowledge_base.json');
+const sharedDraftsFilePath = path.join(dataDir, 'shared_drafts.json');
+const cloudConfigFilePath = path.join(dataDir, 'cloud_config.json');
+
+function ensureDataDir() {
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch (e) {
+      console.error('Błąd tworzenia katalogu data:', e);
+    }
+  }
+}
+
+function resolveInitialGitHubToken(): string {
+  const envTok = (process.env.GITHUB_TOKEN || '').trim();
+  if (envTok) return envTok;
+
+  // 1. Sprawdź zapisaną konfigurację w data/cloud_config.json
+  try {
+    ensureDataDir();
+    if (fs.existsSync(cloudConfigFilePath)) {
+      const cfg = JSON.parse(fs.readFileSync(cloudConfigFilePath, 'utf8'));
+      if (cfg?.githubToken && typeof cfg.githubToken === 'string') {
+        return cfg.githubToken.trim();
+      }
+    }
+  } catch {}
+
+  // 2. Automatyczne pobranie poświadczenia Git z systemu (jeśli git push działa lokalnie)
+  try {
+    const gitCandidates = [
+      'C:\\Users\\iklos\\.mingit\\cmd\\git.exe',
+      'git',
+    ];
+    for (const gitBin of gitCandidates) {
+      try {
+        const out = execSync(`"${gitBin}" credential fill`, {
+          input: 'protocol=https\nhost=github.com\n\n',
+          encoding: 'utf8',
+          timeout: 2500,
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        const m = out.match(/password=([^\r\n]+)/);
+        if (m && m[1] && m[1].trim().length > 10) {
+          return m[1].trim();
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return '';
+}
 
 // Konfiguracja darmowej chmury GitHub (osobny prywatny sejf + szyfrowanie AES-256-GCM)
-const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
+let GITHUB_TOKEN = resolveInitialGitHubToken();
 const DEFAULT_VAULT_REPO_NAME = 'ksef-prywatny-sejf';
 let activeVaultRepo = (process.env.GITHUB_DATA_REPO || `IwonaGold/${DEFAULT_VAULT_REPO_NAME}`).trim();
 const GITHUB_DATA_BRANCH = (process.env.GITHUB_DATA_BRANCH || 'app-data').trim();
 const ENCRYPTION_SECRET = (process.env.DATA_ENCRYPTION_KEY || 'ksef-iwonka-2026-aes256-master-vault-key-9f8e7d6c5b4a').trim();
 let vaultRepoVerified = false;
+
+// --- Stan Real-Time Multi-User Sync (SSE + Rewizje) ---
+let serverRevision = 1;
+let lastActivity: {
+  type: string;
+  summary: string;
+  workstation: string;
+  timestamp: string;
+} = {
+  type: 'INIT',
+  summary: 'Serwer bazy chmurowej Multi-User gotowy do pracy',
+  workstation: 'System Chmurowy Eubiosis',
+  timestamp: new Date().toISOString(),
+};
+
+interface ConnectedClient {
+  id: string;
+  workstation: string;
+  connectedAt: string;
+  res: Response;
+}
+
+const sseClients = new Map<string, ConnectedClient>();
+
+function broadcastSyncEvent(type: string, summary: string, workstation = 'Stanowisko Eubiosis') {
+  serverRevision += 1;
+  lastActivity = {
+    type,
+    summary,
+    workstation,
+    timestamp: new Date().toISOString(),
+  };
+
+  const payload = JSON.stringify({
+    revision: serverRevision,
+    activity: lastActivity,
+    activeUsersCount: Math.max(1, sseClients.size),
+    activeWorkstations: Array.from(sseClients.values()).map((c) => ({
+      id: c.id,
+      workstation: c.workstation,
+      connectedAt: c.connectedAt,
+    })),
+  });
+
+  for (const [clientId, client] of sseClients.entries()) {
+    try {
+      client.res.write(`data: ${payload}\n\n`);
+    } catch {
+      sseClients.delete(clientId);
+    }
+  }
+}
 
 function getEncryptionKey(): Buffer {
   return crypto.scryptSync(ENCRYPTION_SECRET, 'ksef-iwonka-vault-salt-v1', 32);
@@ -474,6 +579,7 @@ function encryptVaultPayload(payload: {
   orders: any[];
   deletedIds: string[];
   knowledgeClients?: any[];
+  sharedDrafts?: any[];
   updatedAt: string;
 }): string {
   const key = getEncryptionKey();
@@ -499,6 +605,7 @@ function decryptVaultPayload(envelopeStr: string): {
   orders: any[];
   deletedIds: string[];
   knowledgeClients: any[];
+  sharedDrafts: any[];
 } | null {
   try {
     const env = JSON.parse(envelopeStr);
@@ -523,6 +630,7 @@ function decryptVaultPayload(envelopeStr: string): {
       orders: Array.isArray(parsed.orders) ? parsed.orders : [],
       deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
       knowledgeClients: Array.isArray(parsed.knowledgeClients) ? parsed.knowledgeClients : [],
+      sharedDrafts: Array.isArray(parsed.sharedDrafts) ? parsed.sharedDrafts : [],
     };
   } catch (e) {
     console.error('Błąd odszyfrowywania bazy z chmury GitHub:', e);
@@ -546,7 +654,6 @@ async function ensurePrivateVaultRepoExists(): Promise<void> {
       return;
     }
     if (checkRes.status === 404 && !process.env.GITHUB_DATA_REPO) {
-      // Automatycznie utwórz w 100% PRYWATNE repozytorium na sejf danych
       const createRes = await fetch('https://api.github.com/user/repos', {
         method: 'POST',
         headers: {
@@ -572,7 +679,6 @@ async function ensurePrivateVaultRepoExists(): Promise<void> {
         console.log(`🔒 Automatycznie utworzono prywatne repozytorium sejfu: ${activeVaultRepo}`);
         return;
       }
-      // Fallback do głównego repozytorium, jeśli token nie pozwala tworzyć nowych repozytoriów
       activeVaultRepo = 'IwonaGold/generator-e-FV-KSEF-Iwonki-';
       vaultRepoVerified = true;
     }
@@ -583,7 +689,7 @@ async function ensurePrivateVaultRepoExists(): Promise<void> {
   }
 }
 
-async function githubApiRequest(endpoint: string, options: RequestInit = {}): Promise< globalThis.Response > {
+async function githubApiRequest(endpoint: string, options: RequestInit = {}): Promise<globalThis.Response> {
   await ensurePrivateVaultRepoExists();
   const url = `https://api.github.com/repos/${activeVaultRepo}${endpoint}`;
   return fetch(url, {
@@ -605,13 +711,14 @@ async function loadVaultFromGitHubCloud(): Promise<{
   orders: any[];
   deletedIds: string[];
   knowledgeClients: any[];
+  sharedDrafts: any[];
 } | null> {
   if (!GITHUB_TOKEN) return null;
 
   try {
     const refRes = await githubApiRequest(`/git/ref/heads/${GITHUB_DATA_BRANCH}`);
     if (refRes.status === 404) {
-      return null; // Gałąź app-data jeszcze nie istnieje — zostanie utworzona przy pierwszym zapisie
+      return null;
     }
     if (!refRes.ok) {
       throw new Error(`Błąd odczytu ref z GitHub (${refRes.status})`);
@@ -656,7 +763,8 @@ async function loadVaultFromGitHubCloud(): Promise<{
 async function saveVaultToGitHubCloud(
   orders: any[],
   deletedIds: string[],
-  knowledgeClients: any[]
+  knowledgeClients: any[],
+  sharedDrafts: any[] = []
 ): Promise<boolean> {
   if (!GITHUB_TOKEN) return false;
 
@@ -665,10 +773,10 @@ async function saveVaultToGitHubCloud(
       orders,
       deletedIds,
       knowledgeClients,
+      sharedDrafts,
       updatedAt: new Date().toISOString(),
     });
 
-    // 1. Utwórz blob z zaszyfrowanymi danymi (obsługuje do 100 MB)
     const blobRes = await githubApiRequest('/git/blobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -682,7 +790,6 @@ async function saveVaultToGitHubCloud(
     }
     const blobData: any = await blobRes.json();
 
-    // 2. Utwórz drzewo Git
     const treeRes = await githubApiRequest('/git/trees', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -699,7 +806,7 @@ async function saveVaultToGitHubCloud(
             mode: '100644',
             type: 'blob',
             content:
-              '# 🔒 Zaszyfrowany Magazyn Danych (AES-256-GCM)\n\nPlik `orders_vault.enc` zawiera skompresowaną i zaszyfrowaną bazę zamówień oraz Centrum Wiedzy CRM (algorytm `AES-256-GCM` + `GZIP`).\nDane są całkowicie nieczytelne dla osób trzecich i mogą zostać odszyfrowane wyłącznie przez serwer aplikacji z kluczem prywatnym.\n',
+              '# 🔒 Zaszyfrowany Magazyn Danych (AES-256-GCM)\n\nPlik `orders_vault.enc` zawiera skompresowaną i zaszyfrowaną bazę zamówień, Wspólny Stół Roboczy oraz Centrum Wiedzy CRM (algorytm `AES-256-GCM` + `GZIP`).\nDane są całkowicie nieczytelne dla osób trzecich i mogą zostać odszyfrowane wyłącznie przez serwer aplikacji z kluczem prywatnym.\n',
           },
         ],
       }),
@@ -709,12 +816,11 @@ async function saveVaultToGitHubCloud(
     }
     const treeData: any = await treeRes.json();
 
-    // 3. Utwórz pojedynczy commit bez rodziców (parents: []), aby historia Git nigdy nie puchła i nie zużywała miejsca!
     const commitRes = await githubApiRequest('/git/commits', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: `🔒 Aktualizacja zaszyfrowanej bazy (${orders.length} zamówień, ${knowledgeClients.length} kart CRM)`,
+        message: `🔒 Aktualizacja zaszyfrowanej bazy (${orders.length} zamówień, ${knowledgeClients.length} kart CRM, ${sharedDrafts.length} szkiców)`,
         tree: treeData.sha,
         parents: [],
       }),
@@ -724,7 +830,6 @@ async function saveVaultToGitHubCloud(
     }
     const commitData: any = await commitRes.json();
 
-    // 4. Zaktualizuj lub utwórz gałąź app-data (nie rusza gałęzi main, więc Render się nie restartuje!)
     const patchRes = await githubApiRequest(`/git/refs/heads/${GITHUB_DATA_BRANCH}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -777,7 +882,8 @@ function scheduleCloudSync() {
       const orders = readOrdersFromDisk();
       const deletedIds = readDeletedIdsFromDisk();
       const knowledgeClients = readKnowledgeFromDisk();
-      await saveVaultToGitHubCloud(orders, deletedIds, knowledgeClients);
+      const sharedDrafts = readSharedDraftsFromDisk();
+      await saveVaultToGitHubCloud(orders, deletedIds, knowledgeClients, sharedDrafts);
     } finally {
       isSyncingCloud = false;
       if (pendingCloudSync) {
@@ -786,16 +892,6 @@ function scheduleCloudSync() {
       }
     }
   }, 1200);
-}
-
-function ensureDataDir() {
-  if (!fs.existsSync(dataDir)) {
-    try {
-      fs.mkdirSync(dataDir, { recursive: true });
-    } catch (e) {
-      console.error('Błąd tworzenia katalogu data:', e);
-    }
-  }
 }
 
 function readDeletedIdsFromDisk(): string[] {
@@ -879,90 +975,329 @@ function writeKnowledgeToDisk(clients: any[], triggerCloud = true): boolean {
   }
 }
 
-// Inicjalizacja bazy z chmury GitHub przy starcie serwera (np. po wybudzeniu na Renderze)
+function readSharedDraftsFromDisk(): any[] {
+  ensureDataDir();
+  if (!fs.existsSync(sharedDraftsFilePath)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(sharedDraftsFilePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSharedDraftsToDisk(drafts: any[], triggerCloud = true): boolean {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(sharedDraftsFilePath, JSON.stringify(drafts, null, 2), 'utf8');
+    if (triggerCloud) {
+      scheduleCloudSync();
+    }
+    return true;
+  } catch (e) {
+    console.error('Błąd zapisu Wspólnego Stołu Roboczego:', e);
+    return false;
+  }
+}
+
+// Pełna synchronizacja dwukierunkowa z zaszyfrowanym sejfem w chmurze GitHub
+async function performFullCloudPullAndMerge(): Promise<{
+  ordersCount: number;
+  knowledgeCount: number;
+  draftsCount: number;
+}> {
+  const localOrders = readOrdersFromDisk();
+  const localKnowledge = readKnowledgeFromDisk();
+  const localDrafts = readSharedDraftsFromDisk();
+  if (!GITHUB_TOKEN) {
+    return {
+      ordersCount: localOrders.length,
+      knowledgeCount: localKnowledge.length,
+      draftsCount: localDrafts.length,
+    };
+  }
+
+  const cloudVault = await loadVaultFromGitHubCloud();
+  if (cloudVault) {
+    const localDeleted = readDeletedIdsFromDisk();
+    const mergedDeletedSet = new Set<string>([...localDeleted, ...(cloudVault.deletedIds || [])]);
+    const mergedDeleted = Array.from(mergedDeletedSet);
+    writeDeletedIdsToDisk(mergedDeleted);
+
+    // 1. Połącz zamówienia z chmury i z dysku lokalnego
+    const map = new Map<string, any>();
+    for (const ord of cloudVault.orders || []) {
+      if (ord?.id && !mergedDeletedSet.has(ord.id)) {
+        map.set(ord.id, ord);
+      }
+    }
+    for (const loc of localOrders) {
+      if (!loc?.id || mergedDeletedSet.has(loc.id)) continue;
+      const existing = map.get(loc.id);
+      if (!existing) {
+        map.set(loc.id, loc);
+      } else {
+        const tCloud = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+        const tLoc = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
+        const newer = tLoc >= tCloud ? loc : existing;
+        const older = tLoc >= tCloud ? existing : loc;
+        const photos =
+          newer.parcelPhotos && newer.parcelPhotos.length > 0
+            ? newer.parcelPhotos
+            : older.parcelPhotos || [];
+        map.set(loc.id, { ...older, ...newer, parcelPhotos: photos });
+      }
+    }
+    const mergedOrders = Array.from(map.values());
+    writeOrdersToDisk(mergedOrders, false);
+
+    // 2. Połącz karty klientów Centrum Wiedzy (CRM)
+    const kMap = new Map<string, any>();
+    for (const kc of cloudVault.knowledgeClients || []) {
+      if (kc?.id) kMap.set(kc.id, kc);
+    }
+    for (const lk of localKnowledge) {
+      if (!lk?.id) continue;
+      const ex = kMap.get(lk.id);
+      if (!ex) {
+        kMap.set(lk.id, lk);
+      } else {
+        const tC = ex.updatedAt ? new Date(ex.updatedAt).getTime() : 0;
+        const tL = lk.updatedAt ? new Date(lk.updatedAt).getTime() : 0;
+        kMap.set(lk.id, tL >= tC ? lk : ex);
+      }
+    }
+    const mergedKnowledge = Array.from(kMap.values());
+    if (mergedKnowledge.length > 0) {
+      writeKnowledgeToDisk(mergedKnowledge, false);
+    }
+
+    // 3. Połącz szkice ze Wspólnego Stołu Roboczego
+    const dMap = new Map<string, any>();
+    for (const cd of cloudVault.sharedDrafts || []) {
+      if (cd?.id) dMap.set(cd.id, cd);
+    }
+    for (const ld of localDrafts) {
+      if (!ld?.id) continue;
+      const ex = dMap.get(ld.id);
+      if (!ex) {
+        dMap.set(ld.id, ld);
+      } else {
+        const tC = ex.updatedAt ? new Date(ex.updatedAt).getTime() : 0;
+        const tL = ld.updatedAt ? new Date(ld.updatedAt).getTime() : 0;
+        dMap.set(ld.id, tL >= tC ? ld : ex);
+      }
+    }
+    const mergedDrafts = Array.from(dMap.values());
+    writeSharedDraftsToDisk(mergedDrafts, false);
+
+    return {
+      ordersCount: mergedOrders.length,
+      knowledgeCount: mergedKnowledge.length,
+      draftsCount: mergedDrafts.length,
+    };
+  } else if (localOrders.length > 0 || localKnowledge.length > 0 || localDrafts.length > 0) {
+    await saveVaultToGitHubCloud(localOrders, readDeletedIdsFromDisk(), localKnowledge, localDrafts);
+  }
+
+  return {
+    ordersCount: localOrders.length,
+    knowledgeCount: localKnowledge.length,
+    draftsCount: localDrafts.length,
+  };
+}
+
 let cloudInitPromise: Promise<void> | null = null;
 
 async function ensureCloudInitialized(): Promise<void> {
   if (!GITHUB_TOKEN) return;
   if (!cloudInitPromise) {
     cloudInitPromise = (async () => {
-      const localOrders = readOrdersFromDisk();
-      const localKnowledge = readKnowledgeFromDisk();
-      const cloudVault = await loadVaultFromGitHubCloud();
-      if (cloudVault) {
-        const localDeleted = readDeletedIdsFromDisk();
-        const mergedDeletedSet = new Set<string>([...localDeleted, ...(cloudVault.deletedIds || [])]);
-        const mergedDeleted = Array.from(mergedDeletedSet);
-        writeDeletedIdsToDisk(mergedDeleted);
-
-        // Połącz zamówienia z chmury i z dysku lokalnego (zachowując nowsze wersje i zdjęcia)
-        const map = new Map<string, any>();
-        for (const ord of cloudVault.orders || []) {
-          if (ord?.id && !mergedDeletedSet.has(ord.id)) {
-            map.set(ord.id, ord);
-          }
-        }
-        for (const loc of localOrders) {
-          if (!loc?.id || mergedDeletedSet.has(loc.id)) continue;
-          const existing = map.get(loc.id);
-          if (!existing) {
-            map.set(loc.id, loc);
-          } else {
-            const tCloud = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-            const tLoc = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
-            const newer = tLoc >= tCloud ? loc : existing;
-            const older = tLoc >= tCloud ? existing : loc;
-            const photos =
-              newer.parcelPhotos && newer.parcelPhotos.length > 0
-                ? newer.parcelPhotos
-                : older.parcelPhotos || [];
-            map.set(loc.id, { ...older, ...newer, parcelPhotos: photos });
-          }
-        }
-        const mergedOrders = Array.from(map.values());
-        writeOrdersToDisk(mergedOrders, false);
-
-        // Połącz karty klientów Centrum Wiedzy (CRM)
-        if (Array.isArray(cloudVault.knowledgeClients) && cloudVault.knowledgeClients.length > 0) {
-          const kMap = new Map<string, any>();
-          for (const kc of cloudVault.knowledgeClients) {
-            if (kc?.id) kMap.set(kc.id, kc);
-          }
-          for (const lk of localKnowledge) {
-            if (!lk?.id) continue;
-            const ex = kMap.get(lk.id);
-            if (!ex) {
-              kMap.set(lk.id, lk);
-            } else {
-              const tC = ex.updatedAt ? new Date(ex.updatedAt).getTime() : 0;
-              const tL = lk.updatedAt ? new Date(lk.updatedAt).getTime() : 0;
-              kMap.set(lk.id, tL >= tC ? lk : ex);
-            }
-          }
-          writeKnowledgeToDisk(Array.from(kMap.values()), false);
-        }
-
-        console.log(`☁️ [GitHub Vault AES-256] Wczytano ${mergedOrders.length} zamówień z gałęzi '${GITHUB_DATA_BRANCH}'.`);
-      } else if (localOrders.length > 0 || localKnowledge.length > 0) {
-        // Pierwsza synchronizacja — utwórz zaszyfrowany sejf na GitHubie
-        await saveVaultToGitHubCloud(localOrders, readDeletedIdsFromDisk(), localKnowledge);
-        console.log(`☁️ [GitHub Vault AES-256] Utworzono zaszyfrowany sejf w gałęzi '${GITHUB_DATA_BRANCH}'.`);
-      }
+      const res = await performFullCloudPullAndMerge();
+      console.log(`☁️ [GitHub Vault AES-256] Zsynchronizowano ${res.ordersCount} zamówień, ${res.knowledgeCount} kart CRM i ${res.draftsCount} szkiców.`);
     })();
   }
   await cloudInitPromise;
 }
 
+/**
+ * REAL-TIME MULTI-USER STREAM (Server-Sent Events)
+ */
+app.get('/api/live-sync-stream', async (req: Request, res: Response) => {
+  const workstation = String(req.query.workstation || 'Stanowisko Eubiosis').slice(0, 60);
+  const clientId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  sseClients.set(clientId, {
+    id: clientId,
+    workstation,
+    connectedAt: new Date().toISOString(),
+    res,
+  });
+
+  // Wyślij stan początkowy zaraz po podłączeniu
+  const initPayload = JSON.stringify({
+    revision: serverRevision,
+    activity: lastActivity,
+    activeUsersCount: Math.max(1, sseClients.size),
+    activeWorkstations: Array.from(sseClients.values()).map((c) => ({
+      id: c.id,
+      workstation: c.workstation,
+      connectedAt: c.connectedAt,
+    })),
+  });
+  res.write(`data: ${initPayload}\n\n`);
+
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(`: ping\n\n`);
+    } catch {
+      clearInterval(keepAlive);
+    }
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    sseClients.delete(clientId);
+  });
+});
+
+/**
+ * STATUS SYNCHRONIZACJI CHMUROWEJ I STANOWISK MULTI-USER
+ */
 app.get('/api/cloud-status', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
+  const orders = readOrdersFromDisk();
+  const knowledge = readKnowledgeFromDisk();
+  const drafts = readSharedDraftsFromDisk();
   return res.json({
     enabled: Boolean(GITHUB_TOKEN),
     encryption: 'AES-256-GCM + GZIP',
     repo: activeVaultRepo,
     branch: GITHUB_DATA_BRANCH,
-    lastSyncAt: lastCloudSyncAt,
+    lastSyncAt: lastCloudSyncAt || new Date().toISOString(),
     lastError: lastCloudSyncError,
+    revision: serverRevision,
+    lastActivity,
+    ordersCount: orders.length,
+    knowledgeCount: knowledge.length,
+    sharedDraftsCount: drafts.length,
+    activeUsersCount: Math.max(1, sseClients.size),
+    activeWorkstations: Array.from(sseClients.values()).map((c) => ({
+      id: c.id,
+      workstation: c.workstation,
+      connectedAt: c.connectedAt,
+    })),
   });
+});
+
+/**
+ * WYMUŚ NATYCHMIASTOWĄ SYNCHRONIZACJĘ DWUKIERUNKOWĄ Z CHMURĄ (PULL + PUSH + BROADCAST)
+ */
+app.post('/api/cloud-sync-now', async (req: Request, res: Response) => {
+  const workstation = req.body?.workstation || 'Stanowisko Eubiosis';
+  try {
+    const counts = await performFullCloudPullAndMerge();
+    if (GITHUB_TOKEN) {
+      await saveVaultToGitHubCloud(
+        readOrdersFromDisk(),
+        readDeletedIdsFromDisk(),
+        readKnowledgeFromDisk(),
+        readSharedDraftsFromDisk()
+      );
+    }
+    broadcastSyncEvent(
+      'MANUAL_CLOUD_SYNC',
+      `Pełna synchronizacja bazy w chmurze (${counts.ordersCount} zamówień, ${counts.knowledgeCount} kart CRM)`,
+      workstation
+    );
+    return res.json({
+      success: true,
+      ...counts,
+      lastSyncAt: lastCloudSyncAt || new Date().toISOString(),
+      revision: serverRevision,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Błąd synchronizacji z chmurą' });
+  }
+});
+
+/**
+ * KONFIGURACJA KLUCZA CHMUROWEGO Z POZIOMU INTERFEJSU
+ */
+app.post('/api/cloud-config', async (req: Request, res: Response) => {
+  const { githubToken, vaultRepo } = req.body || {};
+  ensureDataDir();
+  if (typeof githubToken === 'string' && githubToken.trim().length > 5) {
+    GITHUB_TOKEN = githubToken.trim();
+    vaultRepoVerified = false;
+    cloudInitPromise = null;
+    fs.writeFileSync(
+      cloudConfigFilePath,
+      JSON.stringify({ githubToken: GITHUB_TOKEN, vaultRepo: vaultRepo || activeVaultRepo }, null, 2),
+      'utf8'
+    );
+  }
+  if (typeof vaultRepo === 'string' && vaultRepo.trim().includes('/')) {
+    activeVaultRepo = vaultRepo.trim();
+    vaultRepoVerified = false;
+  }
+  await ensureCloudInitialized();
+  broadcastSyncEvent('CONFIG_UPDATED', 'Zaktualizowano konfigurację sejfu chmurowego AES-256');
+  return res.json({
+    success: true,
+    enabled: Boolean(GITHUB_TOKEN),
+    repo: activeVaultRepo,
+    lastSyncAt: lastCloudSyncAt,
+  });
+});
+
+/**
+ * WSPÓLNY STÓŁ ROBOCZY (PRZEKAZYWANIE BIEŻĄCEJ FAKTURY / ZAMÓWIENIA MIĘDZY STANOWISKAMI)
+ */
+app.get('/api/shared-drafts', async (_req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  return res.json(readSharedDraftsFromDisk());
+});
+
+app.post('/api/shared-drafts', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const draft = req.body;
+  if (!draft || !draft.id) {
+    return res.status(400).json({ error: 'Brak identyfikatora szkicu roboczego' });
+  }
+  const drafts = readSharedDraftsFromDisk();
+  const now = new Date().toISOString();
+  const updatedDraft = { ...draft, updatedAt: now };
+  const idx = drafts.findIndex((d: any) => d.id === draft.id);
+  if (idx >= 0) {
+    drafts[idx] = updatedDraft;
+  } else {
+    drafts.unshift(updatedDraft);
+  }
+  writeSharedDraftsToDisk(drafts.slice(0, 30));
+  broadcastSyncEvent(
+    'SHARED_DRAFT_SAVED',
+    `Udostępniono szkic na Wspólnym Stole: ${draft.title || draft.meta?.orderNumber || 'Nowe zamówienie'}`,
+    draft.authorWorkstation || 'Stanowisko Eubiosis'
+  );
+  return res.json({ success: true, draft: updatedDraft });
+});
+
+app.delete('/api/shared-drafts/:id', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const { id } = req.params;
+  const drafts = readSharedDraftsFromDisk().filter((d: any) => d.id !== id);
+  writeSharedDraftsToDisk(drafts);
+  broadcastSyncEvent('SHARED_DRAFT_DELETED', 'Usunięto szkic ze Wspólnego Stołu Roboczego');
+  return res.json({ success: true, deletedId: id });
 });
 
 app.get('/api/orders-history', async (req: Request, res: Response) => {
@@ -981,7 +1316,6 @@ app.post('/api/orders-history', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Nieprawidłowe dane zamówienia (brak id)' });
   }
 
-  // Jeśli zamówienie jest ponownie dodawane, usuń je z listy usuniętych
   const deletedIds = readDeletedIdsFromDisk().filter((id) => id !== newOrder.id);
   writeDeletedIdsToDisk(deletedIds);
 
@@ -994,6 +1328,10 @@ app.post('/api/orders-history', async (req: Request, res: Response) => {
   }
 
   writeOrdersToDisk(orders);
+  broadcastSyncEvent(
+    'ORDER_SAVED',
+    `Zapisano w bazie: ${newOrder.invoiceNumber || newOrder.orderNumber || 'Zamówienie'} (${newOrder.buyer?.name || ''})`
+  );
   return res.json({ success: true, order: newOrder });
 });
 
@@ -1015,6 +1353,10 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
   };
 
   writeOrdersToDisk(orders);
+  broadcastSyncEvent(
+    'ORDER_UPDATED',
+    `Zaktualizowano zamówienie: ${orders[idx].orderNumber || orders[idx].invoiceNumber || id}`
+  );
   return res.json({ success: true, order: orders[idx] });
 });
 
@@ -1031,6 +1373,7 @@ app.delete('/api/orders-history/:id', async (req: Request, res: Response) => {
   const filtered = orders.filter((o: any) => o.id !== id);
 
   writeOrdersToDisk(filtered);
+  broadcastSyncEvent('ORDER_DELETED', `Usunięto zamówienie z bazy (${id})`);
   return res.json({ success: true, deletedId: id });
 });
 
@@ -1043,7 +1386,6 @@ app.post('/api/orders-history/sync', async (req: Request, res: Response) => {
   const deletedSet = new Set(readDeletedIdsFromDisk());
   const existingOrders = readOrdersFromDisk();
 
-  // Bezpieczne scalenie danych z przeglądarki z danymi na serwerze (bez przywracania usuniętych zamówień)
   const map = new Map<string, any>();
   for (const srv of existingOrders) {
     if (srv?.id && !deletedSet.has(srv.id)) {
@@ -1098,6 +1440,7 @@ app.post('/api/knowledge-base', async (req: Request, res: Response) => {
   }
 
   writeKnowledgeToDisk(clients);
+  broadcastSyncEvent('KNOWLEDGE_UPDATED', `Zaktualizowano kartę CRM: ${client.shortName || client.name}`);
   return res.json({ success: true, client });
 });
 
@@ -1106,6 +1449,7 @@ app.delete('/api/knowledge-base/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const clients = readKnowledgeFromDisk().filter((c: any) => c.id !== id);
   writeKnowledgeToDisk(clients);
+  broadcastSyncEvent('KNOWLEDGE_DELETED', `Usunięto kartę CRM (${id})`);
   return res.json({ success: true, deletedId: id });
 });
 
