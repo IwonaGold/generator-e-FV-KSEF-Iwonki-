@@ -26,6 +26,7 @@ export interface ClientPriceListItem {
   discountLabel: string; // np. "15%" (DOZ) lub "5%" (Q3)
   invoiceNetPrice: number; // CENA PO RABACIE NETTO — TA CENA MA BYĆ NA FV!
   grossAfterDiscount?: number; // Cena po rabacie brutto (opcjonalnie)
+  unitsPerCarton?: number; // Ilość w kartonie zbiorczym (opcjonalnie)
 }
 
 export interface KeyClientProfile {

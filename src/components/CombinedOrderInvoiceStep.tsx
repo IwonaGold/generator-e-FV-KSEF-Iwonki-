@@ -460,7 +460,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     if (matchedKnowledgeClient) {
       const hasIdWew = Boolean(matchedKnowledgeClient.idWew?.trim());
       const isExternal = matchedKnowledgeClient.invoiceSystem === 'ZEWNETRZNY_SYSTEM';
-      const fmtLower = matchedKnowledgeClient.ksefLogisticsFormat.toLowerCase();
+      const fmtLower = (matchedKnowledgeClient.ksefLogisticsFormat || '').toLowerCase();
       const recFmt: LogisticsFormat = fmtLower.includes('osobne')
         ? 'separate_fields'
         : fmtLower.includes('bez')
@@ -469,10 +469,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
 
       return {
         id: matchedKnowledgeClient.id,
-        recipientName: matchedKnowledgeClient.shortName,
+        recipientName: matchedKnowledgeClient.shortName || 'Kontrahent',
         theme: 'rose' as const,
-        paymentDays: matchedKnowledgeClient.paymentDays,
-        paymentDescription: `${matchedKnowledgeClient.paymentDays} dni`,
+        paymentDays: matchedKnowledgeClient.paymentDays || 30,
+        paymentDescription: `${matchedKnowledgeClient.paymentDays || 30} dni`,
         idWewStatus: hasIdWew ? `TAK (${matchedKnowledgeClient.idWew})` : 'NIE — brak wymogu ID-Wew',
         idWewRequired: hasIdWew,
         expectedIdWew: matchedKnowledgeClient.idWew,
@@ -480,22 +480,23 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
           ? `Wymagany identyfikator wewnętrzny w Podmiot3: ${matchedKnowledgeClient.idWew}.`
           : 'Brak wymogu podawania ID-Wew w Podmiot3.',
         addBatchAndExpiryStatus: isExternal
-          ? matchedKnowledgeClient.invoiceSystemLabel
+          ? matchedKnowledgeClient.invoiceSystemLabel || 'Zewnętrzny system'
           : fmtLower.includes('bez')
           ? 'NIE — bez serii i daty ważności na FV'
           : 'TAK — dodać datę przydatności i serię na FV',
         addBatchAndExpiryRequired: !fmtLower.includes('bez'),
-        addBatchAndExpiryDescription: `Wymóg MHD: ${matchedKnowledgeClient.minExpiryRequirement}.`,
-        formatStatus: matchedKnowledgeClient.ksefLogisticsFormat,
-        formatDescription: matchedKnowledgeClient.invoiceSystemLabel,
+        addBatchAndExpiryDescription: `Wymóg MHD: ${matchedKnowledgeClient.minExpiryRequirement || 'zgodnie z umową'}.`,
+        formatStatus: matchedKnowledgeClient.ksefLogisticsFormat || 'Standard KSeF',
+        formatDescription: matchedKnowledgeClient.invoiceSystemLabel || 'KSeF XML',
         recommendedLogisticsFormat: recFmt,
         priceRule:
           matchedKnowledgeClient.priceListType === 'DOZ_SPECIAL'
             ? '💰 Nowy Cennik DOZ od 08.2026 (Kolumna O, -12%): Na FV cena po rabacie netto!'
             : '💰 Cennik Q3 (-5%): Na FV cena po rabacie netto!',
-        extraTip: matchedKnowledgeClient.contacts[0]
-          ? `Kontakt / wysyłka: ${matchedKnowledgeClient.contacts.map((c) => c.email).join(', ')}`
-          : '',
+        extraTip:
+          Array.isArray(matchedKnowledgeClient.contacts) && matchedKnowledgeClient.contacts.length > 0
+            ? `Kontakt / wysyłka: ${matchedKnowledgeClient.contacts.map((c) => c.email).join(', ')}`
+            : '',
       };
     }
 

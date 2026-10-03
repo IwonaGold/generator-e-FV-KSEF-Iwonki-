@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { Header } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { CombinedOrderInvoiceStep } from './components/CombinedOrderInvoiceStep';
@@ -137,7 +138,13 @@ export default function App() {
   const [activeModule, setActiveModule] = useState<AppModule>(() => {
     try {
       const saved = localStorage.getItem('iwonka_active_module');
-      if (saved === 'home' || saved === 'invoice' || saved === 'correction' || saved === 'history') {
+      if (
+        saved === 'home' ||
+        saved === 'invoice' ||
+        saved === 'correction' ||
+        saved === 'history' ||
+        saved === 'knowledge'
+      ) {
         return saved as AppModule;
       }
     } catch (e) {
