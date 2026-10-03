@@ -8,6 +8,7 @@ interface SubpageHeaderBarProps {
   onNavigateHome: () => void;
   ordersCount: number;
   onOpenEdiPrototype?: () => void;
+  onOpenZenboxModal?: () => void;
 }
 
 export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
@@ -16,6 +17,7 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
   onNavigateHome,
   ordersCount,
   onOpenEdiPrototype,
+  onOpenZenboxModal,
 }) => {
   const isInvoiceCenter = activeModule === 'invoice' || activeModule === 'correction';
   const isKnowledgeCenter = activeModule === 'knowledge';
@@ -71,6 +73,18 @@ export const SubpageHeaderBar: React.FC<SubpageHeaderBarProps> = ({
               📚 Centrum Wiedzy (CRM)
             </button>
           </div>
+
+          {onOpenZenboxModal && (
+            <button
+              type="button"
+              onClick={onOpenZenboxModal}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl shadow-2xs transition-all cursor-pointer"
+              title="Otwórz Skrzynkę Zamówień i Awizacji Zenbox"
+            >
+              <span>📬</span>
+              <span>Skrzynka Zenbox</span>
+            </button>
+          )}
 
           {onOpenEdiPrototype && (
             <button

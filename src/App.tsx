@@ -11,6 +11,7 @@ import { WZDocumentModal } from './components/WZDocumentModal';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
 import { EdiDozPrototypeModal } from './components/EdiDozPrototypeModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
+import { ZenboxMailModal } from './components/ZenboxMailModal';
 import { DozEdiOrderSample } from './utils/ediGenerator';
 import {
   SharedInvoiceDraft,
@@ -156,6 +157,7 @@ export default function App() {
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
   const [isEdiModalOpen, setIsEdiModalOpen] = useState(false);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [isZenboxModalOpen, setIsZenboxModalOpen] = useState(false);
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
   const [sharedDraftsCount, setSharedDraftsCount] = useState<number>(0);
   const [liveSyncToast, setLiveSyncToast] = useState<string | null>(null);
@@ -743,6 +745,67 @@ export default function App() {
     setTimeout(() => setPriceNotice(null), 7000);
   };
 
+  const handleLoadOrderFromEmail = (params: {
+    chain: 'DOZ' | 'DR_MAX';
+    orderNumber: string;
+    orderDate: string;
+    deliveryDate: string;
+    buyer: EntityDetails;
+    items: InvoiceItem[];
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const deliv = params.deliveryDate || today;
+    const dueObj = new Date(deliv);
+    dueObj.setDate(dueObj.getDate() + 60);
+    const dueDateStr = dueObj.toISOString().slice(0, 10);
+
+    const mappedChain: PharmacyChain = params.chain === 'DR_MAX' ? 'Dr. Max' : 'DOZ';
+    setSelectedChain(mappedChain);
+    setBuyer({ ...params.buyer });
+    setThirdParty(null);
+    setSeller({ ...DEFAULT_SELLER });
+    setMeta((prev) => ({
+      ...prev,
+      invoiceNumber: prev.invoiceNumber || `FV/2026/10/${params.orderNumber.slice(-4)}`,
+      issueDate: today,
+      deliveryDate: deliv,
+      orderNumber: params.orderNumber,
+      orderDate: params.orderDate || today,
+      paymentDays: 60,
+      dueDate: dueDateStr,
+    }));
+    setItems(params.items.map((it) => ({ ...it })));
+    setLogisticsFormat('gs1_composite');
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(params.chain === 'DOZ' ? 'DOZ_SPECIAL' : 'Q3_STANDARD');
+    setOrderFile({
+      name: `Zamowienie_${params.orderNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,
+      size: 'Poczta Zenbox',
+    });
+    setActiveModule('invoice');
+    setPriceNotice(
+      `📬 Wczytano zamówienie nr ${params.orderNumber} ze Skrzynki Zamówień Zenbox (${params.buyer.name} · ${params.items.length} poz.).`
+    );
+    setTimeout(() => setPriceNotice(null), 7000);
+  };
+
+  const handleMarkOrderDeliveredFromZenbox = async (orderNumber: string, invoiceNumber?: string) => {
+    const norm = orderNumber.trim().toUpperCase();
+    const match = archivedOrders.find(
+      (o) =>
+        o.orderNumber?.trim().toUpperCase() === norm ||
+        (invoiceNumber && o.invoiceNumber?.trim().toUpperCase() === invoiceNumber.trim().toUpperCase())
+    );
+    if (match) {
+      await saveArchivedOrder({
+        ...match,
+        isDelivered: true,
+        shippingStatus: 'delivered',
+      });
+      await refreshArchivedOrders();
+    }
+  };
+
   const handleUpdateItem = (id: string, updatedFields: Partial<InvoiceItem>) => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updatedFields } : item))
@@ -975,6 +1038,7 @@ export default function App() {
         onOpenWzModal={() => setIsWzModalOpen(true)}
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
+        onOpenZenboxModal={() => setIsZenboxModalOpen(true)}
         activeUsersCount={activeUsersCount}
         sharedDraftsCount={sharedDraftsCount}
         onNavigateHome={() => setActiveModule('home')}
@@ -993,6 +1057,7 @@ export default function App() {
             onSelectModule={setActiveModule}
             ordersCount={archivedOrders.length}
             onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
+            onOpenZenboxModal={() => setIsZenboxModalOpen(true)}
           />
         ) : (
           /* ==================================================================== */
@@ -1004,6 +1069,7 @@ export default function App() {
             onNavigateHome={() => setActiveModule('home')}
             ordersCount={archivedOrders.length}
             onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
+            onOpenZenboxModal={() => setIsZenboxModalOpen(true)}
           />
         )}
 
@@ -1200,6 +1266,19 @@ export default function App() {
         knowledgeClients={knowledgeClients}
         onLoadSharedDraft={handleLoadSharedDraft}
         onManualSyncComplete={refreshAllCloudData}
+      />
+
+      {/* Modal Skrzynki Zamówień i Awizacji Zenbox */}
+      <ZenboxMailModal
+        isOpen={isZenboxModalOpen}
+        onClose={() => setIsZenboxModalOpen(false)}
+        archivedOrders={archivedOrders}
+        knowledgeClients={knowledgeClients}
+        currentMeta={meta}
+        currentBuyer={buyer}
+        currentItems={items}
+        onLoadOrderFromEmail={handleLoadOrderFromEmail}
+        onMarkOrderDeliveredInHistory={handleMarkOrderDeliveredFromZenbox}
       />
 
       {/* Pływające powiadomienie Real-Time Multi-User Sync */}

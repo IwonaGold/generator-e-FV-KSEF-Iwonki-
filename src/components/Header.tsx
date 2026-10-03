@@ -7,6 +7,7 @@ interface HeaderProps {
   onOpenWzModal?: () => void;
   onOpenAiGuide: () => void;
   onOpenCloudModal?: () => void;
+  onOpenZenboxModal?: () => void;
   activeUsersCount?: number;
   sharedDraftsCount?: number;
   onNavigateHome?: () => void;
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenWzModal,
   onOpenAiGuide,
   onOpenCloudModal,
+  onOpenZenboxModal,
   activeUsersCount = 1,
   sharedDraftsCount = 0,
   onNavigateHome,
@@ -51,7 +53,18 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Zone 2: Clean text navigation links / status */}
-        <nav className="hidden lg:flex items-center gap-4 text-xs font-medium text-slate-600">
+        <nav className="hidden lg:flex items-center gap-3 text-xs font-medium text-slate-600">
+          {onOpenZenboxModal && (
+            <button
+              type="button"
+              onClick={onOpenZenboxModal}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-950 font-black transition-all cursor-pointer shadow-2xs"
+              title="Skrzynka Zamówień i Awizacji Zenbox (Wczytywanie zamówień, autouzupełnianie pliku Awizacji Dr. Max .xlsx, wysyłka FV i archiwum)"
+            >
+              <span>📬</span>
+              <span>Poczta Zenbox (Awizacje & FV)</span>
+            </button>
+          )}
           {onOpenCloudModal && (
             <button
               type="button"
@@ -86,6 +99,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 3: Primary action button & Logout */}
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {onOpenZenboxModal && (
+            <button
+              type="button"
+              onClick={onOpenZenboxModal}
+              className="lg:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-bold cursor-pointer"
+              title="Skrzynka Zamówień i Awizacji Zenbox"
+            >
+              <span>📬</span>
+              <span>Zenbox</span>
+            </button>
+          )}
           {onOpenCloudModal && (
             <button
               type="button"

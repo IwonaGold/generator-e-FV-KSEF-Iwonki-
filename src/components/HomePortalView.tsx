@@ -6,12 +6,14 @@ interface HomePortalViewProps {
   onSelectModule: (module: AppModule) => void;
   ordersCount: number;
   onOpenEdiPrototype?: () => void;
+  onOpenZenboxModal?: () => void;
 }
 
 export const HomePortalView: React.FC<HomePortalViewProps> = ({
   onSelectModule,
   ordersCount,
   onOpenEdiPrototype,
+  onOpenZenboxModal,
 }) => {
   return (
     <div className="max-w-7xl mx-auto py-6 sm:py-10 animate-in fade-in zoom-in-95 duration-200">
@@ -279,12 +281,60 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
       </div>
 
       {/* ==================================================================== */}
-      {/* NOWOŚĆ: INTERAKTYWNY PROTOTYP KOMUNIKACJI EDI DOZ DIRECT             */}
+      {/* NOWOŚĆ: SKRZYNKA ZAMÓWIEŃ I AWIZACJI ZENBOX                           */}
+      {/* ==================================================================== */}
+      {onOpenZenboxModal && (
+        <div
+          onClick={onOpenZenboxModal}
+          className="mt-7 group relative bg-gradient-to-r from-emerald-950 via-teal-900 to-indigo-950 hover:from-emerald-900 hover:via-teal-800 hover:to-indigo-900 text-white rounded-3xl p-6 sm:p-7 border-2 border-emerald-500/40 hover:border-emerald-400 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex items-start sm:items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-3xl shadow-lg border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
+                📬
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider bg-emerald-400 text-slate-950 rounded-full">
+                    DEDYKOWANA SKRZYNKA ZAMÓWIEŃ
+                  </span>
+                  <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold bg-teal-800/80 text-teal-100 border border-teal-600 rounded-full">
+                    Zenbox IMAP/SMTP + Praca Hybrydowa
+                  </span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                  Skrzynka Zamówień i Awizacji Zenbox (Dr. Max • DOZ Direct • Centrum Wiedzy)
+                </h3>
+                <p className="text-xs sm:text-sm text-emerald-100 mt-1 max-w-3xl leading-relaxed">
+                  Wczytuj zamówienia z maila 1 kliknięciem, odpowiadaj z użyciem gotowych szablonów i automatycznej stopki, generuj <strong className="text-white">autouzupełniony plik Awizacji Dr. Max (.xlsx)</strong> i wybieraj adresy z Centrum Wiedzy. Wątki przechodzą do <strong className="text-white">Archiwum</strong> dopiero po wysłaniu FV oraz doręczeniu przesyłki!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-end lg:self-center shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenZenboxModal();
+                }}
+                className="inline-flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-black text-slate-950 bg-gradient-to-r from-emerald-300 via-teal-300 to-amber-300 hover:from-emerald-200 hover:to-amber-200 rounded-2xl shadow-md transition-all cursor-pointer"
+              >
+                <span>Otwórz Skrzynkę Zenbox</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* INTERAKTYWNY PROTOTYP KOMUNIKACJI EDI DOZ DIRECT                      */}
       {/* ==================================================================== */}
       {onOpenEdiPrototype && (
         <div
           onClick={onOpenEdiPrototype}
-          className="mt-7 group relative bg-gradient-to-r from-indigo-950 via-indigo-900 to-fuchsia-950 hover:from-indigo-900 hover:via-indigo-800 hover:to-fuchsia-900 text-white rounded-3xl p-6 sm:p-7 border-2 border-indigo-500/40 hover:border-fuchsia-400 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer"
+          className="mt-5 group relative bg-gradient-to-r from-indigo-950 via-indigo-900 to-fuchsia-950 hover:from-indigo-900 hover:via-indigo-800 hover:to-fuchsia-900 text-white rounded-3xl p-6 sm:p-7 border-2 border-indigo-500/40 hover:border-fuchsia-400 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer"
         >
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
             <div className="flex items-start sm:items-center gap-4">
