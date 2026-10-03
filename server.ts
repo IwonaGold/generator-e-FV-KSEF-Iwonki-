@@ -459,6 +459,7 @@ const ordersFilePath = path.join(dataDir, 'orders_history.json');
 const deletedIdsFilePath = path.join(dataDir, 'deleted_orders_ids.json');
 const knowledgeFilePath = path.join(dataDir, 'knowledge_base.json');
 const sharedDraftsFilePath = path.join(dataDir, 'shared_drafts.json');
+const packagingPhotosFilePath = path.join(dataDir, 'packaging_photos.json');
 const cloudConfigFilePath = path.join(dataDir, 'cloud_config.json');
 
 function ensureDataDir() {
@@ -1003,6 +1004,34 @@ function writeSharedDraftsToDisk(drafts: any[], triggerCloud = true): boolean {
   }
 }
 
+function readPackagingPhotosFromDisk(): any[] {
+  ensureDataDir();
+  if (!fs.existsSync(packagingPhotosFilePath)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(packagingPhotosFilePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePackagingPhotosToDisk(photos: any[], triggerCloud = true): boolean {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(packagingPhotosFilePath, JSON.stringify(photos, null, 2), 'utf8');
+    if (triggerCloud) {
+      scheduleCloudSync();
+    }
+    return true;
+  } catch (e) {
+    console.error('Błąd zapisu kolejki zdjęć opakowań z Magazynu:', e);
+    return false;
+  }
+}
+
 // Pełna synchronizacja dwukierunkowa z zaszyfrowanym sejfem w chmurze GitHub
 async function performFullCloudPullAndMerge(): Promise<{
   ordersCount: number;
@@ -1297,6 +1326,60 @@ app.delete('/api/shared-drafts/:id', async (req: Request, res: Response) => {
   const drafts = readSharedDraftsFromDisk().filter((d: any) => d.id !== id);
   writeSharedDraftsToDisk(drafts);
   broadcastSyncEvent('SHARED_DRAFT_DELETED', 'Usunięto szkic ze Wspólnego Stołu Roboczego');
+  return res.json({ success: true, deletedId: id });
+});
+
+/**
+ * KOLEJKA ZDJĘĆ OPAKOWAŃ (STANOWISKO 2: MAGAZYN -> STANOWISKO 1: KOORDYNATOR)
+ */
+app.get('/api/packaging-photos', async (_req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  return res.json(readPackagingPhotosFromDisk());
+});
+
+app.post('/api/packaging-photos', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const { photos, workstation } = req.body || {};
+  if (!Array.isArray(photos) || photos.length === 0) {
+    return res.status(400).json({ error: 'Brak zdjęć opakowań do zapisania' });
+  }
+  const existing = readPackagingPhotosFromDisk();
+  const map = new Map<string, any>();
+  for (const p of existing) {
+    if (p?.id) map.set(p.id, p);
+  }
+  for (const inc of photos) {
+    if (inc?.id && inc?.dataUrl) {
+      map.set(inc.id, {
+        ...inc,
+        uploadedAt: inc.uploadedAt || new Date().toISOString(),
+        uploadedBy: inc.uploadedBy || workstation || '2. Magazyn (Zdjęcia opakowań)',
+      });
+    }
+  }
+  const merged = Array.from(map.values())
+    .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+    .slice(0, 40);
+  writePackagingPhotosToDisk(merged);
+  broadcastSyncEvent(
+    'PACKAGING_PHOTOS_UPLOADED',
+    `📦 Magazyn wgrał ${photos.length} ${photos.length === 1 ? 'zdjęcie opakowania' : 'zdjęcia opakowań'} do przypisania i weryfikacji`,
+    workstation || '2. Magazyn (Zdjęcia opakowań)'
+  );
+  return res.json({ success: true, photos: merged });
+});
+
+app.delete('/api/packaging-photos/:id', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const { id } = req.params;
+  if (id === 'ALL') {
+    writePackagingPhotosToDisk([]);
+    broadcastSyncEvent('PACKAGING_PHOTOS_CLEARED', 'Wyczyszczono kolejkę zdjęć opakowań');
+    return res.json({ success: true });
+  }
+  const filtered = readPackagingPhotosFromDisk().filter((p: any) => p.id !== id);
+  writePackagingPhotosToDisk(filtered);
+  broadcastSyncEvent('PACKAGING_PHOTO_DELETED', 'Usunięto zdjęcie opakowania z kolejki');
   return res.json({ success: true, deletedId: id });
 });
 

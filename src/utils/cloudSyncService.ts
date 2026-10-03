@@ -51,22 +51,55 @@ export interface SharedInvoiceDraft {
   items: InvoiceItem[];
 }
 
+export type WorkstationRole = 'coordinator' | 'warehouse';
+
+export const WORKSTATION_COORDINATOR = '1. Koordynator (Iwona / Zastępstwo)';
+export const WORKSTATION_WAREHOUSE = '2. Magazyn (Zdjęcia opakowań)';
+
+export interface SharedPackagingPhoto {
+  id: string;
+  fileName: string;
+  dataUrl: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  orderHint?: string;
+}
+
 const WORKSTATION_KEY = 'iwonka_ksef_workstation_name_v1';
 const LOCAL_DRAFTS_KEY = 'iwonka_ksef_shared_drafts_v1';
+const LOCAL_PACKAGING_PHOTOS_KEY = 'iwonka_ksef_packaging_photos_v1';
 const BROADCAST_CHANNEL_NAME = 'iwonka_ksef_multiuser_channel_v1';
 
 export function getWorkstationName(): string {
   try {
-    return localStorage.getItem(WORKSTATION_KEY) || 'Iwona – Faktury & KSeF';
+    const val = localStorage.getItem(WORKSTATION_KEY);
+    if (!val || val === 'Iwona – Faktury & KSeF') return WORKSTATION_COORDINATOR;
+    if (val.toLowerCase().includes('magazyn')) return WORKSTATION_WAREHOUSE;
+    return val;
   } catch {
-    return 'Iwona – Faktury & KSeF';
+    return WORKSTATION_COORDINATOR;
   }
 }
 
 export function setWorkstationName(name: string): void {
   try {
-    localStorage.setItem(WORKSTATION_KEY, name.trim() || 'Iwona – Faktury & KSeF');
+    localStorage.setItem(WORKSTATION_KEY, name.trim() || WORKSTATION_COORDINATOR);
+    notifyLocalBroadcast('WORKSTATION_CHANGED', `Zmieniono stanowisko na: ${name.trim() || WORKSTATION_COORDINATOR}`);
   } catch {}
+}
+
+export function getWorkstationRole(): WorkstationRole {
+  const name = getWorkstationName().toLowerCase();
+  if (name.includes('magazyn') || name.startsWith('2.')) {
+    return 'warehouse';
+  }
+  return 'coordinator';
+}
+
+export function setWorkstationRole(role: WorkstationRole): string {
+  const label = role === 'warehouse' ? WORKSTATION_WAREHOUSE : WORKSTATION_COORDINATOR;
+  setWorkstationName(label);
+  return label;
 }
 
 export async function fetchCloudStatus(): Promise<CloudSyncStatus | null> {
@@ -203,6 +236,141 @@ export async function deleteSharedDraft(id: string): Promise<void> {
   } catch {}
 
   notifyLocalBroadcast('SHARED_DRAFT_DELETED', 'Usunięto szkic roboczy');
+}
+
+export function dataUrlToFile(dataUrl: string, fileName: string): File {
+  try {
+    const arr = dataUrl.split(',');
+    const mimeMatch = arr[0]?.match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const bstr = atob(arr[1] || '');
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], fileName || 'opakowanie.jpg', { type: mime });
+  } catch {
+    return new File([], fileName || 'opakowanie.jpg', { type: 'image/jpeg' });
+  }
+}
+
+export async function getSharedPackagingPhotos(): Promise<SharedPackagingPhoto[]> {
+  let localPhotos: SharedPackagingPhoto[] = [];
+  try {
+    const raw = localStorage.getItem(LOCAL_PACKAGING_PHOTOS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) localPhotos = parsed;
+    }
+  } catch {}
+
+  try {
+    const res = await fetch('/api/packaging-photos');
+    if (res.ok) {
+      const serverPhotos = await res.json();
+      if (Array.isArray(serverPhotos)) {
+        const map = new Map<string, SharedPackagingPhoto>();
+        for (const p of serverPhotos) {
+          if (p?.id && p?.dataUrl) map.set(p.id, p);
+        }
+        for (const lp of localPhotos) {
+          if (lp?.id && lp?.dataUrl && !map.has(lp.id)) {
+            map.set(lp.id, lp);
+          }
+        }
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+        );
+        try {
+          localStorage.setItem(LOCAL_PACKAGING_PHOTOS_KEY, JSON.stringify(merged.slice(0, 35)));
+        } catch {}
+        return merged;
+      }
+    }
+  } catch {}
+
+  return localPhotos;
+}
+
+export async function uploadSharedPackagingPhotos(
+  photos: SharedPackagingPhoto[],
+  workstation?: string
+): Promise<SharedPackagingPhoto[]> {
+  if (!photos || photos.length === 0) return getSharedPackagingPhotos();
+  const ws = workstation || getWorkstationName();
+
+  try {
+    const current = await getSharedPackagingPhotos();
+    const map = new Map<string, SharedPackagingPhoto>();
+    for (const p of current) {
+      if (p?.id) map.set(p.id, p);
+    }
+    for (const inc of photos) {
+      if (inc?.id && inc?.dataUrl) {
+        map.set(inc.id, { ...inc, uploadedBy: inc.uploadedBy || ws });
+      }
+    }
+    const next = Array.from(map.values())
+      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+      .slice(0, 35);
+    localStorage.setItem(LOCAL_PACKAGING_PHOTOS_KEY, JSON.stringify(next));
+  } catch {}
+
+  try {
+    const res = await fetch('/api/packaging-photos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photos, workstation: ws }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.photos)) {
+        notifyLocalBroadcast(
+          'PACKAGING_PHOTOS_UPLOADED',
+          `📦 Magazyn wgrał ${photos.length} ${photos.length === 1 ? 'zdjęcie opakowania' : 'zdjęcia opakowań'} do przypisania i weryfikacji`
+        );
+        return data.photos;
+      }
+    }
+  } catch {}
+
+  notifyLocalBroadcast(
+    'PACKAGING_PHOTOS_UPLOADED',
+    `📦 Wgrano ${photos.length} zdjęć opakowań do Chmury Live`
+  );
+  return getSharedPackagingPhotos();
+}
+
+export async function deleteSharedPackagingPhoto(id: string): Promise<void> {
+  try {
+    const raw = localStorage.getItem(LOCAL_PACKAGING_PHOTOS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        localStorage.setItem(
+          LOCAL_PACKAGING_PHOTOS_KEY,
+          JSON.stringify(parsed.filter((p: any) => p.id !== id))
+        );
+      }
+    }
+  } catch {}
+
+  try {
+    await fetch(`/api/packaging-photos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {}
+
+  notifyLocalBroadcast('PACKAGING_PHOTO_DELETED', 'Usunięto zdjęcie opakowania');
+}
+
+export async function clearSharedPackagingPhotos(): Promise<void> {
+  try {
+    localStorage.removeItem(LOCAL_PACKAGING_PHOTOS_KEY);
+  } catch {}
+  try {
+    await fetch('/api/packaging-photos/ALL', { method: 'DELETE' });
+  } catch {}
+  notifyLocalBroadcast('PACKAGING_PHOTOS_CLEARED', 'Wyczyszczono zdjęcia opakowań');
 }
 
 export function notifyLocalBroadcast(type: string, summary: string) {

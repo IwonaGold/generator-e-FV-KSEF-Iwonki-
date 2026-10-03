@@ -55,10 +55,8 @@ interface CloudSyncModalProps {
 }
 
 const WORKSTATION_PRESETS = [
-  'Iwona – Faktury & KSeF',
-  'Magazyn – Serie LOT i Daty MHD',
-  'Logistyka – Paczki & Listy Przewozowe',
-  'Zarząd – Eubiosis Sp. z o.o.',
+  '1. Koordynator (Iwona / Zastępstwo)',
+  '2. Magazyn (Zdjęcia opakowań)',
 ];
 
 export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
@@ -349,16 +347,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </div>
               </div>
 
-              {/* Wybór roli / nazwy bieżącego stanowiska */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              {/* Wybór roli / nazwy bieżącego stanowiska (2 główne stanowiska: 1. Koordynator i 2. Magazyn) */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                       <Monitor className="w-4 h-4 text-emerald-600" />
-                      <span>Twoje stanowisko robocze (widoczne dla innych przy zapisie zmian):</span>
+                      <span>Wybierz rolę tego urządzenia (Stanowisko 1 lub Stanowisko 2):</span>
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      Wybierz rolę tego komputera/telefonu lub wpisz własną nazwę:
+                      Nie musisz zakładać osobnych kont — wystarczy wybrać na danym komputerze lub telefonie jedną z 2 ról:
                     </p>
                   </div>
                   <input
@@ -369,21 +367,58 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                  {WORKSTATION_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => handleSaveWorkstation(preset)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                        workstation === preset
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-white hover:bg-emerald-50 text-slate-700 border border-slate-200'
-                      }`}
-                    >
-                      {preset}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* KARTA STANOWISKA 1: KOORDYNATOR */}
+                  <button
+                    type="button"
+                    onClick={() => handleSaveWorkstation('1. Koordynator (Iwona / Zastępstwo)')}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                      !workstation.toLowerCase().includes('magazyn')
+                        ? 'bg-emerald-50/90 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <span>👩‍💼</span>
+                        <span>1. Koordynator (Iwona / Zastępstwo)</span>
+                      </span>
+                      {!workstation.toLowerCase().includes('magazyn') && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-600 text-white rounded-full">
+                          Aktywne tutaj
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-1.5 leading-relaxed">
+                      Wczytuje zamówienia, <strong>przypisuje wgrane przez Magazyn zdjęcia opakowań do pozycji na fakturze</strong>, weryfikuje serie <code>LOT</code> i daty <code>MHD</code> oraz generuje e-Fakturę KSeF.
+                    </p>
+                  </button>
+
+                  {/* KARTA STANOWISKA 2: MAGAZYN */}
+                  <button
+                    type="button"
+                    onClick={() => handleSaveWorkstation('2. Magazyn (Zdjęcia opakowań)')}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                      workstation.toLowerCase().includes('magazyn')
+                        ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/20 shadow-xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <span>📦</span>
+                        <span>2. Magazyn (Zdjęcia opakowań)</span>
+                      </span>
+                      {workstation.toLowerCase().includes('magazyn') && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-600 text-white rounded-full">
+                          Aktywne tutaj
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-1.5 leading-relaxed">
+                      <strong>Tylko wgrywa zdjęcia opakowań</strong> (w Kroku 3) oraz zdjęcia spakowanych paczek. Zdjęcia natychmiast lecą przez Chmurę Live na ekran Koordynatora do przypisania i weryfikacji!
+                    </p>
+                  </button>
                 </div>
               </div>
 

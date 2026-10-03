@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Camera,
   CheckCircle2,
@@ -24,6 +24,19 @@ import {
   normalizeManualDate,
 } from '../utils/twoStageOcrService';
 import { evaluateShelfLife, getRequiredShelfLifeRule } from '../utils/expiryDateValidator';
+import { compressImageToDataUrl } from '../utils/imageUtils';
+import {
+  WorkstationRole,
+  getWorkstationRole,
+  setWorkstationRole,
+  getWorkstationName,
+  getSharedPackagingPhotos,
+  uploadSharedPackagingPhotos,
+  deleteSharedPackagingPhoto,
+  clearSharedPackagingPhotos,
+  dataUrlToFile,
+  subscribeToMultiUserSync,
+} from '../utils/cloudSyncService';
 import { PhotoZoomCropModal } from './PhotoZoomCropModal';
 
 interface Step3PhotosAndBatchesProps {
@@ -51,6 +64,11 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   const [photoItems, setPhotoItems] = useState<PhotoVerificationItem[]>([]);
   const [isDraggingPhotos, setIsDraggingPhotos] = useState(false);
   const [changingMatchPhotoId, setChangingMatchPhotoId] = useState<string | null>(null);
+  const [workstationRole, setWorkstationRoleState] = useState<WorkstationRole>(() =>
+    getWorkstationRole()
+  );
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [isSyncingPhotos, setIsSyncingPhotos] = useState(false);
 
   // Modal zoomu i zaznaczania fragmentu
   const [cropModalData, setCropModalData] = useState<{
@@ -63,19 +81,147 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
   const photoInputRef = useRef<HTMLInputElement>(null);
 
+  const handleSwitchRole = (newRole: WorkstationRole) => {
+    setWorkstationRole(newRole);
+    setWorkstationRoleState(newRole);
+    setSyncNotice(
+      newRole === 'warehouse'
+        ? '📦 Przełączono na Stanowisko 2: Magazyn (tryb szybkiego wgrywania zdjęć opakowań dla Koordynatora)'
+        : '👩‍💼 Przełączono na Stanowisko 1: Koordynator (przypisywanie zdjęć z Magazynu do pozycji i weryfikacja LOT/MHD)'
+    );
+    setTimeout(() => setSyncNotice(null), 5000);
+  };
+
   /**
-   * Dodaje nowe zdjęcia i uruchamia WYŁĄCZNIE ETAP 1 (Rozpoznanie produktu)
-   * Na tym etapie kategorycznie NIE ODCZYTUJEMY ani nie zapisujemy LOT/MHD.
+   * Pobiera zdjęcia opakowań wgrane przez Stanowisko 2 (Magazyn) z Chmury Live
    */
+  const syncPackagingPhotosFromCloud = useCallback(
+    async (showToast = false) => {
+      setIsSyncingPhotos(true);
+      try {
+        const shared = await getSharedPackagingPhotos();
+        if (!shared || shared.length === 0) {
+          setIsSyncingPhotos(false);
+          return;
+        }
+
+        const isSingleItem = items && items.length === 1;
+        const defaultMatchedItem = isSingleItem ? items[0] : null;
+        const newlyAddedForStage1: PhotoVerificationItem[] = [];
+
+        setPhotoItems((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const toAdd: PhotoVerificationItem[] = [];
+
+          for (const sp of shared) {
+            if (!sp?.id || !sp?.dataUrl || existingIds.has(sp.id)) continue;
+            const reconstructedFile = dataUrlToFile(sp.dataUrl, sp.fileName || 'opakowanie.jpg');
+            const isCoordinator = getWorkstationRole() === 'coordinator';
+            const rec: PhotoVerificationItem = {
+              id: sp.id,
+              file: reconstructedFile,
+              fileName: `${sp.fileName} (${sp.uploadedBy || 'Magazyn'})`,
+              photoUrl: sp.dataUrl,
+              status: isSingleItem ? 'LOT_MHD_PENDING' : 'PRODUCT_PENDING',
+              recognizedProductName: defaultMatchedItem?.name || '',
+              recognizedGtin: defaultMatchedItem?.gtin || '',
+              matchedInvoiceItemId: defaultMatchedItem?.id,
+              matchedInvoiceItemIndex: isSingleItem ? 1 : undefined,
+              isConfidentProductMatch: isSingleItem,
+              isAnalyzingProduct: isCoordinator && !isSingleItem,
+              batches: [],
+            };
+            toAdd.push(rec);
+            if (isCoordinator && !isSingleItem) {
+              newlyAddedForStage1.push(rec);
+            }
+          }
+
+          if (toAdd.length === 0) return prev;
+          if (showToast) {
+            setSyncNotice(
+              `📥 Odebrano z Magazynu ${toAdd.length} ${
+                toAdd.length === 1 ? 'nowe zdjęcie opakowania' : 'nowe zdjęcia opakowań'
+              } do przypisania i weryfikacji!`
+            );
+            setTimeout(() => setSyncNotice(null), 5500);
+          }
+          return [...prev, ...toAdd];
+        });
+
+        // Jeśli jesteśmy na Stanowisku 1 (Koordynator), automatycznie uruchom Etap 1 (rozpoznanie produktu) dla nowych zdjęć z Magazynu
+        for (const rec of newlyAddedForStage1) {
+          try {
+            const stage1Res = await runStage1ProductRecognition(rec.file, items);
+            setPhotoItems((prev) =>
+              prev.map((item) => {
+                if (item.id !== rec.id) return item;
+                if (
+                  item.status === 'LOT_MHD_PENDING' ||
+                  item.status === 'LOT_MHD_READ' ||
+                  item.status === 'CONFIRMED' ||
+                  item.status === 'MANUAL_VERIFICATION_REQUIRED'
+                ) {
+                  return { ...item, isAnalyzingProduct: false };
+                }
+                const isMatched = Boolean(stage1Res.matchedInvoiceItemId && stage1Res.isConfident);
+                return {
+                  ...item,
+                  status: isMatched ? 'PRODUCT_MATCHED' : 'PRODUCT_PENDING',
+                  recognizedProductName: stage1Res.recognizedProductName,
+                  recognizedGtin: stage1Res.recognizedGtin,
+                  matchedInvoiceItemId: stage1Res.matchedInvoiceItemId,
+                  matchedInvoiceItemIndex: stage1Res.matchedInvoiceItemIndex,
+                  isConfidentProductMatch: stage1Res.isConfident,
+                  isAnalyzingProduct: false,
+                };
+              })
+            );
+          } catch {
+            setPhotoItems((prev) =>
+              prev.map((item) =>
+                item.id === rec.id
+                  ? { ...item, status: 'PRODUCT_PENDING', isAnalyzingProduct: false }
+                  : item
+              )
+            );
+          }
+        }
+      } finally {
+        setIsSyncingPhotos(false);
+      }
+    },
+    [items]
+  );
+
+  useEffect(() => {
+    syncPackagingPhotosFromCloud(false);
+    const unsub = subscribeToMultiUserSync({
+      onRemoteUpdate: (ev) => {
+        setWorkstationRoleState(getWorkstationRole());
+        if (
+          ev.activity?.type === 'PACKAGING_PHOTOS_UPLOADED' ||
+          ev.activity?.type === 'MANUAL_CLOUD_SYNC'
+        ) {
+          syncPackagingPhotosFromCloud(true);
+        } else if (ev.activity?.type === 'PACKAGING_PHOTOS_CLEARED') {
+          setPhotoItems([]);
+        }
+      },
+    });
+    return () => unsub();
+  }, [syncPackagingPhotosFromCloud]);
+
   /**
-   * Dodaje nowe zdjęcia i uruchamia WYŁĄCZNIE ETAP 1 (Rozpoznanie produktu)
-   * Na tym etapie kategorycznie NIE ODCZYTUJEMY ani nie zapisujemy LOT/MHD.
-   * Jeśli faktura ma tylko 1 pozycję, automatycznie ją przypisujemy bez pytania dwukrotnie.
+   * Dodaje nowe zdjęcia:
+   * - Na Stanowisku 2 (Magazyn): kompresuje i natychmiast wysyła zdjęcia do Chmury Live dla Koordynatora (bez wymuszania przypisywania na Magazynie).
+   * - Na Stanowisku 1 (Koordynator): wysyła do Chmury Live i uruchamia Etap 1 (Rozpoznanie produktu).
    */
   const handleAddNewPhotos = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
 
+    const currentRole = getWorkstationRole();
     const isSingleItem = items && items.length === 1;
     const defaultMatchedItem = isSingleItem ? items[0] : null;
 
@@ -90,14 +236,42 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
       matchedInvoiceItemId: defaultMatchedItem?.id,
       matchedInvoiceItemIndex: isSingleItem ? 1 : undefined,
       isConfidentProductMatch: isSingleItem,
-      isAnalyzingProduct: !isSingleItem,
+      isAnalyzingProduct: currentRole === 'coordinator' && !isSingleItem,
       batches: [],
     }));
 
     setPhotoItems((prev) => [...prev, ...newPhotoRecords]);
 
-    // Jeśli faktura ma tylko 1 pozycję, nie ma potrzeby uruchamiać OCR rozpoznawania produktu
-    if (isSingleItem) {
+    // Zapisz zdjęcia w Chmurze Live (aby Koordynator natychmiast je zobaczył)
+    (async () => {
+      try {
+        const compressedList = [];
+        for (const rec of newPhotoRecords) {
+          const dataUrl = await compressImageToDataUrl(rec.file, 1600, 0.85);
+          compressedList.push({
+            id: rec.id,
+            fileName: rec.fileName,
+            dataUrl,
+            uploadedBy: getWorkstationName(),
+            uploadedAt: new Date().toISOString(),
+          });
+        }
+        await uploadSharedPackagingPhotos(compressedList, getWorkstationName());
+        if (currentRole === 'warehouse') {
+          setSyncNotice(
+            `☁️ Wysłano ${compressedList.length} ${
+              compressedList.length === 1 ? 'zdjęcie opakowania' : 'zdjęcia opakowań'
+            } do Stanowiska 1 (Koordynator)! Koordynator przypisze je do pozycji i zweryfikuje LOT/MHD.`
+          );
+          setTimeout(() => setSyncNotice(null), 6000);
+        }
+      } catch (e) {
+        console.warn('Błąd wysyłki zdjęć opakowań do Chmury Live:', e);
+      }
+    })();
+
+    // Jeśli to Stanowisko 2 (Magazyn) lub faktura ma tylko 1 pozycję, nie uruchamiamy Etapu 1 po stronie Magazynu
+    if (currentRole === 'warehouse' || isSingleItem) {
       return;
     }
 
@@ -403,6 +577,12 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
   const removePhoto = (photoId: string) => {
     setPhotoItems((prev) => prev.filter((p) => p.id !== photoId));
+    deleteSharedPackagingPhoto(photoId);
+  };
+
+  const handleClearAllPhotos = () => {
+    setPhotoItems([]);
+    clearSharedPackagingPhotos();
   };
 
   return (
@@ -420,7 +600,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                 <span>Zdjęcia Opakowań – Weryfikacja Produktu i Odczyt LOT/MHD (OCR)</span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Etap 1: Zatwierdzenie produktu ➔ Etap 2: Rzeczywista analiza wizualna nadruków (inkjet / etykiety / GS1)
+                Magazyn wgrywa zdjęcia opakowań ➔ Koordynator przypisuje je do pozycji faktury i weryfikuje serie LOT oraz daty MHD
               </p>
             </div>
           </div>
@@ -437,11 +617,95 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-600 hover:to-pink-600 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Camera className="w-4 h-4" />
-              <span>Dodaj zdjęcie produktu</span>
+              <span>
+                {workstationRole === 'warehouse'
+                  ? '📦 Dodaj zdjęcia z Magazynu'
+                  : '📷 Dodaj zdjęcie produktu'}
+              </span>
             </button>
           )}
         </div>
       </div>
+
+      {/* PASEK WSPÓŁPRACY CHMURA LIVE: 1. KOORDYNATOR <-> 2. MAGAZYN */}
+      <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+            ☁️ Chmura Live — Tryb stanowiska:
+          </span>
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 gap-1 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => handleSwitchRole('coordinator')}
+              className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                workstationRole === 'coordinator'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Stanowisko 1: Przypisuje zdjęcia z Magazynu do pozycji na fakturze i weryfikuje LOT/MHD"
+            >
+              <span>👩‍💼 1. Koordynator (Przypisanie i weryfikacja)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchRole('warehouse')}
+              className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                workstationRole === 'warehouse'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Stanowisko 2: Tylko wgrywa zdjęcia opakowań do Chmury Live dla Koordynatora"
+            >
+              <span>📦 2. Magazyn (Wgrywanie zdjęć opakowań)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => syncPackagingPhotosFromCloud(true)}
+            disabled={isSyncingPhotos}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+            title="Pobierz najnowsze zdjęcia opakowań wgrane przez Stanowisko 2 (Magazyn)"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncingPhotos ? 'animate-spin' : ''}`} />
+            <span>Odbierz zdjęcia z Magazynu</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Powiadomienie o synchronizacji zdjęć Magazyn <-> Koordynator */}
+      {syncNotice && (
+        <div className="mt-2.5 p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-950 font-bold flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{syncNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSyncNotice(null)}
+            className="text-emerald-700 hover:text-emerald-950 font-bold px-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Baner informacyjny gdy wybrano Stanowisko 2: Magazyn */}
+      {workstationRole === 'warehouse' && (
+        <div className="mt-3 p-3.5 rounded-xl bg-amber-50/90 border border-amber-300 text-xs text-amber-950 flex items-start gap-2.5">
+          <span className="text-lg">📦</span>
+          <div>
+            <p className="font-bold text-amber-900">
+              Jesteś w trybie Stanowiska 2: Magazyn (Wgrywanie zdjęć opakowań)
+            </p>
+            <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+              Dodaj poniżej zdjęcia opakowań z widocznym numerem serii (<code>LOT</code>) i datą ważności (<code>MHD</code>). Zdjęcia zostaną <strong>automatycznie przesłane przez Chmurę Live do Stanowiska 1 (Koordynator)</strong>, który przypisze je do odpowiednich pozycji na fakturze i zweryfikuje dane.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Baner informacyjny gdy wybrano tryb bez serii i dat */}
       {logisticsFormat === 'none' && (
@@ -499,6 +763,8 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           className={`mt-4 border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
             isDraggingPhotos
               ? 'border-emerald-500 bg-emerald-50/70'
+              : workstationRole === 'warehouse'
+              ? 'border-amber-300 hover:border-amber-400 bg-amber-50/30 hover:bg-amber-50/50'
               : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
           }`}
         >
@@ -506,11 +772,14 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
             <Camera className="w-6 h-6" />
           </div>
           <p className="text-sm font-bold text-slate-800">
-            Kliknij „📷 Dodaj zdjęcie produktu” lub upuść zdjęcia opakowań
+            {workstationRole === 'warehouse'
+              ? '📦 Kliknij lub upuść zdjęcia opakowań z Magazynu (trafią od razu do Koordynatora)'
+              : 'Kliknij „📷 Dodaj zdjęcie produktu” lub upuść zdjęcia opakowań'}
           </p>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-            W Etapie 1 AI rozpozna <strong>wyłącznie produkt</strong>. Dopiero po zatwierdzeniu
-            uruchomisz analizę wizualną nadruku LOT / MHD z możliwością powiększenia fragmentu (Zoom).
+            {workstationRole === 'warehouse'
+              ? 'Wystarczy zrobić zdjęcia opakowań z widocznym nadrukiem LOT i MHD. Przypisaniem do pozycji i weryfikacją zajmie się Stanowisko 1 (Koordynator).'
+              : 'W Etapie 1 przypisujesz produkt z faktury. Dopiero po zatwierdzeniu uruchomisz analizę wizualną nadruku LOT / MHD z możliwością powiększenia fragmentu (Zoom).'}
           </p>
         </div>
       )}
@@ -520,7 +789,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
         <div className="mt-4 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-900">
-              Przesłane zdjęcia ({photoItems.length}):
+              Przesłane zdjęcia w Chmurze Live ({photoItems.length}):
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -531,7 +800,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                 <span>Dodaj kolejne zdjęcie</span>
               </button>
               <button
-                onClick={() => setPhotoItems([])}
+                onClick={handleClearAllPhotos}
                 className="text-xs text-red-600 hover:underline cursor-pointer"
               >
                 Usuń wszystkie
@@ -605,6 +874,29 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                     </div>
 
                     {/* SEKCJA GŁÓWNA */}
+                    {workstationRole === 'warehouse' ? (
+                      <div className="flex-1 w-full p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>☁️ Zdjęcie przekazane w Chmurze Live do Koordynatora</span>
+                          </div>
+                          <p className="text-xs text-slate-700 font-medium mt-1">
+                            Plik: <strong>{photo.fileName}</strong>
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Stanowisko 1 (Koordynator) przypisze to opakowanie do pozycji zamówienia i zweryfikuje serię <code>LOT</code> oraz datę ważności <code>MHD</code>.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchRole('coordinator')}
+                          className="px-3 py-1.5 text-[11px] font-bold text-emerald-900 bg-white hover:bg-emerald-100 border border-emerald-300 rounded-lg cursor-pointer shrink-0"
+                        >
+                          👩‍💼 Przełącz na Koordynatora (przypisz i zweryfikuj)
+                        </button>
+                      </div>
+                    ) : (
                     <div className="flex-1 w-full space-y-3">
                       {/* ========================================================
                           ETAP 1: ROZPOZNANIE I ZATWIERDZENIE PRODUKTU
@@ -613,7 +905,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
                             <Layers className="w-3 h-3 text-emerald-600" />
-                            Etap 1: Identyfikacja Produktu (bez odczytu LOT/MHD)
+                            Etap 1 (Koordynator): Przypisanie zdjęcia opakowania do pozycji faktury
                           </span>
 
                           {photo.isAnalyzingProduct ? (
@@ -1084,6 +1376,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                           </div>
                         )}
                     </div>
+                    )}
                   </div>
                 </div>
               );
