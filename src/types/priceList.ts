@@ -2,6 +2,7 @@ import { VatRate } from './ksef';
 
 export interface PriceListItem {
   gtin: string; // Kod EAN/GTIN
+  bloz?: string; // Kod BLOZ-7 (opcjonalny)
   name: string; // Nazwa towaru w cenniku
   baseNetPrice: number; // Cena bazowa netto (katalogowa)
   discountPercent: number; // Procent rabatu np. 5.0 (5%)

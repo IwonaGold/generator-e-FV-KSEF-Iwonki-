@@ -5,8 +5,10 @@ import {
   PriceListAuditSummary,
   ColumnMapping,
   RawSheetInfo,
+  GtinMatchStatus,
 } from '../types/priceList';
-import { InvoiceItem } from '../types/ksef';
+import { InvoiceItem, VatRate } from '../types/ksef';
+import { ClientPriceListItem } from '../types/knowledgeBase';
 import { fixPolishMojibake } from './textEncoding';
 
 /**
@@ -493,7 +495,223 @@ export async function parsePriceListFile(
 }
 
 /**
- * Porównuje pozycje z bieżącej faktury z wgranym cennikiem XLSX
+ * Konwertuje cennik kontrahenta z Centrum Wiedzy (DOZ_SPECIAL lub Q3_STANDARD)
+ * na format PriceListItem[] używany przez moduł weryfikacji cen i kodów EAN w Kroku 4 i 5
+ */
+export function convertKnowledgePriceListToItems(
+  clientList: ClientPriceListItem[]
+): PriceListItem[] {
+  return (clientList || []).map((item) => ({
+    gtin: item.ean,
+    bloz: item.bloz,
+    name: item.name,
+    baseNetPrice: item.baseNetPrice,
+    discountPercent: parseFloat(String(item.discountLabel || '0').replace('%', '')) || 0,
+    discountedNetPrice: item.invoiceNetPrice,
+    vatRate: (item.vatRate as VatRate) || '8%',
+  }));
+}
+
+/**
+ * Sprawdza czy kod GTIN na fakturze jest pusty lub jest jedynie technicznym placeholderem
+ */
+export function isPlaceholderOrEmptyGtin(gtin?: string): boolean {
+  const clean = cleanGtinValue(gtin);
+  if (!clean) return true;
+  if (
+    clean === '9120000000000' ||
+    clean === '5900000000000' ||
+    clean === '0000000000000' ||
+    clean === '0'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Normalizuje nazwę produktu do precyzyjnego porównywania (uwzględnia rodziny produktów OMNi-BiOTiC / OMNi-LOGiC oraz gramatury/ilości saszetek)
+ */
+function normalizeProductForMatch(raw: string) {
+  const s = (raw || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/®|™/g, ' ')
+    .replace(/omni[\s\-]*biotic/g, ' omnibiotic ')
+    .replace(/omni[\s\-]*logic/g, ' omnilogic ')
+    .replace(/pro[\s\-]*vi[\s\-]*5/g, ' provi5 ')
+    .replace(/flora[\s\-]*plus\s*\+?/g, ' floraplus ')
+    .replace(/stress[\s\-]*repair(?:\s*9)?/g, ' stressrepair ')
+    .replace(/10[\s\-]*aad/g, ' 10aad ')
+    .replace(/cat\s*(?:&|and|i)\s*dog/g, ' catdog ')
+    .replace(/apple[\s\-]*pectin/g, ' applepectin ')
+    .replace(/meta[\s\-]*shake/g, ' metashake ')
+    .replace(/meta[\s\-]*tox/g, ' metatox ');
+
+  // Wyciągnij liczbę saszetek / kapsułek / pastylek (np. "28 sasz", "30 kaps", "30 pastylek")
+  const countMatches = Array.from(
+    s.matchAll(/\b(\d+)\s*(?:sasz|saszet|kaps|past|szt)\w*/g)
+  ).map((m) => m[1]);
+
+  // Wyciągnij gramaturę opakowania słoikowego/puszki (np. 60 g, 150 g, 250 g, 300 g, 450 g)
+  const weightMatches = Array.from(
+    s.matchAll(/\b(60|150|250|300|450)\s*g\b/g)
+  ).map((m) => `${m[1]}g`);
+
+  const tokens = s
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return {
+    normalizedText: tokens.join(' '),
+    tokens,
+    countMatches,
+    weightMatches,
+    hasKids: tokens.includes('kids'),
+    hasLight: tokens.includes('light'),
+  };
+}
+
+const CORE_PRODUCT_KEYS = [
+  '10aad',
+  'stressrepair',
+  'panda',
+  'active',
+  'hetox',
+  'migra',
+  'power',
+  'metabolic',
+  'floraplus',
+  'provi5',
+  'travel',
+  'colonize',
+  'immund',
+  'metatox',
+  'catdog',
+  'applepectin',
+  'fibre',
+  'metashake',
+  'immun',
+];
+
+function findBestPriceListMatchByName(
+  invoiceName: string,
+  priceList: PriceListItem[]
+): PriceListItem | undefined {
+  if (!invoiceName || ! invoiceName.trim()) return undefined;
+  const inv = normalizeProductForMatch(invoiceName);
+  if (inv.tokens.length === 0) return undefined;
+
+  let bestCandidate: PriceListItem | undefined = undefined;
+  let bestScore = 0;
+
+  for (const candidate of priceList) {
+    const cand = normalizeProductForMatch(candidate.name);
+    if (cand.tokens.length === 0) continue;
+
+    // Idealna zgodność znormalizowanego tekstu
+    if (inv.normalizedText === cand.normalizedText) {
+      return candidate;
+    }
+
+    let score = 0;
+
+    // 1. Sprawdź klucz główny linii produktowej
+    let coreMatched = false;
+    for (const key of CORE_PRODUCT_KEYS) {
+      const invHas = inv.tokens.includes(key);
+      const candHas = cand.tokens.includes(key);
+      if (invHas && candHas) {
+        score += 50;
+        coreMatched = true;
+      } else if (invHas !== candHas) {
+        score -= 40;
+      }
+    }
+
+    // Specjalna obsługa "OMNi-BiOTiC 6" oraz "OMNi-LOGiC PLUS"
+    const invIsOb6 =
+      inv.tokens.includes('omnibiotic') &&
+      inv.tokens.includes('6') &&
+      !inv.tokens.includes('hetox');
+    const candIsOb6 =
+      cand.tokens.includes('omnibiotic') &&
+      cand.tokens.includes('6') &&
+      !cand.tokens.includes('hetox');
+    if (invIsOb6 && candIsOb6) {
+      score += 50;
+      coreMatched = true;
+    } else if (invIsOb6 !== candIsOb6) {
+      score -= 35;
+    }
+
+    const invIsOlPlus = inv.tokens.includes('omnilogic') && inv.tokens.includes('plus');
+    const candIsOlPlus = cand.tokens.includes('omnilogic') && cand.tokens.includes('plus');
+    if (invIsOlPlus && candIsOlPlus) {
+      score += 50;
+      coreMatched = true;
+    } else if (invIsOlPlus !== candIsOlPlus) {
+      score -= 35;
+    }
+
+    // 2. Modyfikatory Kids / Light (krytyczne rozróżnienie)
+    if (inv.hasKids !== cand.hasKids) {
+      score -= 60;
+    } else if (inv.hasKids && cand.hasKids) {
+      score += 25;
+    }
+
+    if (inv.hasLight !== cand.hasLight) {
+      score -= 60;
+    } else if (inv.hasLight && cand.hasLight) {
+      score += 25;
+    }
+
+    // 3. Ilość saszetek / kapsułek (np. 7 vs 28 vs 30 vs 56)
+    if (inv.countMatches.length > 0 && cand.countMatches.length > 0) {
+      const sameCount = inv.countMatches.some((c) => cand.countMatches.includes(c));
+      if (sameCount) {
+        score += 40;
+      } else {
+        score -= 45;
+      }
+    } else if (inv.countMatches.length !== cand.countMatches.length) {
+      // Np. jedno to słoik 60g bez saszetek, a drugie to saszetki
+      if (inv.weightMatches.length > 0 || cand.weightMatches.length > 0) {
+        score -= 25;
+      }
+    }
+
+    // 4. Gramatura słoika / puszki (60g, 150g, 250g, 300g, 450g)
+    if (inv.weightMatches.length > 0 && cand.weightMatches.length > 0) {
+      const sameWeight = inv.weightMatches.some((w) => cand.weightMatches.includes(w));
+      if (sameWeight) {
+        score += 40;
+      } else {
+        score -= 45;
+      }
+    }
+
+    // 5. Ogólne pokrywanie się słów (dla innych produktów spoza listy Allergosan)
+    const commonTokens = inv.tokens.filter(
+      (t) => t.length >= 3 && cand.tokens.includes(t)
+    );
+    score += commonTokens.length * 6;
+
+    if ((coreMatched || commonTokens.length >= 2) && score > bestScore && score >= 25) {
+      bestScore = score;
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate;
+}
+
+/**
+ * Porównuje pozycje z bieżącej faktury z cennikiem (automatycznym z Centrum Wiedzy lub wgranym XLSX)
  */
 export function comparePricesWithInvoice(
   invoiceItems: InvoiceItem[],
@@ -518,26 +736,39 @@ export function comparePricesWithInvoice(
   invoiceItems.forEach((item) => {
     totalInvoiceNet += item.quantity * item.netPrice;
 
-    const cleanInvoiceGtin = cleanGtinValue(item.gtin);
-    const cleanInvoiceName = (item.name || '').toLowerCase().trim();
+    const rawCleanGtin = cleanGtinValue(item.gtin);
+    const hasValidInvoiceGtin = !isPlaceholderOrEmptyGtin(item.gtin);
+    const cleanInvoiceGtin = hasValidInvoiceGtin ? rawCleanGtin : '';
+    const cleanInvoiceBloz = cleanGtinValue(item.bloz7);
 
-    // 1. Próba dopasowania po GTIN / EAN
-    let matchedItem = priceList.find((p) => {
-      const pGtin = cleanGtinValue(p.gtin);
-      return cleanInvoiceGtin && pGtin && (cleanInvoiceGtin === pGtin || cleanInvoiceGtin.includes(pGtin) || pGtin.includes(cleanInvoiceGtin));
-    });
+    // 1. Próba dopasowania po dokładnym kodzie GTIN / EAN
+    let matchedItem = hasValidInvoiceGtin
+      ? priceList.find((p) => {
+          const pGtin = cleanGtinValue(p.gtin);
+          return (
+            pGtin &&
+            (cleanInvoiceGtin === pGtin ||
+              (cleanInvoiceGtin.length >= 8 &&
+                pGtin.length >= 8 &&
+                (cleanInvoiceGtin.includes(pGtin) || pGtin.includes(cleanInvoiceGtin))))
+          );
+        })
+      : undefined;
     let matchedBy: 'gtin' | 'name' | 'none' = matchedItem ? 'gtin' : 'none';
 
-    // 2. Próba dopasowania po nazwie
-    if (!matchedItem && cleanInvoiceName) {
+    // 2. Próba dopasowania po kodzie BLOZ-7 (jeśli podano bloz7 lub jeśli w polu GTIN wpisano 7-cyfrowy BLOZ)
+    if (!matchedItem && (cleanInvoiceBloz || rawCleanGtin.length === 7)) {
+      const blozToFind = cleanInvoiceBloz || rawCleanGtin;
       matchedItem = priceList.find((p) => {
-        const pName = (p.name || '').toLowerCase().trim();
-        if (pName === cleanInvoiceName) return true;
-        // Sprawdź dopasowanie pierwszych kluczowych słów (np. "OMNi-BiOTiC Active")
-        const itemWords = cleanInvoiceName.split(/\s+/).slice(0, 3).join(' ');
-        const pWords = pName.split(/\s+/).slice(0, 3).join(' ');
-        return itemWords.length >= 6 && (pName.includes(itemWords) || cleanInvoiceName.includes(pWords));
+        const pBloz = cleanGtinValue(p.bloz);
+        return pBloz && pBloz === blozToFind;
       });
+      if (matchedItem) matchedBy = 'gtin';
+    }
+
+    // 3. Próba inteligentnego dopasowania po nazwie produktu i wielkości opakowania
+    if (!matchedItem && item.name) {
+      matchedItem = findBestPriceListMatchByName(item.name, priceList);
       if (matchedItem) matchedBy = 'name';
     }
 
@@ -565,7 +796,10 @@ export function comparePricesWithInvoice(
     totalPriceListNet += item.quantity * priceListNet;
 
     const diff = Math.round((item.netPrice - priceListNet) * 100) / 100;
-    const diffPercent = priceListNet > 0 ? Math.round(((item.netPrice - priceListNet) / priceListNet) * 1000) / 10 : 0;
+    const diffPercent =
+      priceListNet > 0
+        ? Math.round(((item.netPrice - priceListNet) / priceListNet) * 1000) / 10
+        : 0;
 
     const isMatch = Math.abs(diff) <= 0.01;
 
@@ -582,15 +816,15 @@ export function comparePricesWithInvoice(
     let gtinStatus: GtinMatchStatus = 'not_found';
     let gtinNotice: string | undefined = undefined;
 
-    if (!cleanInvoiceGtin && pGtin) {
+    if (!hasValidInvoiceGtin && pGtin) {
       gtinStatus = 'missing_in_order';
       gtinNotice = `Brak kodu EAN w zamówieniu (w cenniku: ${matchedItem.gtin})`;
       gtinMissingCount++;
-    } else if (cleanInvoiceGtin && !pGtin) {
+    } else if (hasValidInvoiceGtin && !pGtin) {
       gtinStatus = 'missing_in_pricelist';
       gtinNotice = 'Brak kodu GTIN w cenniku dla tego produktu';
-    } else if (cleanInvoiceGtin && pGtin) {
-      if (cleanInvoiceGtin === pGtin || cleanInvoiceGtin.includes(pGtin) || pGtin.includes(cleanInvoiceGtin)) {
+    } else if (hasValidInvoiceGtin && pGtin) {
+      if (cleanInvoiceGtin === pGtin) {
         gtinStatus = 'match';
         gtinNotice = `EAN zgodny z cennikiem (${matchedItem.gtin})`;
         gtinMatchedCount++;

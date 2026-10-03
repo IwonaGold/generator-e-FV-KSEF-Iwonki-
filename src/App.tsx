@@ -34,7 +34,10 @@ import {
   PRESET_NO_BATCHES_ITEMS,
 } from './utils/sampleData';
 import { generateKSeFXML, validateKSeFInvoice } from './utils/ksefGenerator';
-import { comparePricesWithInvoice } from './utils/priceListParser';
+import {
+  comparePricesWithInvoice,
+  convertKnowledgePriceListToItems,
+} from './utils/priceListParser';
 import { matchOrBuildBuyerFromOrder, detectPharmacyChain } from './utils/orderParser';
 import { AppModule } from './types/navigation';
 import { HomePortalView } from './components/HomePortalView';
@@ -45,6 +48,13 @@ import { KnowledgeCenterView } from './components/KnowledgeCenterView';
 import { ArchivedOrder } from './types/ordersHistory';
 import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
 import { extractInvoiceNumberFromXml } from './utils/ksefXmlParser';
+import {
+  DOZ_SPECIAL_PRICE_LIST,
+  STANDARD_Q3_PRICE_LIST,
+  INITIAL_KEY_CLIENTS,
+  KeyClientProfile,
+} from './types/knowledgeBase';
+import { getKeyClients } from './utils/knowledgeStorage';
 
 /**
  * Generator świeżych, czystych metadanych faktury (od zera)
@@ -123,9 +133,12 @@ export default function App() {
   // Plik zamówienia z kroku 1 (od zera)
   const [orderFile, setOrderFile] = useState<{ name: string; size: string } | null>(null);
 
-  // Stan Cennika XLSX & Weryfikacji Cen z kroku 4 (od zera)
-  const [priceList, setPriceList] = useState<PriceListItem[] | null>(null);
-  const [priceListFileName, setPriceListFileName] = useState<string | null>(null);
+  // Stan Cennika (Automatyczny z Centrum Wiedzy wg Odbiorcy lub Ręczny XLSX)
+  const [manualPriceList, setManualPriceList] = useState<PriceListItem[] | null>(null);
+  const [manualPriceListFileName, setManualPriceListFileName] = useState<string | null>(null);
+  const [priceListSource, setPriceListSource] = useState<'knowledge_auto' | 'manual_xlsx'>('knowledge_auto');
+  const [knowledgePriceListOverride, setKnowledgePriceListOverride] = useState<'DOZ_SPECIAL' | 'Q3_STANDARD' | null>(null);
+  const [knowledgeClients, setKnowledgeClients] = useState<KeyClientProfile[]>(INITIAL_KEY_CLIENTS);
   const [isVerificationEnabled, setIsVerificationEnabled] = useState<boolean>(true);
   const [priceNotice, setPriceNotice] = useState<string | null>(null);
 
@@ -134,7 +147,7 @@ export default function App() {
   const [isWzModalOpen, setIsWzModalOpen] = useState(false);
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
 
-  // --- Moduł Aplikacji: 'home' (Strona startowa z 2 kafelkami) | 'invoice' | 'correction' | 'history' ---
+  // --- Moduł Aplikacji: 'home' (Strona startowa z 2 kafelkami) | 'invoice' | 'correction' | 'history' | 'knowledge' ---
   const [activeModule, setActiveModule] = useState<AppModule>(() => {
     try {
       const saved = localStorage.getItem('iwonka_active_module');
@@ -165,14 +178,21 @@ export default function App() {
   const [preloadedOrderForCorrection, setPreloadedOrderForCorrection] = useState<ArchivedOrder | null>(null);
   const [pendingOrderSourceId, setPendingOrderSourceId] = useState<string | null>(null);
 
-  // Pobranie historii przy starcie
+  // Pobranie historii oraz kart klientów z Centrum Wiedzy przy starcie
   useEffect(() => {
     getArchivedOrders().then((data) => {
       if (data && Array.isArray(data)) {
         setArchivedOrders(data);
       }
     });
-  }, []);
+    getKeyClients()
+      .then((clients) => {
+        if (clients && Array.isArray(clients) && clients.length > 0) {
+          setKnowledgeClients(clients);
+        }
+      })
+      .catch(() => {});
+  }, [activeModule]);
 
   const refreshArchivedOrders = async () => {
     const data = await getArchivedOrders();
@@ -204,6 +224,8 @@ export default function App() {
           ? order.invoiceNumber
           : '',
     }));
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
     setActiveModule('invoice');
     setPriceNotice(
       `⚡ Załadowano dane zamówienia ${order.orderNumber || order.id} do Generatora e-Faktur KSeF!`
@@ -283,21 +305,112 @@ export default function App() {
     setTimeout(() => setPriceNotice(null), 6000);
   };
 
-  // Wyliczanie porównania cen z cennikiem
+  // --- AUTOMATYCZNY DOBÓR CENNIKA Z CENTRUM WIEDZY WG PRZYPISANEGO ODBIORCY ---
+  const {
+    effectivePriceList,
+    effectivePriceListName,
+    activeKnowledgePriceListType,
+    matchedRecipientLabel,
+  } = useMemo(() => {
+    const cleanNip = (buyer.nip || '').replace(/\D/g, '');
+    const combinedText = `${selectedChain} ${buyer.name || ''} ${thirdParty?.name || ''}`.toLowerCase();
+
+    const matchedClient = (knowledgeClients || []).find((kc) => {
+      const kcNip = (kc.nip || '').replace(/\D/g, '');
+      if (cleanNip && kcNip && cleanNip === kcNip) return true;
+      if (selectedChain === 'DOZ' && kc.id === 'client-doz') return true;
+      if (selectedChain === 'Dr. Max' && kc.id === 'client-drmax') return true;
+      if (selectedChain === 'Super-Pharm' && kc.id === 'client-superpharm') return true;
+      if (selectedChain === 'Gemini' && kc.id === 'client-gemini') return true;
+      if (combinedText.includes('doz') && kc.id === 'client-doz') return true;
+      if (
+        (combinedText.includes('dr. max') ||
+          combinedText.includes('drmax') ||
+          combinedText.includes('lekomat')) &&
+        kc.id === 'client-drmax'
+      )
+        return true;
+      if (
+        (combinedText.includes('super-pharm') ||
+          combinedText.includes('super pharm') ||
+          combinedText.includes('superpharm')) &&
+        kc.id === 'client-superpharm'
+      )
+        return true;
+      if (combinedText.includes('gemini') && kc.id === 'client-gemini') return true;
+      if (combinedText.includes('modum') && kc.id === 'client-modumpharma') return true;
+      const shortLower = (kc.shortName || '').toLowerCase();
+      return shortLower.length > 2 && combinedText.includes(shortLower);
+    });
+
+    const isDozRecipient =
+      matchedClient?.priceListType === 'DOZ_SPECIAL' ||
+      matchedClient?.id === 'client-doz' ||
+      selectedChain === 'DOZ' ||
+      cleanNip === '8271807718' ||
+      combinedText.includes('doz');
+
+    const resolvedKnowledgeType: 'DOZ_SPECIAL' | 'Q3_STANDARD' =
+      knowledgePriceListOverride || (isDozRecipient ? 'DOZ_SPECIAL' : 'Q3_STANDARD');
+
+    const recipientLabel =
+      matchedClient?.shortName ||
+      (selectedChain !== 'Custom' ? selectedChain : buyer.name?.trim() || 'Wszystkie sieci (Domyślny Q3)');
+
+    if (priceListSource === 'manual_xlsx' && manualPriceList && manualPriceList.length > 0) {
+      return {
+        effectivePriceList: manualPriceList,
+        effectivePriceListName: manualPriceListFileName || 'Wgrany cennik XLSX',
+        activeKnowledgePriceListType: resolvedKnowledgeType,
+        matchedRecipientLabel: recipientLabel,
+      };
+    }
+
+    const knowledgeList =
+      resolvedKnowledgeType === 'DOZ_SPECIAL'
+        ? convertKnowledgePriceListToItems(DOZ_SPECIAL_PRICE_LIST)
+        : convertKnowledgePriceListToItems(STANDARD_Q3_PRICE_LIST);
+
+    const knowledgeName =
+      resolvedKnowledgeType === 'DOZ_SPECIAL'
+        ? 'Cennik Centrum Wiedzy: DOZ Direct od 08.2026 (Kolumna O — rabat 12% netto na FV)'
+        : `Cennik Centrum Wiedzy (${recipientLabel}): Cennik Standardowy Q3 2026 (rabat 5% netto na FV)`;
+
+    return {
+      effectivePriceList: knowledgeList,
+      effectivePriceListName: knowledgeName,
+      activeKnowledgePriceListType: resolvedKnowledgeType,
+      matchedRecipientLabel: recipientLabel,
+    };
+  }, [
+    buyer.name,
+    buyer.nip,
+    thirdParty?.name,
+    selectedChain,
+    knowledgeClients,
+    knowledgePriceListOverride,
+    priceListSource,
+    manualPriceList,
+    manualPriceListFileName,
+  ]);
+
+  // Wyliczanie porównania cen i kodów EAN z aktywnym cennikiem
   const { comparisons, auditSummary } = useMemo(() => {
-    if (!priceList || priceList.length === 0) {
+    if (!effectivePriceList || effectivePriceList.length === 0) {
       return { comparisons: new Map<string, PriceComparisonItem>(), auditSummary: null };
     }
-    const result = comparePricesWithInvoice(items, priceList);
+    const result = comparePricesWithInvoice(items, effectivePriceList);
     return { comparisons: result.comparisons, auditSummary: result.summary };
-  }, [items, priceList]);
+  }, [items, effectivePriceList]);
 
   // --- Resetowanie Wszystkiego do Czystego Stanu (Od Zera) ---
   const handleResetEverything = () => {
     setItems([]);
     setOrderFile(null);
-    setPriceList(null);
-    setPriceListFileName(null);
+    setManualPriceList(null);
+    setManualPriceListFileName(null);
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
     setThirdParty(null);
     setBuyer(EMPTY_BUYER);
     setSelectedChain('Custom');
@@ -306,24 +419,86 @@ export default function App() {
     setTimeout(() => setPriceNotice(null), 4000);
   };
 
-  // --- Handlery Cennika XLSX ---
+  // --- Handlery Cennika (Centrum Wiedzy & XLSX) ---
   const handlePriceListLoaded = (fileName: string, parsedItems: PriceListItem[]) => {
-    setPriceList(parsedItems);
-    setPriceListFileName(fileName);
+    setManualPriceList(parsedItems);
+    setManualPriceListFileName(fileName);
+    setPriceListSource('manual_xlsx');
     setIsVerificationEnabled(true);
-    setPriceNotice(`Pomyślnie załadowano cennik ${fileName} (${parsedItems.length} pozycji).`);
+    setPriceNotice(`Pomyślnie załadowano własny cennik ${fileName} (${parsedItems.length} pozycji).`);
     setTimeout(() => setPriceNotice(null), 4000);
   };
 
   const handleClearPriceList = () => {
-    setPriceList(null);
-    setPriceListFileName(null);
-    setPriceNotice(null);
+    setManualPriceList(null);
+    setManualPriceListFileName(null);
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
+    setPriceNotice('Przywrócono automatyczny cennik przypisany do odbiorcy w Centrum Wiedzy.');
+    setTimeout(() => setPriceNotice(null), 4000);
+  };
+
+  const handleSwitchKnowledgePriceList = (type: 'DOZ_SPECIAL' | 'Q3_STANDARD' | 'AUTO') => {
+    setPriceListSource('knowledge_auto');
+    if (type === 'AUTO') {
+      setKnowledgePriceListOverride(null);
+    } else {
+      setKnowledgePriceListOverride(type);
+    }
+    setIsVerificationEnabled(true);
+  };
+
+  // Krok 4: Zastosowanie WSZYSTKICH danych z cennika (zarówno cen netto po rabacie, jak i kodów EAN)
+  const handleApplyAllFromPriceList = () => {
+    if (!effectivePriceList) return;
+
+    let updatedPriceCount = 0;
+    let updatedGtinCount = 0;
+
+    const newItems = items.map((item) => {
+      const comp = comparisons.get(item.id);
+      if (!comp) return item;
+
+      let nextPrice = item.netPrice;
+      let nextGtin = item.gtin;
+
+      if (comp.status === 'discrepancy' && comp.priceListPrice !== null) {
+        nextPrice = comp.priceListPrice;
+        updatedPriceCount++;
+      }
+
+      if (
+        comp.priceListGtin &&
+        (comp.gtinStatus === 'discrepancy' || comp.gtinStatus === 'missing_in_order')
+      ) {
+        nextGtin = comp.priceListGtin;
+        updatedGtinCount++;
+      }
+
+      if (nextPrice !== item.netPrice || nextGtin !== item.gtin) {
+        return {
+          ...item,
+          netPrice: nextPrice,
+          gtin: nextGtin,
+        };
+      }
+      return item;
+    });
+
+    setItems(newItems);
+    setPriceNotice(
+      `⚡ Automatycznie uzupełniono z cennika: ${updatedPriceCount} ${
+        updatedPriceCount === 1 ? 'cenę netto po rabacie' : 'cen netto po rabacie'
+      } oraz ${updatedGtinCount} ${
+        updatedGtinCount === 1 ? 'kod EAN/GTIN' : 'kodów EAN/GTIN'
+      }!`
+    );
+    setTimeout(() => setPriceNotice(null), 5000);
   };
 
   // Krok 4 Opcja 2: Użycie cen z cennika dla pozycji z rozbieżnościami
   const handleApplyPriceListDiscrepancies = () => {
-    if (!priceList) return;
+    if (!effectivePriceList) return;
 
     let updatedCount = 0;
     const newItems = items.map((item) => {
@@ -355,7 +530,7 @@ export default function App() {
 
   // Zastosowanie kodów EAN/GTIN z cennika dla pozycji z rozbieżnościami lub brakującymi
   const handleApplyPriceListGtins = () => {
-    if (!priceList) return;
+    if (!effectivePriceList) return;
 
     let updatedCount = 0;
     const newItems = items.map((item) => {
@@ -385,9 +560,28 @@ export default function App() {
     );
   };
 
+  const handleApplySingleBoth = (
+    itemId: string,
+    newPrice?: number | null,
+    newGtin?: string | null
+  ) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+        return {
+          ...item,
+          netPrice: typeof newPrice === 'number' && newPrice > 0 ? newPrice : item.netPrice,
+          gtin: newGtin ? newGtin : item.gtin,
+        };
+      })
+    );
+  };
+
   // --- Handlery Sieci i Presety Faktur ---
   const handleSelectChain = (chain: PharmacyChain) => {
     setSelectedChain(chain);
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
     const profile = PHARMACY_CHAINS[chain];
     if (profile && chain !== 'Custom') {
       setBuyer({ ...profile.buyer });
@@ -539,6 +733,9 @@ export default function App() {
       quantityInBatch: pi.quantity || 1,
     }));
     setItems(newItems);
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
+    setIsVerificationEnabled(true);
 
     if (hasBatchesOrExpiry) {
       setLogisticsFormat('gs1_composite');
@@ -580,6 +777,9 @@ export default function App() {
 
   // Wczytanie zamówienia z Historii Zamówień Sieciowych bezpośrednio do formularza FV
   const handleLoadArchivedOrderToInvoice = (order: ArchivedOrder) => {
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
+    setIsVerificationEnabled(true);
     if (order.chain) {
       setSelectedChain(order.chain);
     }
@@ -753,17 +953,26 @@ export default function App() {
               onUpdateItem={handleUpdateItem}
             />
 
-            {/* KROK 4: Weryfikacja z Cennikiem (XLSX) */}
+            {/* KROK 4: Automatyczna Weryfikacja Ceny Netto i Kodu EAN wg Cennika z Centrum Wiedzy (lub XLSX) */}
             <PriceListSection
-              priceList={priceList}
-              priceListFileName={priceListFileName}
+              priceList={effectivePriceList}
+              priceListFileName={effectivePriceListName}
               onPriceListLoaded={handlePriceListLoaded}
               onClearPriceList={handleClearPriceList}
               auditSummary={auditSummary}
+              comparisons={comparisons}
               isVerificationEnabled={isVerificationEnabled}
               onToggleVerification={setIsVerificationEnabled}
               onApplyPriceListDiscrepancies={handleApplyPriceListDiscrepancies}
               onApplyPriceListGtins={handleApplyPriceListGtins}
+              onApplyAllFromPriceList={handleApplyAllFromPriceList}
+              onApplySinglePrice={handleApplySinglePrice}
+              onApplySingleGtin={handleApplySingleGtin}
+              onApplySingleBoth={handleApplySingleBoth}
+              priceListSource={priceListSource}
+              activeKnowledgePriceListType={activeKnowledgePriceListType}
+              matchedRecipientLabel={matchedRecipientLabel}
+              onSwitchKnowledgePriceList={handleSwitchKnowledgePriceList}
             />
 
             {/* KROK 5: Pozycje Towarowe i Podsumowanie E-Faktury z podglądem XML */}
@@ -777,7 +986,7 @@ export default function App() {
               onQuickFillBatches={handleQuickFillBatches}
               onClearBatches={handleClearBatches}
               priceComparisons={comparisons}
-              isVerificationEnabled={isVerificationEnabled && !!priceList}
+              isVerificationEnabled={isVerificationEnabled && !!effectivePriceList}
               onApplySinglePrice={handleApplySinglePrice}
               onApplySingleGtin={handleApplySingleGtin}
               onOpenXmlModal={() => setIsXmlModalOpen(true)}
