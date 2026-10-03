@@ -289,7 +289,23 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
     await writeOrdersToBrowserStorage(merged);
 
     // Jeśli w przeglądarce były nowsze dane / zdjęcia (np. po wybudzeniu darmowego serwera Render), zsynchronizuj serwer w tle
-    if (merged.length !== serverOrders.length) {
+    const serverMap = new Map(serverOrders.map((o) => [o.id, o]));
+    const needsServerSync =
+      merged.length !== serverOrders.length ||
+      merged.some((m) => {
+        const s = serverMap.get(m.id);
+        if (!s) return true;
+        const mPhotos = m.parcelPhotos?.length || 0;
+        const sPhotos = s.parcelPhotos?.length || 0;
+        if (mPhotos !== sPhotos) return true;
+        return (
+          (m.updatedAt || '') !== (s.updatedAt || '') ||
+          m.shippingStatus !== s.shippingStatus ||
+          m.preparationStatus !== s.preparationStatus
+        );
+      });
+
+    if (needsServerSync) {
       fetch('/api/orders-history/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
