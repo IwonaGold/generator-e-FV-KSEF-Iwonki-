@@ -261,6 +261,18 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
   try {
     const res = await fetch('/api/orders-history');
     if (res.ok) {
+      const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
+      if (deletedHeader) {
+        try {
+          const srvDeleted: string[] = JSON.parse(deletedHeader);
+          if (Array.isArray(srvDeleted)) {
+            for (const dId of srvDeleted) {
+              deletedIds.add(dId);
+              addDeletedId(dId);
+            }
+          }
+        } catch {}
+      }
       const data = await res.json();
       if (Array.isArray(data)) {
         serverOrders = data;
