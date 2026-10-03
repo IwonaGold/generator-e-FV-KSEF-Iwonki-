@@ -540,6 +540,15 @@ app.delete('/api/orders-history/:id', (req: Request, res: Response) => {
   return res.json({ success: true, deletedId: id });
 });
 
+app.post('/api/orders-history/sync', (req: Request, res: Response) => {
+  const { orders } = req.body;
+  if (!Array.isArray(orders)) {
+    return res.status(400).json({ error: 'Nieprawidłowa lista zamówień do synchronizacji' });
+  }
+  writeOrdersToDisk(orders);
+  return res.json({ success: true, count: orders.length });
+});
+
 async function startServer() {
   if (!isProduction) {
     const vite = await createViteServer({

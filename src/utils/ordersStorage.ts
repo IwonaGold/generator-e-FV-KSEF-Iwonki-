@@ -92,41 +92,205 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
   });
 }
 
+const DELETED_IDS_KEY = 'iwonka_ksef_deleted_order_ids_v1';
+const IDB_NAME = 'iwonka_ksef_db_v1';
+const IDB_STORE = 'orders_store';
+const IDB_KEY = 'archived_orders_list';
+
+function getDeletedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch {
+    // ignore
+  }
+  return new Set();
+}
+
+function addDeletedId(id: string): void {
+  try {
+    const set = getDeletedIds();
+    set.add(id);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+}
+
 /**
- * Pobiera listę archiwalnych zamówień (z serwera lub localStorage z fallbackiem do danych wzorcowych)
+ * Odczyt / Zapis w IndexedDB (pojemność kilku GB na zdjęcia paczek — całkowicie za darmo w przeglądarce)
+ */
+function openOrdersIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB niedostępne'));
+    }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function readOrdersFromIdb(): Promise<ArchivedOrder[] | null> {
+  try {
+    const db = await openOrdersIdb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(IDB_KEY);
+      req.onsuccess = () => {
+        resolve(Array.isArray(req.result) ? req.result : null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function writeOrdersToBrowserStorage(orders: ArchivedOrder[]): Promise<void> {
+  // 1. Zapis pełnej bazy wraz ze wszystkimi zdjęciami w IndexedDB (brak limitu 5MB)
+  try {
+    const db = await openOrdersIdb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.put(orders, IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn('Błąd zapisu w IndexedDB:', e);
+  }
+
+  // 2. Zapis kopii w localStorage (jeśli przekroczy limit 5MB przez zdjęcia, zapisz wersję lekką)
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(orders));
+  } catch {
+    try {
+      const lightOrders = orders.map((o) => ({ ...o, parcelPhotos: [] }));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lightOrders));
+    } catch {
+      // ignore quota error
+    }
+  }
+}
+
+async function readOrdersFromBrowserStorage(): Promise<ArchivedOrder[]> {
+  const idbOrders = await readOrdersFromIdb();
+  if (idbOrders && idbOrders.length > 0) {
+    return idbOrders;
+  }
+  try {
+    const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Błąd odczytu z localStorage:', e);
+  }
+  return [];
+}
+
+/**
+ * Inteligentne łączenie danych z serwera (np. Render.com po restarcie) oraz lokalnej bazy przeglądarki,
+ * aby nigdy nie utracić nowo dodanych zamówień ani załączonych zdjęć przesyłek.
+ */
+function mergeServerAndLocalOrders(
+  serverList: ArchivedOrder[],
+  localList: ArchivedOrder[],
+  deletedIds: Set<string>
+): ArchivedOrder[] {
+  const map = new Map<string, ArchivedOrder>();
+
+  for (const srv of serverList) {
+    if (!srv || !srv.id || deletedIds.has(srv.id)) continue;
+    map.set(srv.id, srv);
+  }
+
+  for (const loc of localList) {
+    if (!loc || !loc.id || deletedIds.has(loc.id)) continue;
+    const existing = map.get(loc.id);
+    if (!existing) {
+      map.set(loc.id, loc);
+    } else {
+      const srvTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
+      const newer = locTime >= srvTime ? loc : existing;
+      const older = locTime >= srvTime ? existing : loc;
+      // Zachowaj zdjęcia przesyłki, jeśli w jednej z wersji są obecne
+      const mergedPhotos =
+        newer.parcelPhotos && newer.parcelPhotos.length > 0
+          ? newer.parcelPhotos
+          : older.parcelPhotos || [];
+      map.set(loc.id, {
+        ...older,
+        ...newer,
+        parcelPhotos: mergedPhotos,
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tB - tA;
+  });
+}
+
+/**
+ * Pobiera listę archiwalnych zamówień (z serwera + IndexedDB/localStorage z fallbackiem do danych wzorcowych)
  */
 export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
+  const deletedIds = getDeletedIds();
+  const localOrders = await readOrdersFromBrowserStorage();
+  let serverOrders: ArchivedOrder[] = [];
+
   try {
     const res = await fetch('/api/orders-history');
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const normalized = normalizeOrdersList(data);
-        // Zapisz kopię zapasową w localStorage
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
-        return normalized;
+      if (Array.isArray(data)) {
+        serverOrders = data;
       }
     }
   } catch (err) {
     console.warn('Serwer API niedostępny, używam bazy lokalnej:', err);
   }
 
-  // Fallback do localStorage
-  try {
-    const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return normalizeOrdersList(parsed);
-      }
+  if (serverOrders.length > 0 || localOrders.length > 0) {
+    const merged = normalizeOrdersList(
+      mergeServerAndLocalOrders(serverOrders, localOrders, deletedIds)
+    );
+    await writeOrdersToBrowserStorage(merged);
+
+    // Jeśli w przeglądarce były nowsze dane / zdjęcia (np. po wybudzeniu darmowego serwera Render), zsynchronizuj serwer w tle
+    if (merged.length !== serverOrders.length) {
+      fetch('/api/orders-history/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: merged }),
+      }).catch(() => {});
     }
-  } catch (e) {
-    console.warn('Błąd odczytu z localStorage:', e);
+
+    return merged;
   }
 
   // Domyślne dane początkowe
   const defaultOrders = normalizeOrdersList(INITIAL_ARCHIVED_ORDERS);
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultOrders));
+  await writeOrdersToBrowserStorage(defaultOrders);
   return defaultOrders;
 }
 
@@ -137,43 +301,41 @@ export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedO
   const normalizedOrder: ArchivedOrder = {
     ...order,
     chain: detectPharmacyChain(order.buyer, order.thirdParty, order.chain),
+    updatedAt: new Date().toISOString(),
   };
+
   // Próba zapisu na serwerze
-  let serverSaved = false;
   try {
-    const res = await fetch('/api/orders-history', {
+    await fetch('/api/orders-history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalizedOrder),
     });
-    if (res.ok) {
-      serverSaved = true;
-    }
   } catch (err) {
     console.warn('Nie udało się zapisać zamówienia na serwerze:', err);
   }
 
-  // Zapis w localStorage
+  // Zapis w IndexedDB oraz localStorage
   try {
     const existing = await getArchivedOrders();
     const idx = existing.findIndex((o) => o.id === normalizedOrder.id);
     let updated: ArchivedOrder[];
     if (idx >= 0) {
       updated = [...existing];
-      updated[idx] = { ...normalizedOrder, updatedAt: new Date().toISOString() };
+      updated[idx] = normalizedOrder;
     } else {
       updated = [normalizedOrder, ...existing];
     }
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    await writeOrdersToBrowserStorage(updated);
   } catch (e) {
-    console.warn('Błąd zapisu do localStorage:', e);
+    console.warn('Błąd zapisu w pamięci przeglądarki:', e);
   }
 
   return normalizedOrder;
 }
 
 /**
- * Częściowa aktualizacja (status dostawy, notatka)
+ * Częściowa aktualizacja (status dostawy, notatka, zdjęcia przesyłki)
  */
 export async function updateArchivedOrderFields(
   id: string,
@@ -190,16 +352,16 @@ export async function updateArchivedOrderFields(
     console.warn('Błąd PATCH na serwerze:', err);
   }
 
-  // Aktualizacja w localStorage
+  // Aktualizacja w IndexedDB oraz localStorage
   try {
     const existing = await getArchivedOrders();
     const updated = existing.map((o) =>
       o.id === id ? { ...o, ...fields, updatedAt: new Date().toISOString() } : o
     );
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    await writeOrdersToBrowserStorage(updated);
     return true;
   } catch (e) {
-    console.warn('Błąd aktualizacji w localStorage:', e);
+    console.warn('Błąd aktualizacji w pamięci przeglądarki:', e);
     return false;
   }
 }
@@ -208,6 +370,8 @@ export async function updateArchivedOrderFields(
  * Usunięcie zamówienia z historii
  */
 export async function deleteArchivedOrder(id: string): Promise<boolean> {
+  addDeletedId(id);
+
   try {
     await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -217,12 +381,12 @@ export async function deleteArchivedOrder(id: string): Promise<boolean> {
   }
 
   try {
-    const existing = await getArchivedOrders();
+    const existing = await readOrdersFromBrowserStorage();
     const filtered = existing.filter((o) => o.id !== id);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filtered));
+    await writeOrdersToBrowserStorage(filtered);
     return true;
   } catch (e) {
-    console.warn('Błąd usuwania w localStorage:', e);
+    console.warn('Błąd usuwania w pamięci przeglądarki:', e);
     return false;
   }
 }
