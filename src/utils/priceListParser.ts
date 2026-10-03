@@ -201,31 +201,66 @@ export function detectColumnMapping(headerRow: any[]): ColumnMapping {
   const normalized = headerRow.map((cell) => normalizeHeader(cell));
 
   // 1. Szukaj ceny netto po rabacie (najbardziej specyficzna)
-  mapping.discountedNetColIndex = normalized.findIndex((norm) =>
-    KEYWORDS.discountedNet.some((k) => norm.includes(k))
+  // Jeśli w arkuszu (np. DOZ) występują dwie kolumny (np. "Cena zakupu_DD_aktualna" i "Cena zakupu_DD_nowa" - kolumna O),
+  // priorytet ma kolumna zawierająca "nowa" / "nowy"
+  const newDiscountedIdx = normalized.findIndex(
+    (norm) =>
+      KEYWORDS.discountedNet.some((k) => norm.includes(k)) &&
+      (norm.includes('nowa') || norm.includes('nowy'))
   );
+  mapping.discountedNetColIndex =
+    newDiscountedIdx !== -1
+      ? newDiscountedIdx
+      : normalized.findIndex((norm) =>
+          KEYWORDS.discountedNet.some((k) => norm.includes(k))
+        );
 
-  // 2. Szukaj kodu GTIN / EAN
-  mapping.gtinColIndex = normalized.findIndex((norm) =>
-    KEYWORDS.gtin.some((k) => norm.includes(k))
+  // 2. Szukaj kodu GTIN / EAN (priorytet dla EAN / GTIN przed BLOZ / Indeks)
+  const primaryEanIdx = normalized.findIndex((norm) =>
+    ['gtin', 'ean', 'kodkreskowy', 'kodpaskowy', 'barcode', 'ean13', 'gtin13'].some((k) =>
+      norm.includes(k)
+    )
   );
+  mapping.gtinColIndex =
+    primaryEanIdx !== -1
+      ? primaryEanIdx
+      : normalized.findIndex((norm) =>
+          KEYWORDS.gtin.some((k) => norm.includes(k))
+        );
 
   // 3. Szukaj nazwy towaru
   mapping.nameColIndex = normalized.findIndex((norm) =>
     KEYWORDS.name.some((k) => norm.includes(k))
   );
 
-  // 4. Szukaj rabatu %
-  mapping.discountPercentColIndex = normalized.findIndex((norm) =>
-    KEYWORDS.discountPercent.some((k) => norm.includes(k))
+  // 4. Szukaj rabatu % (priorytet dla "nowy" / "nowa" jeśli istnieje)
+  const newDiscountPercentIdx = normalized.findIndex(
+    (norm) =>
+      KEYWORDS.discountPercent.some((k) => norm.includes(k)) &&
+      (norm.includes('nowa') || norm.includes('nowy'))
   );
+  mapping.discountPercentColIndex =
+    newDiscountPercentIdx !== -1
+      ? newDiscountPercentIdx
+      : normalized.findIndex((norm) =>
+          KEYWORDS.discountPercent.some((k) => norm.includes(k))
+        );
 
-  // 5. Szukaj ceny bazowej (pomijając kolumnę już wybraną jako cena po rabacie)
-  mapping.baseNetColIndex = normalized.findIndex(
+  // 5. Szukaj ceny bazowej (pomijając kolumnę już wybraną jako cena po rabacie; priorytet dla "nowa" / "nowy")
+  const newBaseNetIdx = normalized.findIndex(
     (norm, idx) =>
       idx !== mapping.discountedNetColIndex &&
-      KEYWORDS.baseNet.some((k) => norm.includes(k))
+      (KEYWORDS.baseNet.some((k) => norm.includes(k)) || norm.includes('exfactory')) &&
+      (norm.includes('nowa') || norm.includes('nowy'))
   );
+  mapping.baseNetColIndex =
+    newBaseNetIdx !== -1
+      ? newBaseNetIdx
+      : normalized.findIndex(
+          (norm, idx) =>
+            idx !== mapping.discountedNetColIndex &&
+            (KEYWORDS.baseNet.some((k) => norm.includes(k)) || norm.includes('exfactory'))
+        );
 
   // Jeśli nie znaleziono kolumny "po rabacie", ale jest cena bazowa i rabat -> użyj ceny bazowej jako punktu wyjścia
   if (mapping.discountedNetColIndex === -1 && mapping.baseNetColIndex !== -1) {
@@ -273,9 +308,13 @@ export function extractItemsFromGrid(
     // Jeśli wiersz jest pusty lub nie ma nazwy i GTIN
     if (!name && !gtin) continue;
 
-    let basePrice = parseNumericValue(rawBasePrice);
-    const discountVal = parseNumericValue(rawDiscount);
-    let discountedPrice = parseNumericValue(rawDiscountedPrice);
+    let basePrice = Math.round(parseNumericValue(rawBasePrice) * 100) / 100;
+    let discountVal = parseNumericValue(rawDiscount);
+    // Jeśli rabat w Excelu jest zapisany jako ułamek (np. 0.12 dla 12%), przelicz na procenty
+    if (discountVal > 0 && discountVal < 1) {
+      discountVal = Math.round(discountVal * 10000) / 100;
+    }
+    let discountedPrice = Math.round(parseNumericValue(rawDiscountedPrice) * 100) / 100;
 
     // Jeśli brak ceny po rabacie, ale jest cena bazowa
     if (discountedPrice <= 0 && basePrice > 0) {

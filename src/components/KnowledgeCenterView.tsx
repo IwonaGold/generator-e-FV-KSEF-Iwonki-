@@ -1069,11 +1069,11 @@ export const KnowledgeCenterView: React.FC = () => {
                             priceListType: val,
                             priceListTitle:
                               val === 'DOZ_SPECIAL'
-                                ? 'Cennik Specjalny DOZ Direct (Niższe ceny zakupu DD – rabat -15% na fakturze)'
+                                ? 'Cennik DOZ Direct od sierpnia 2026 (Kolumna O – Cena zakupu DD nowa, rabat 12% netto na FV)'
                                 : 'Cennik Standardowy Q3 2026 (Rabat handlowy -5% na fakturze)',
                             priceListRule:
                               val === 'DOZ_SPECIAL'
-                                ? '⚠️ ZASADA FAKTUROWANIA: Dla DOZ obowiązuje dedykowany cennik z niższymi cenami! Na fakturze (FV) zawsze musi widnieć CENA PO RABACIE NETTO (Cena zakupu DD aktualna / po rabacie -15% netto)!'
+                                ? '⚠️ ZASADA FAKTUROWANIA (OD SIERPNIA 2026): Dla DOZ obowiązuje nowy cennik — na fakturze (FV) zawsze musi widnieć CENA O (Cena zakupu_DD_nowa — cena netto po rabacie 12%)!'
                                 : '⚠️ ZASADA FAKTUROWANIA: Na fakturze (FV) zawsze musi widnieć CENA PO RABACIE NETTO (CENA PO RABACIE -5% NETTO z cennika Q3)!',
                           });
                         }}
@@ -1083,7 +1083,7 @@ export const KnowledgeCenterView: React.FC = () => {
                           Cennik Q3 2026 – Standardowy dla sieci (Cena po rabacie -5% netto na FV)
                         </option>
                         <option value="DOZ_SPECIAL">
-                          Cennik Specjalny DOZ Direct – Niższe ceny (Cena zakupu DD po rabacie -15% netto na FV)
+                          Cennik DOZ Direct od sierpnia 2026 – Kolumna O (Cena zakupu DD nowa po rabacie 12% netto na FV)
                         </option>
                       </select>
                     </div>
@@ -1300,7 +1300,7 @@ export const KnowledgeCenterView: React.FC = () => {
                           5.{' '}
                           {activeClient.priceListTitle ||
                             (isDozSpecialPricing
-                              ? 'Cennik Specjalny DOZ Direct (Niższe ceny – rabat -15% netto)'
+                              ? 'Cennik DOZ Direct od sierpnia 2026 (Kolumna O – Cena zakupu DD nowa, rabat 12% netto)'
                               : 'Cennik Standardowy Q3 2026 (Rabat handlowy -5% netto)')}
                         </span>
                       </h3>
@@ -1312,7 +1312,7 @@ export const KnowledgeCenterView: React.FC = () => {
                         }`}
                       >
                         {isDozSpecialPricing
-                          ? '🔥 DEDYKOWANY CENNIK DOZ (-15%)'
+                          ? '🔥 NOWY CENNIK DOZ OD 08.2026 — KOLUMNA O (-12%)'
                           : '📋 CENNIK Q3 DLA SIECI (-5%)'}
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white text-slate-700 border border-slate-200">

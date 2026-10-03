@@ -356,7 +356,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
         formatDescription:
           'Węzeł <DodatkowyOpis>: <Klucz>NumerSeriiDataPrzydatnosciIlosc</Klucz> i <Wartosc>(10)SERIA(17)DATA(37)ILOSC</Wartosc> + kod GTIN.',
         recommendedLogisticsFormat: 'gs1_composite' as LogisticsFormat,
-        priceRule: '💰 Cennik Specjalny DOZ (-15%): Na FV cena po rabacie netto!',
+        priceRule: '💰 Nowy Cennik DOZ od 08.2026 (Kolumna O, -12%): Na FV cena po rabacie netto!',
         extraTip: 'Wysyłka FV po wystawieniu na: kpd_dd@doz.pl oraz dwd_dd@doz.pl',
       };
     }
@@ -456,7 +456,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
       };
     }
 
-    // 5. Pozostali klienci z Centrum Wiedzy (np. Nabea, Modum Pharma lub nowo dodani)
+    // 5. Pozostali klienci z Centrum Wiedzy (np. Modum Pharma lub nowo dodani)
     if (matchedKnowledgeClient) {
       const hasIdWew = Boolean(matchedKnowledgeClient.idWew?.trim());
       const isExternal = matchedKnowledgeClient.invoiceSystem === 'ZEWNETRZNY_SYSTEM';
@@ -491,7 +491,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
         recommendedLogisticsFormat: recFmt,
         priceRule:
           matchedKnowledgeClient.priceListType === 'DOZ_SPECIAL'
-            ? '💰 Cennik Specjalny DOZ (-15%): Na FV cena po rabacie netto!'
+            ? '💰 Nowy Cennik DOZ od 08.2026 (Kolumna O, -12%): Na FV cena po rabacie netto!'
             : '💰 Cennik Q3 (-5%): Na FV cena po rabacie netto!',
         extraTip: matchedKnowledgeClient.contacts[0]
           ? `Kontakt / wysyłka: ${matchedKnowledgeClient.contacts.map((c) => c.email).join(', ')}`
