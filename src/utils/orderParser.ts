@@ -559,13 +559,19 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
       email: headerData.buyerEmail || profile.buyer.email,
     };
 
-    let thirdParty: ThirdPartyEntity | null = profile.thirdParty ? { ...profile.thirdParty } : null;
-    if (headerData.recipientName) {
-      const isHeaderIdWewValid = headerData.recipientIdWew && /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(headerData.recipientIdWew);
-      const isHeaderGln = headerData.recipientGln || (headerData.recipientIdWew && /^\d{1,13}$/.test(headerData.recipientIdWew) && !isHeaderIdWewValid ? headerData.recipientIdWew : undefined);
+    // Podmiot3 w KSeF dotyczy wyłącznie jednostek z wymaganym ID-Wew (np. Super-Pharm 5213842837-54936).
+    // W DOZ "Miejsce dostawy" na zamówieniu nie jest Podmiotem 3 (brak ID-Wew -> thirdParty = null).
+    const isHeaderIdWewValid =
+      headerData.recipientIdWew &&
+      /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(headerData.recipientIdWew.trim());
+    const effectiveIdWew = isHeaderIdWewValid
+      ? headerData.recipientIdWew!.trim()
+      : profile.thirdParty?.idWew;
 
+    let thirdParty: ThirdPartyEntity | null = null;
+    if (matchedChainId !== 'DOZ' && effectiveIdWew) {
       thirdParty = {
-        name: headerData.recipientName,
+        name: headerData.recipientName || profile.thirdParty?.name || 'Odbiorca (Podmiot3)',
         countryCode: 'PL',
         addressLine1:
           headerData.recipientAddress ||
@@ -573,8 +579,7 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
           'Aleja 20-lecia 23, 96-515 Teresin',
         postalCode: headerData.recipientPostalCode || profile.thirdParty?.postalCode || '96-515',
         city: headerData.recipientCity || profile.thirdParty?.city || 'Teresin',
-        idWew: isHeaderIdWewValid ? headerData.recipientIdWew : profile.thirdParty?.idWew,
-        gln: isHeaderGln || profile.thirdParty?.gln,
+        idWew: effectiveIdWew,
         role: '2',
         roleDescription: 'Odbiorca (jednostka wewnętrzna/oddział nabywcy)',
       };
@@ -630,18 +635,17 @@ export function matchOrBuildBuyerFromOrder(headerData?: ParsedOrderData): OrderI
   }
 
   let thirdParty: ThirdPartyEntity | null = null;
-  if (headerData.recipientName) {
-    const isHeaderIdWewValid = headerData.recipientIdWew && /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(headerData.recipientIdWew);
-    const isHeaderGln = headerData.recipientGln || (headerData.recipientIdWew && /^\d{1,13}$/.test(headerData.recipientIdWew) && !isHeaderIdWewValid ? headerData.recipientIdWew : undefined);
-
+  const isCustomIdWewValid =
+    headerData.recipientIdWew &&
+    /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(headerData.recipientIdWew.trim());
+  if (headerData.recipientName && isCustomIdWewValid) {
     thirdParty = {
       name: headerData.recipientName,
       countryCode: 'PL',
       addressLine1: headerData.recipientAddress || 'ul. Magazynowa 1',
       postalCode: headerData.recipientPostalCode || '00-001',
       city: headerData.recipientCity || 'Warszawa',
-      idWew: isHeaderIdWewValid ? headerData.recipientIdWew : undefined,
-      gln: isHeaderGln,
+      idWew: headerData.recipientIdWew!.trim(),
       role: '2',
       roleDescription: 'Odbiorca (jednostka wewnętrzna/oddział nabywcy)',
     };

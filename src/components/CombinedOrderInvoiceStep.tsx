@@ -135,22 +135,31 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
       .catch(() => {});
   }, []);
 
-  // Automatyczna sanitacja: Jeśli w thirdParty.idWew znajduje się numer GLN (np. 13 cyfr 5909000848054 z DOZ),
-  // natychmiast przenosimy go do thirdParty.gln i czyścimy pole idWew, by nie psuło schematu KSeF.
+  // Automatyczna sanitacja Podmiot3:
+  // Podmiot3 w KSeF służy wyłącznie dla odbiorców posiadających ID-Wew (np. Super-Pharm 5213842837-54936).
+  // W DOZ nie występuje Podmiot3 (brak ID-Wew) — jeśli w stanie znajduje się Podmiot3 dla DOZ lub błędny GLN zamiast ID-Wew, czyścimy go.
   useEffect(() => {
-    if (thirdParty && thirdParty.idWew) {
+    if (!thirdParty || !onUpdateThirdParty) return;
+    const cleanBuyerNip = (buyer?.nip || '').replace(/\D/g, '');
+    const isDoz =
+      selectedChain === 'DOZ' ||
+      cleanBuyerNip === '8271807718' ||
+      (thirdParty.name || '').toLowerCase().includes('doz') ||
+      thirdParty.gln === '5909000848054';
+
+    if (isDoz) {
+      onUpdateThirdParty(null);
+      return;
+    }
+
+    if (thirdParty.idWew) {
       const cleanId = thirdParty.idWew.trim();
       const isValidKSeFIdWew = /^[1-9]((\d[1-9])|([1-9]\d))\d{7}-\d{5}$/.test(cleanId);
       if (!isValidKSeFIdWew) {
-        const isGln = /^\d{1,13}$/.test(cleanId);
-        onUpdateThirdParty && onUpdateThirdParty({
-          ...thirdParty,
-          idWew: undefined,
-          gln: thirdParty.gln || (isGln ? cleanId : undefined),
-        });
+        onUpdateThirdParty(null);
       }
     }
-  }, [thirdParty, onUpdateThirdParty]);
+  }, [thirdParty, selectedChain, buyer?.nip, onUpdateThirdParty]);
 
   // Szablon pustych (niezatwierdzonych) kafelków weryfikacji
   const EMPTY_VERIFICATION_CHECKS: VerificationChecks = {
@@ -343,11 +352,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
         theme: 'amber' as const,
         paymentDays: matchedKnowledgeClient?.paymentDays || 60,
         paymentDescription: `${matchedKnowledgeClient?.paymentDays || 60} dni od daty dostawy (P_6)`,
-        idWewStatus: 'NIE (ID-Wew puste!)',
+        idWewStatus: 'NIE — brak Podmiot3 / brak ID-Wew',
         idWewRequired: false,
-        glnRequired: '5909000848054',
         idWewDescription:
-          'W DOZ pole <IDWew> musi pozostać PUSTE! Wymagany jest natomiast numer <GLN> w Podmiot3: 5909000848054 (ul. Kinga C. Gillette 1, 9 i 11, Łódź).',
+          'W DOZ nie występuje Podmiot3 (ID-Wew) — pole Odbiorca (Podmiot3) pozostaje puste (Brak odbiorcy). Faktura wystawiana wyłącznie na Nabywcę (Podmiot2: DOZ S.A. Direct Sp. k.).',
         addBatchAndExpiryStatus: 'TAK — OBOWIĄZKOWO na FV KSeF',
         addBatchAndExpiryRequired: true,
         addBatchAndExpiryDescription:
@@ -1008,7 +1016,7 @@ Numer zamówienia: ZAM/2026/10/01
                   <div className="flex items-center justify-between gap-1 mb-1">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
                       <Warehouse className="w-3.5 h-3.5 text-blue-600" />
-                      <span>2. Czy wymagany ID-Wew.?</span>
+                      <span>2. Czy wymagany ID-Wew. (Podmiot3)?</span>
                     </span>
                     {recipientCheatSheet.idWewRequired ? (
                       thirdParty?.idWew === recipientCheatSheet.expectedIdWew ? (
@@ -1035,36 +1043,6 @@ Numer zamówienia: ZAM/2026/10/01
                           + Wstaw ID-Wew
                         </button>
                       )
-                    ) : recipientCheatSheet.glnRequired ? (
-                      thirdParty?.gln === recipientCheatSheet.glnRequired ? (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          ✓ GLN OK
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateThirdParty &&
-                            onUpdateThirdParty({
-                              name:
-                                thirdParty?.name ||
-                                'DOZ SPÓŁKA AKCYJNA DIRECT SPÓŁKA KOMANDYTOWA - HURTOWNIA FARMACEUTYCZNA',
-                              countryCode: 'PL',
-                              addressLine1:
-                                thirdParty?.addressLine1 ||
-                                'UL. KINGA C. GILLETTE 1, 9, 11 r. 17-21',
-                              postalCode: thirdParty?.postalCode || '94-406',
-                              city: thirdParty?.city || 'Łódź',
-                              role: '2',
-                              gln: recipientCheatSheet.glnRequired,
-                              idWew: undefined,
-                            })
-                          }
-                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer transition-colors"
-                        >
-                          + Wstaw GLN DOZ
-                        </button>
-                      )
                     ) : (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                         Brak wymogu
@@ -1075,8 +1053,6 @@ Numer zamówienia: ZAM/2026/10/01
                     className={`text-xs font-black ${
                       recipientCheatSheet.idWewRequired
                         ? 'text-blue-900'
-                        : recipientCheatSheet.glnRequired
-                        ? 'text-amber-900'
                         : 'text-slate-800'
                     }`}
                   >
@@ -1624,7 +1600,7 @@ Numer zamówienia: ZAM/2026/10/01
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <Warehouse className="w-3.5 h-3.5 text-fuchsia-600" />
-              Odbiorca / Miejsce dostawy (Podmiot3)
+              Odbiorca (Podmiot3 — ID-Wew)
             </label>
             {thirdParty?.name ? (
               <button
@@ -1640,7 +1616,7 @@ Numer zamówienia: ZAM/2026/10/01
                 <span>{verified.thirdParty ? '✓ Zatwierdzony' : 'Zatwierdź'}</span>
               </button>
             ) : (
-              <span className="text-[10px] text-slate-400 font-medium">Brak odbiorcy</span>
+              <span className="text-[10px] text-slate-400 font-medium">Brak ID-Wew (brak Podmiot3)</span>
             )}
           </div>
 
@@ -1648,7 +1624,7 @@ Numer zamówienia: ZAM/2026/10/01
             showThirdPartyDetails ? (
               <div className="space-y-2 bg-white p-3 rounded-xl border border-fuchsia-200 text-xs animate-in fade-in">
                 <div className="flex items-center justify-between pb-1 border-b border-fuchsia-100">
-                  <span className="font-bold text-fuchsia-700 text-xs">Edycja Odbiorcy / Miejsca dostawy:</span>
+                  <span className="font-bold text-fuchsia-700 text-xs">Edycja Odbiorcy (Podmiot3 — ID-Wew):</span>
                   <button
                     type="button"
                     onClick={() => setShowThirdPartyDetails(false)}
@@ -1658,7 +1634,7 @@ Numer zamówienia: ZAM/2026/10/01
                   </button>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 block mb-0.5">Nazwa odbiorcy / hurtowni:</span>
+                  <span className="text-[10px] text-slate-500 block mb-0.5">Nazwa odbiorcy / oddziału:</span>
                   <input
                     type="text"
                     value={thirdParty.name}
@@ -1666,29 +1642,16 @@ Numer zamówienia: ZAM/2026/10/01
                     className="w-full text-xs font-semibold text-slate-900 bg-white border border-slate-300 rounded px-2 py-1 focus:border-fuchsia-400 focus:outline-none"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block mb-0.5">GLN / ILN miejsca dostawy:</span>
-                    <input
-                      type="text"
-                      value={thirdParty.gln || ''}
-                      onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, gln: e.target.value.trim() })}
-                      placeholder="np. 5909000848054"
-                      className="w-full text-xs font-mono font-bold text-fuchsia-800 bg-fuchsia-50/50 border border-fuchsia-200 rounded px-2 py-1 focus:border-fuchsia-500 focus:outline-none"
-                    />
-                    <span className="text-[9px] text-slate-400 block mt-0.5">Zgodne z FA(3) &lt;GLN&gt;</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 block mb-0.5">ID-Wew (NIP-oddział):</span>
-                    <input
-                      type="text"
-                      value={thirdParty.idWew || ''}
-                      onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, idWew: e.target.value.trim() })}
-                      placeholder="np. 5213842837-54936"
-                      className="w-full text-xs font-mono text-slate-900 bg-white border border-slate-300 rounded px-2 py-1 focus:border-fuchsia-400 focus:outline-none"
-                    />
-                    <span className="text-[9px] text-slate-400 block mt-0.5">W DOZ: puste (nie występuje)</span>
-                  </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block mb-0.5">ID-Wew (NIP-oddział w KSeF):</span>
+                  <input
+                    type="text"
+                    value={thirdParty.idWew || ''}
+                    onChange={(e) => onUpdateThirdParty && onUpdateThirdParty({ ...thirdParty, idWew: e.target.value.trim() })}
+                    placeholder="np. 5213842837-54936"
+                    className="w-full text-xs font-mono font-bold text-fuchsia-800 bg-fuchsia-50/50 border border-fuchsia-200 rounded px-2 py-1 focus:border-fuchsia-500 focus:outline-none"
+                  />
+                  <span className="text-[9px] text-slate-400 block mt-0.5">Wymagany format KSeF: NIP-5cyfr (np. Super-Pharm 5213842837-54936)</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-500 block mb-0.5">Ulica i numer:</span>
@@ -1745,11 +1708,6 @@ Numer zamówienia: ZAM/2026/10/01
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
-                  {thirdParty.gln ? (
-                    <span className="bg-fuchsia-50 text-fuchsia-700 px-2 py-0.5 rounded border border-fuchsia-200 font-bold">
-                      GLN: {thirdParty.gln}
-                    </span>
-                  ) : null}
                   {thirdParty.idWew ? (
                     <span className="bg-fuchsia-50 text-fuchsia-700 px-2 py-0.5 rounded border border-fuchsia-200 font-bold">
                       ID-Wew: {thirdParty.idWew}
@@ -1759,8 +1717,8 @@ Numer zamówienia: ZAM/2026/10/01
                     <span className="text-slate-600">NIP: {thirdParty.nip}</span>
                   ) : null}
                   {!thirdParty.idWew && !thirdParty.nip && (
-                    <span className="text-[10px] text-slate-400">
-                      ID: BrakID (KSeF)
+                    <span className="text-[10px] text-amber-600 font-semibold">
+                      Brak ID-Wew
                     </span>
                   )}
                 </div>
@@ -1772,22 +1730,25 @@ Numer zamówienia: ZAM/2026/10/01
           ) : (
             <div className="py-3 text-center">
               <p className="text-[11px] text-slate-500 mb-2">
-                Dostawa bezpośrednio do Nabywcy (Podmiot 2).
+                Brak Podmiot3 (ID-Wew) — dostawa bezpośrednio do Nabywcy (Podmiot 2).
               </p>
               <button
                 type="button"
                 onClick={() =>
                   onUpdateThirdParty &&
                   onUpdateThirdParty({
-                    name: 'Magazyn Centralny',
-                    addressLine1: 'ul. Magazynowa 1, 00-001 Warszawa',
+                    name: 'Magazyn Centralny Super Pharm Holding',
+                    addressLine1: 'Aleja 20-lecia 23',
+                    postalCode: '96-515',
+                    city: 'Teresin',
                     countryCode: 'PL',
+                    idWew: '5213842837-54936',
                     role: '2',
                   })
                 }
                 className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 cursor-pointer"
               >
-                + Dodaj oddzielnego Odbiorcę (Podmiot3)
+                + Dodaj Odbiorcę z ID-Wew (Podmiot3)
               </button>
             </div>
           )}

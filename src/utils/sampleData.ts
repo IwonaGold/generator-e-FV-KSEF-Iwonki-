@@ -43,7 +43,7 @@ export const PHARMACY_CHAINS: Record<string, ChainProfile> = {
     id: 'DOZ',
     name: 'DOZ S.A. Direct Sp. k. (Apteki Dbam o Zdrowie)',
     standardPaymentDays: 60,
-    description: 'Nabywca z faktury 40/2026/KSEF · Format GS1 z kluczem NumerSeriiDataPrzydatnosciIlosc · Odbiorca z GLN 5909000848054',
+    description: 'Nabywca z faktury 40/2026/KSEF · Format GS1 z kluczem NumerSeriiDataPrzydatnosciIlosc · Brak Podmiot3 (brak ID-Wew)',
     defaultPriceMultiplier: 1.0,
     preferredLogisticsFormat: 'gs1_composite',
     defaultOrderNumber: '22882/2026/KPD',
@@ -56,16 +56,6 @@ export const PHARMACY_CHAINS: Record<string, ChainProfile> = {
       city: 'Łódź',
       email: 'rozliczenia@doz.pl',
       gln: '5909000828476',
-    },
-    thirdParty: {
-      name: 'DOZ SPÓŁKA AKCYJNA DIRECT SPÓŁKA KOMANDYTOWA - HURTOWNIA FARMACEUTYCZNA',
-      countryCode: 'PL',
-      addressLine1: 'UL. KINGA C. GILLETTE 1, 9, 11 r. 17-21',
-      postalCode: '94-406',
-      city: 'Łódź',
-      gln: '5909000848054', // Miejsce dostawy ILN / GLN
-      role: '2',
-      roleDescription: 'Odbiorca (jednostka wewnętrzna/oddział nabywcy)',
     },
   },
   Gemini: {
