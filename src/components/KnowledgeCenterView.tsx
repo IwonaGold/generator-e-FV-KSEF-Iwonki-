@@ -578,7 +578,7 @@ export const KnowledgeCenterView: React.FC = () => {
         )}
 
         {/* KAFELKI WYBORU KLIENTA KLUCZOWEGO */}
-        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
           {filteredClients.map((client) => {
             const isSelected = activeClient?.id === client.id;
             const cTheme = THEME_STYLES[client.colorTheme] || THEME_STYLES.rose;
@@ -592,31 +592,31 @@ export const KnowledgeCenterView: React.FC = () => {
                   setSelectedClientId(client.id);
                   setIsEditingProfile(false);
                 }}
-                className={`text-left p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                className={`text-left p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
                   isSelected
                     ? `${cTheme.activeTab} shadow-sm scale-[1.01]`
                     : 'bg-slate-50/70 hover:bg-white border-slate-200 hover:border-slate-300'
                 }`}
               >
                 <div>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center justify-between gap-1.5 mb-1.5">
                     <span
-                      className={`px-2.5 py-0.5 text-xs font-black rounded-lg border ${cTheme.badge}`}
+                      className={`px-2 py-0.5 text-xs font-black rounded-lg border truncate ${cTheme.badge}`}
                     >
                       {client.shortName}
                     </span>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      NIP: {client.nip}
-                    </span>
                   </div>
-                  <p className="text-xs font-bold text-slate-800 line-clamp-1 mt-1">
+                  <p className="text-[11px] font-bold text-slate-800 line-clamp-1 mt-1">
                     {client.fullName}
+                  </p>
+                  <p className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
+                    NIP: {client.nip}
                   </p>
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>⏳ {client.paymentDays} dni</span>
-                  <div className="flex items-center gap-1.5">
+                <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500">
+                  <span className="font-semibold">⏳ {client.paymentDays} dni</span>
+                  <div className="flex items-center gap-1">
                     <span>✉️ {client.contacts.length}</span>
                     <span>·</span>
                     <span className={pinnedCount > 0 ? 'font-bold text-rose-600' : ''}>
@@ -686,9 +686,14 @@ export const KnowledgeCenterView: React.FC = () => {
                     <Edit3 className="w-3.5 h-3.5" />
                     <span>Edytuj wymagania klienta</span>
                   </button>
-                  {!['client-doz', 'client-drmax', 'client-superpharm', 'client-gemini'].includes(
-                    activeClient.id
-                  ) && (
+                  {![
+                    'client-doz',
+                    'client-drmax',
+                    'client-superpharm',
+                    'client-gemini',
+                    'client-nabea',
+                    'client-modumpharma',
+                  ].includes(activeClient.id) && (
                     <button
                       type="button"
                       onClick={handleDeleteCurrentClient}

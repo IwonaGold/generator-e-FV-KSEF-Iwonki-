@@ -44,10 +44,17 @@ function mergeServerAndLocalClients(
     }
   }
 
-  // Upewnij się, że domyślni klienci kluczowi są zawsze obecni, jeśli baza nie ma ich jeszcze
+  // Upewnij się, że domyślni klienci kluczowi są zawsze obecni i zaktualizowani do najnowszej wersji bazowej
   for (const def of INITIAL_KEY_CLIENTS) {
-    if (!map.has(def.id)) {
+    const current = map.get(def.id);
+    if (!current) {
       map.set(def.id, def);
+    } else {
+      const tDef = def.updatedAt ? new Date(def.updatedAt).getTime() : 0;
+      const tCur = current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+      if (tDef > tCur) {
+        map.set(def.id, def);
+      }
     }
   }
 
