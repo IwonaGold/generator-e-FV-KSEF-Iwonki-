@@ -22,11 +22,16 @@ import {
   Sparkles,
   Phone,
   UserPlus,
+  Tag,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   KeyClientProfile,
   ClientContactPerson,
   ClientNote,
+  DOZ_SPECIAL_PRICE_LIST,
+  STANDARD_Q3_PRICE_LIST,
 } from '../types/knowledgeBase';
 import {
   getKeyClients,
@@ -163,6 +168,10 @@ export const KnowledgeCenterView: React.FC = () => {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState<string>('');
 
+  // Stan wyszukiwarki i rozwinięcia cennika kontrahenta
+  const [priceSearchQuery, setPriceSearchQuery] = useState<string>('');
+  const [isPriceListExpanded, setIsPriceListExpanded] = useState<boolean>(true);
+
   useEffect(() => {
     getKeyClients().then((loaded) => {
       setClients(loaded);
@@ -210,6 +219,29 @@ export const KnowledgeCenterView: React.FC = () => {
     );
   }, [clients, filteredClients, selectedClientId]);
 
+  const isDozSpecialPricing = useMemo(() => {
+    if (!activeClient) return false;
+    return (
+      activeClient.priceListType === 'DOZ_SPECIAL' ||
+      activeClient.id === 'client-doz'
+    );
+  }, [activeClient]);
+
+  const activePriceList = useMemo(() => {
+    return isDozSpecialPricing ? DOZ_SPECIAL_PRICE_LIST : STANDARD_Q3_PRICE_LIST;
+  }, [isDozSpecialPricing]);
+
+  const filteredPriceList = useMemo(() => {
+    const q = priceSearchQuery.trim().toLowerCase();
+    if (!q) return activePriceList;
+    return activePriceList.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.ean.toLowerCase().includes(q) ||
+        item.bloz.toLowerCase().includes(q)
+    );
+  }, [activePriceList, priceSearchQuery]);
+
   const handleCopyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     showNotice(`📋 Skopiowano do schowka: ${label} (${text})`);
@@ -255,7 +287,7 @@ export const KnowledgeCenterView: React.FC = () => {
       invoiceSystemLabel: 'KSeF FA(3) XML',
       paymentDays: 30,
       ksefLogisticsFormat: 'Klucz łączony GS1 (NumerSeriiDataPrzydatnosciIlosc)',
-      invoiceRequirements: '• Wpisz wymagania dotyczące wystawiania faktur dla tego klienta...',
+      invoiceRequirements: '• NA FAKTURZE (FV) OBOWIĄZUJE CENA PO RABACIE NETTO!\n• Wpisz wymagania dotyczące wystawiania faktur dla tego klienta...',
       minExpiryRequirement: 'Minimum 12 miesięcy od daty dostawy',
       shortExpiryPolicy: 'Krótsza data ważności po uzgodnieniu mailowym.',
       avisoMethod: 'Awizacja mailowa przed dostawą',
@@ -264,6 +296,9 @@ export const KnowledgeCenterView: React.FC = () => {
       shippingWarehouseName: `Magazyn ${newClientShortName.trim()}`,
       shippingAddress: 'Wpisz adres magazynu do wysyłki...',
       shippingRemarks: '',
+      priceListType: 'Q3_STANDARD',
+      priceListTitle: 'Cennik Standardowy Q3 2026 (Rabat handlowy -5% na fakturze)',
+      priceListRule: '⚠️ ZASADA FAKTUROWANIA: Na fakturze (FV) zawsze musi widnieć CENA PO RABACIE NETTO (CENA PO RABACIE -5% NETTO)!',
       contacts: [],
       notes: [],
       updatedAt: new Date().toISOString(),
@@ -604,6 +639,18 @@ export const KnowledgeCenterView: React.FC = () => {
                       className={`px-2 py-0.5 text-xs font-black rounded-lg border truncate ${cTheme.badge}`}
                     >
                       {client.shortName}
+                    </span>
+                    <span
+                      className={`px-1.5 py-0.5 text-[9px] font-black rounded border shrink-0 ${
+                        client.priceListType === 'DOZ_SPECIAL' || client.id === 'client-doz'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      }`}
+                      title="Na fakturze obowiązuje cena po rabacie netto"
+                    >
+                      {client.priceListType === 'DOZ_SPECIAL' || client.id === 'client-doz'
+                        ? '💰 DOZ -15%'
+                        : '💰 Q3 -5%'}
                     </span>
                   </div>
                   <p className="text-[11px] font-bold text-slate-800 line-clamp-1 mt-1">
@@ -998,10 +1045,80 @@ export const KnowledgeCenterView: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {/* 5. Edycja przypisanego cennika kontrahenta */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 md:col-span-2">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+                    <Tag className="w-4 h-4 text-emerald-600" />
+                    <span>5. Cennik kontrahenta i zasada ceny na fakturze (FV)</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Przypisana tabela cennikowa
+                      </label>
+                      <select
+                        value={
+                          editDraft.priceListType ||
+                          (editDraft.id === 'client-doz' ? 'DOZ_SPECIAL' : 'Q3_STANDARD')
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value as 'DOZ_SPECIAL' | 'Q3_STANDARD';
+                          setEditDraft({
+                            ...editDraft,
+                            priceListType: val,
+                            priceListTitle:
+                              val === 'DOZ_SPECIAL'
+                                ? 'Cennik Specjalny DOZ Direct (Niższe ceny zakupu DD – rabat -15% na fakturze)'
+                                : 'Cennik Standardowy Q3 2026 (Rabat handlowy -5% na fakturze)',
+                            priceListRule:
+                              val === 'DOZ_SPECIAL'
+                                ? '⚠️ ZASADA FAKTUROWANIA: Dla DOZ obowiązuje dedykowany cennik z niższymi cenami! Na fakturze (FV) zawsze musi widnieć CENA PO RABACIE NETTO (Cena zakupu DD aktualna / po rabacie -15% netto)!'
+                                : '⚠️ ZASADA FAKTUROWANIA: Na fakturze (FV) zawsze musi widnieć CENA PO RABACIE NETTO (CENA PO RABACIE -5% NETTO z cennika Q3)!',
+                          });
+                        }}
+                        className="w-full px-3 py-1.5 text-xs font-bold bg-slate-50 border border-slate-300 rounded-xl"
+                      >
+                        <option value="Q3_STANDARD">
+                          Cennik Q3 2026 – Standardowy dla sieci (Cena po rabacie -5% netto na FV)
+                        </option>
+                        <option value="DOZ_SPECIAL">
+                          Cennik Specjalny DOZ Direct – Niższe ceny (Cena zakupu DD po rabacie -15% netto na FV)
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Nagłówek cennika na karcie klienta
+                      </label>
+                      <input
+                        type="text"
+                        value={editDraft.priceListTitle || ''}
+                        onChange={(e) =>
+                          setEditDraft({ ...editDraft, priceListTitle: e.target.value })
+                        }
+                        className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Zasada fakturowania wyświetlana nad cennikiem
+                    </label>
+                    <input
+                      type="text"
+                      value={editDraft.priceListRule || ''}
+                      onChange={(e) =>
+                        setEditDraft({ ...editDraft, priceListRule: e.target.value })
+                      }
+                      className="w-full px-3 py-1.5 text-xs font-bold bg-amber-50 border border-amber-300 text-amber-950 rounded-xl"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
-            /* WIDOK KARTY WYTYCZNYCH KLIENTA (4 GŁÓWNE SEKCJE + MAILE + NOTATKI) */
+            /* WIDOK KARTY WYTYCZNYCH KLIENTA (4 GŁÓWNE SEKCJE + CENNIK + MAILE + NOTATKI) */
             <div className="p-5 sm:p-6 space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* KARTA 1: WYMAGANIA DOTYCZĄCE WYSTAWIANIA FV */}
@@ -1162,13 +1279,245 @@ export const KnowledgeCenterView: React.FC = () => {
                 </div>
               </div>
 
-              {/* SEKCJA 5: ADRESY MAILOWE DO KORESPONDENCJI */}
+              {/* SEKCJA 5: CENNIK KONTRAHENTA (NA FV CENA PO RABACIE NETTO) */}
+              <div
+                className={`rounded-2xl border p-5 ${
+                  isDozSpecialPricing
+                    ? 'bg-gradient-to-br from-amber-50/80 via-orange-50/40 to-white border-amber-300'
+                    : 'bg-gradient-to-br from-emerald-50/70 via-teal-50/30 to-white border-emerald-300'
+                }`}
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <Tag
+                          className={`w-4 h-4 ${
+                            isDozSpecialPricing ? 'text-amber-600' : 'text-emerald-600'
+                          }`}
+                        />
+                        <span>
+                          5.{' '}
+                          {activeClient.priceListTitle ||
+                            (isDozSpecialPricing
+                              ? 'Cennik Specjalny DOZ Direct (Niższe ceny – rabat -15% netto)'
+                              : 'Cennik Standardowy Q3 2026 (Rabat handlowy -5% netto)')}
+                        </span>
+                      </h3>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
+                          isDozSpecialPricing
+                            ? 'bg-amber-200/80 text-amber-950 border-amber-400'
+                            : 'bg-emerald-200/80 text-emerald-950 border-emerald-400'
+                        }`}
+                      >
+                        {isDozSpecialPricing
+                          ? '🔥 DEDYKOWANY CENNIK DOZ (-15%)'
+                          : '📋 CENNIK Q3 DLA SIECI (-5%)'}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white text-slate-700 border border-slate-200">
+                        Pozycji: {activePriceList.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Oficjalny cennik przypisany do kontrahenta{' '}
+                      <strong className="text-slate-900">{activeClient.shortName}</strong>. Kliknij na cenę po rabacie lub kod EAN, aby skopiować do schowka.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-[230px] sm:min-w-[270px]">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={priceSearchQuery}
+                        onChange={(e) => setPriceSearchQuery(e.target.value)}
+                        placeholder="Szukaj produktu, EAN lub BLOZ..."
+                        className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-500"
+                      />
+                      {priceSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setPriceSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsPriceListExpanded(!isPriceListExpanded)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 transition-colors cursor-pointer"
+                    >
+                      {isPriceListExpanded ? (
+                        <>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                          <span>Zwiń cennik</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                          <span>Rozwiń cennik ({activePriceList.length})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* BARDZO WAŻNY BANER Z ZASADĄ: NA FV CENA PO RABACIE NETTO */}
+                <div className="mb-4 p-3.5 rounded-xl bg-rose-600 text-white shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-start sm:items-center gap-2.5">
+                    <span className="text-lg leading-none shrink-0">⚠️</span>
+                    <div className="text-xs sm:text-sm font-black tracking-wide">
+                      {activeClient.priceListRule ||
+                        'ZASADA FAKTUROWANIA: Na fakturze (FV) dla tego kontrahenta zawsze musi być wpisana CENA PO RABACIE NETTO!'}
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-white text-rose-700 text-[11px] font-black uppercase tracking-wider shrink-0 self-start sm:self-center">
+                    Na FV = Cena po rabacie NETTO
+                  </span>
+                </div>
+
+                {isPriceListExpanded && (
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                    <div className="overflow-x-auto max-h-[460px] overflow-y-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-slate-100/95 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase w-10 text-center">
+                              Lp.
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase">
+                              Produkt
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase">
+                              Kod EAN (GTIN)
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase">
+                              BLOZ
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase text-right">
+                              Cena bazowa netto
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase text-center">
+                              Rabat
+                            </th>
+                            <th
+                              className={`py-2.5 px-3.5 font-black text-[11px] uppercase text-right ${
+                                isDozSpecialPricing
+                                  ? 'bg-amber-100/90 text-amber-950'
+                                  : 'bg-emerald-100/90 text-emerald-950'
+                              }`}
+                            >
+                              ✅ CENA NA FV (PO RABACIE NETTO)
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-[11px] uppercase text-center">
+                              Karton
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredPriceList.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={8}
+                                className="py-6 text-center text-slate-400 font-medium"
+                              >
+                                Brak produktów pasujących do frazy „{priceSearchQuery}”.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredPriceList.map((item) => (
+                              <tr
+                                key={`${item.lp}-${item.ean}`}
+                                className="hover:bg-slate-50/90 transition-colors"
+                              >
+                                <td className="py-2 px-3 text-center font-mono text-slate-400 font-bold">
+                                  {item.lp}
+                                </td>
+                                <td className="py-2 px-3 font-bold text-slate-900">
+                                  {item.name}
+                                </td>
+                                <td className="py-2 px-3 font-mono text-slate-600">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopyText(item.ean, `EAN ${item.name}`)
+                                    }
+                                    className="inline-flex items-center gap-1 hover:text-indigo-700 hover:underline cursor-pointer"
+                                    title="Kliknij, aby skopiować kod EAN"
+                                  >
+                                    <span>{item.ean}</span>
+                                    <Copy className="w-3 h-3 opacity-60" />
+                                  </button>
+                                </td>
+                                <td className="py-2 px-3 font-mono text-slate-500">
+                                  {item.bloz}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono text-slate-400 line-through">
+                                  {item.baseNetPrice.toFixed(2).replace('.', ',')} zł
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  <span
+                                    className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                      isDozSpecialPricing
+                                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                        : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                    }`}
+                                  >
+                                    -{item.discountLabel}
+                                  </span>
+                                </td>
+                                <td
+                                  className={`py-2 px-3.5 text-right font-mono ${
+                                    isDozSpecialPricing
+                                      ? 'bg-amber-50/70'
+                                      : 'bg-emerald-50/70'
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopyText(
+                                        item.invoiceNetPrice.toFixed(2),
+                                        `Cena na FV po rabacie netto (${item.name})`
+                                      )
+                                    }
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-black text-xs border shadow-2xs transition-all cursor-pointer ${
+                                      isDozSpecialPricing
+                                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300'
+                                        : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-300'
+                                    }`}
+                                    title="Kliknij, aby skopiować cenę po rabacie netto na fakturę"
+                                  >
+                                    <span>
+                                      {item.invoiceNetPrice.toFixed(2).replace('.', ',')} zł netto
+                                    </span>
+                                    <Copy className="w-3 h-3 opacity-75" />
+                                  </button>
+                                </td>
+                                <td className="py-2 px-3 text-center text-slate-500 font-semibold">
+                                  {item.unitsPerCarton ? `${item.unitsPerCarton} szt.` : '—'}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SEKCJA 6: ADRESY MAILOWE DO KORESPONDENCJI */}
               <div className="bg-slate-50/80 rounded-2xl border border-slate-200 p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
                     <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                       <Mail className="w-4 h-4 text-rose-600" />
-                      <span>5. Adresy mailowe do korespondencji ({activeClient.contacts.length})</span>
+                      <span>6. Adresy mailowe do korespondencji ({activeClient.contacts.length})</span>
                     </h3>
                     <p className="text-xs text-slate-500">
                       Szybkie kopiowanie adresów e-mail do kupców, działu awizacji magazynu oraz księgowości.
@@ -1319,12 +1668,12 @@ export const KnowledgeCenterView: React.FC = () => {
                 )}
               </div>
 
-              {/* SEKCJA 6: NOTATKI I NOWE USTALENIA Z KLIENTEM */}
+              {/* SEKCJA 7: NOTATKI I NOWE USTALENIA Z KLIENTEM */}
               <div className="bg-gradient-to-br from-indigo-50/50 via-fuchsia-50/30 to-white rounded-2xl border border-indigo-200/80 p-5">
                 <div className="mb-4">
                   <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                     <MessageSquarePlus className="w-4 h-4 text-indigo-600" />
-                    <span>6. Notatki i Nowe Ustalenia ({activeClient.notes.length})</span>
+                    <span>7. Notatki i Nowe Ustalenia ({activeClient.notes.length})</span>
                   </h3>
                   <p className="text-xs text-slate-500">
                     Zapisuj bieżące ustalenia z kupcami (np. zgody na krótsze daty ważności, zmiany godzin awizacji, ustalenia rabatowe).

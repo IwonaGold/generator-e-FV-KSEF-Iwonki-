@@ -53,7 +53,23 @@ function mergeServerAndLocalClients(
       const tDef = def.updatedAt ? new Date(def.updatedAt).getTime() : 0;
       const tCur = current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
       if (tDef > tCur) {
-        map.set(def.id, def);
+        // Zachowaj ewentualne własne notatki i kontakty dodane przez użytkownika
+        const defNoteIds = new Set(def.notes.map((n) => n.id));
+        const customNotes = (current.notes || []).filter((n) => !defNoteIds.has(n.id));
+        const defContactIds = new Set(def.contacts.map((c) => c.id));
+        const customContacts = (current.contacts || []).filter((c) => !defContactIds.has(c.id));
+        map.set(def.id, {
+          ...def,
+          notes: [...customNotes, ...def.notes],
+          contacts: [...def.contacts, ...customContacts],
+        });
+      } else if (!current.priceListType) {
+        map.set(def.id, {
+          ...current,
+          priceListType: def.priceListType,
+          priceListTitle: def.priceListTitle,
+          priceListRule: def.priceListRule,
+        });
       }
     }
   }
