@@ -1283,31 +1283,16 @@ Numer zamówienia: ZAM/2026/10/01
               <p className="text-[10px] text-slate-400 mt-0.5">Wgraj plik z zamówieniem lub wybierz sieć apteczną powyżej</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-slate-900 truncate" title={buyer.name}>{buyer.name}</p>
-                  <span className="shrink-0 text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 px-1.5 py-0.5 rounded border border-fuchsia-200">
-                    {lastExtractedInfo?.isRecognizedChain ? 'Sieć' : 'Z zamówienia'}
-                  </span>
-                </div>
-                <p className="font-mono">NIP: <strong>{buyer.nip}</strong></p>
-                <p className="truncate text-slate-500">{buyer.addressLine1}, {buyer.postalCode} {buyer.city}</p>
-                {buyer.email && <p className="truncate text-slate-500 font-mono text-[10px]">✉️ {buyer.email}</p>}
+            <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-900 truncate" title={buyer.name}>{buyer.name}</p>
+                <span className="shrink-0 text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 px-1.5 py-0.5 rounded border border-fuchsia-200">
+                  {lastExtractedInfo?.isRecognizedChain ? 'Sieć' : 'Z zamówienia'}
+                </span>
               </div>
-
-              {recipientCheatSheet && (
-                <div className="p-2 rounded-lg bg-amber-50/90 border border-amber-200 text-[10px] text-slate-800 space-y-0.5 leading-snug">
-                  <div className="font-black text-amber-950 flex items-center gap-1">
-                    <span>📌</span>
-                    <span>Ściąga dla wystawiającego ({recipientCheatSheet.recipientName}):</span>
-                  </div>
-                  <div>• <strong>Termin płatności:</strong> {recipientCheatSheet.paymentDays} dni</div>
-                  <div>• <strong>ID-Wew.:</strong> {recipientCheatSheet.idWewStatus}</div>
-                  <div>• <strong>Seria i data ważności na FV:</strong> {recipientCheatSheet.addBatchAndExpiryStatus}</div>
-                  <div>• <strong>Format:</strong> {recipientCheatSheet.formatStatus}</div>
-                </div>
-              )}
+              <p className="font-mono">NIP: <strong>{buyer.nip}</strong></p>
+              <p className="truncate text-slate-500">{buyer.addressLine1}, {buyer.postalCode} {buyer.city}</p>
+              {buyer.email && <p className="truncate text-slate-500 font-mono text-[10px]">✉️ {buyer.email}</p>}
             </div>
           )}
         </div>
