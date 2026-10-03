@@ -1255,15 +1255,16 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               title="Wczytaj zamówienie (PDF, TXT, Excel) do realizacji — zaplanuj pakowanie bez wystawiania faktury lub dla sieci zewnętrznej"
             >
               <Upload className="w-3.5 h-3.5 text-amber-800" />
-              <span>📥 Wczytaj zamówienie (PDF/TXT/XLSX)</span>
+              <span>Nowe Zamówienie</span>
             </button>
 
             <button
               onClick={onNavigateToInvoiceCreation}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.02]"
+              title="Przejdź do kreatora faktur, aby wczytać zamówienie i od razu wystawić e-Fakturę KSeF"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Nowe Zamówienie</span>
+              <span>Nowe Zamówienie z wystawieniem FV</span>
             </button>
           </div>
         </div>
