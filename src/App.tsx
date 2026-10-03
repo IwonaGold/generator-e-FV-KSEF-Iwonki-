@@ -382,11 +382,21 @@ export default function App() {
   const handleSelectChain = (chain: PharmacyChain) => {
     setSelectedChain(chain);
     const profile = PHARMACY_CHAINS[chain];
-    if (profile) {
+    if (profile && chain !== 'Custom') {
       setBuyer({ ...profile.buyer });
       setThirdParty(profile.thirdParty ? { ...profile.thirdParty } : null);
       if (profile.preferredLogisticsFormat) {
         setLogisticsFormat(profile.preferredLogisticsFormat);
+      }
+      if (profile.standardPaymentDays) {
+        const baseDateStr = meta.deliveryDate || meta.issueDate || meta.orderDate;
+        const base = baseDateStr ? new Date(baseDateStr) : new Date();
+        base.setDate(base.getDate() + profile.standardPaymentDays);
+        setMeta((prev) => ({
+          ...prev,
+          paymentDays: profile.standardPaymentDays,
+          dueDate: base.toISOString().slice(0, 10),
+        }));
       }
     } else {
       setBuyer(EMPTY_BUYER);
@@ -715,6 +725,8 @@ export default function App() {
               onUpdateThirdParty={setThirdParty}
               meta={meta}
               onUpdateMeta={setMeta}
+              logisticsFormat={logisticsFormat}
+              onToggleLogisticsFormat={setLogisticsFormat}
               archivedOrders={archivedOrders}
               onLoadArchivedOrder={handleLoadArchivedOrderToInvoice}
               onResetEverything={handleResetEverything}

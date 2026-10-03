@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   FileText,
   Upload,
@@ -19,10 +19,23 @@ import {
   Warehouse,
   Check,
   RotateCcw,
+  Clock,
+  Tag,
+  Info,
 } from 'lucide-react';
 import { PHARMACY_CHAINS } from '../utils/sampleData';
-import { PharmacyChain, EntityDetails, InvoiceMeta, ThirdPartyEntity, InvoiceItem, ParsedOrderData } from '../types/ksef';
+import {
+  PharmacyChain,
+  LogisticsFormat,
+  EntityDetails,
+  InvoiceMeta,
+  ThirdPartyEntity,
+  InvoiceItem,
+  ParsedOrderData,
+} from '../types/ksef';
 import { ArchivedOrder } from '../types/ordersHistory';
+import { KeyClientProfile, INITIAL_KEY_CLIENTS } from '../types/knowledgeBase';
+import { getKeyClients } from '../utils/knowledgeStorage';
 import {
   parseOrderFromFile,
   parseOrderText,
@@ -64,6 +77,8 @@ interface CombinedOrderInvoiceStepProps {
   onUpdateThirdParty?: (thirdParty: ThirdPartyEntity | null) => void;
   meta: InvoiceMeta;
   onUpdateMeta: (meta: InvoiceMeta) => void;
+  logisticsFormat?: LogisticsFormat;
+  onToggleLogisticsFormat?: (format: LogisticsFormat) => void;
 
   // Wzorce i historia
   archivedOrders?: ArchivedOrder[];
@@ -90,6 +105,8 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   onUpdateThirdParty,
   meta,
   onUpdateMeta,
+  logisticsFormat = 'none',
+  onToggleLogisticsFormat,
   archivedOrders,
   onLoadArchivedOrder,
   onResetEverything,
@@ -105,7 +122,18 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   const [pastedText, setPastedText] = useState('');
   const [lastExtractedInfo, setLastExtractedInfo] = useState<OrderIngestionMatch | null>(null);
   const [isEditingBuyer, setIsEditingBuyer] = useState(false);
+  const [knowledgeClients, setKnowledgeClients] = useState<KeyClientProfile[]>(INITIAL_KEY_CLIENTS);
   const orderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    getKeyClients()
+      .then((loaded) => {
+        if (Array.isArray(loaded) && loaded.length > 0) {
+          setKnowledgeClients(loaded);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Automatyczna sanitacja: Jeśli w thirdParty.idWew znajduje się numer GLN (np. 13 cyfr 5909000848054 z DOZ),
   // natychmiast przenosimy go do thirdParty.gln i czyścimy pole idWew, by nie psuło schematu KSeF.
@@ -270,6 +298,241 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     }
     onUpdateMeta({ ...meta, ...updates });
   };
+
+  // --- MINI-NOTATKA DLA WYSTAWIAJĄCEGO FV (PO PRZYPISANIU ODBIORCY) ---
+  const recipientCheatSheet = useMemo(() => {
+    const hasBuyerOrRecipient = Boolean(
+      buyer.name?.trim() ||
+        buyer.nip?.trim() ||
+        thirdParty?.name?.trim() ||
+        (selectedChain && selectedChain !== 'Custom')
+    );
+
+    if (!hasBuyerOrRecipient) return null;
+
+    const cleanNip = (buyer.nip || '').replace(/\D/g, '');
+    const combinedText = `${selectedChain} ${buyer.name || ''} ${thirdParty?.name || ''}`.toLowerCase();
+
+    // Dopasowanie klienta z Centrum Wiedzy
+    const matchedKnowledgeClient = knowledgeClients.find((kc) => {
+      const kcNip = (kc.nip || '').replace(/\D/g, '');
+      if (cleanNip && kcNip && cleanNip === kcNip) return true;
+      if (selectedChain === 'DOZ' && kc.id === 'client-doz') return true;
+      if (selectedChain === 'Dr. Max' && kc.id === 'client-drmax') return true;
+      if (selectedChain === 'Super-Pharm' && kc.id === 'client-superpharm') return true;
+      if (selectedChain === 'Gemini' && kc.id === 'client-gemini') return true;
+      if (combinedText.includes('doz') && kc.id === 'client-doz') return true;
+      if ((combinedText.includes('dr. max') || combinedText.includes('drmax') || combinedText.includes('lekomat')) && kc.id === 'client-drmax') return true;
+      if ((combinedText.includes('super-pharm') || combinedText.includes('super pharm') || combinedText.includes('superpharm')) && kc.id === 'client-superpharm') return true;
+      if (combinedText.includes('gemini') && kc.id === 'client-gemini') return true;
+      if (combinedText.includes('nabea') && kc.id === 'client-nabea') return true;
+      if (combinedText.includes('modum') && kc.id === 'client-modumpharma') return true;
+      const shortLower = kc.shortName.toLowerCase();
+      return shortLower.length > 2 && combinedText.includes(shortLower);
+    });
+
+    // 1. DOZ DIRECT
+    if (
+      matchedKnowledgeClient?.id === 'client-doz' ||
+      selectedChain === 'DOZ' ||
+      cleanNip === '8271807718' ||
+      combinedText.includes('doz')
+    ) {
+      return {
+        id: 'doz',
+        recipientName: matchedKnowledgeClient?.shortName || 'DOZ Direct (Hurtownia Farmaceutyczna)',
+        theme: 'amber' as const,
+        paymentDays: matchedKnowledgeClient?.paymentDays || 60,
+        paymentDescription: `${matchedKnowledgeClient?.paymentDays || 60} dni od daty dostawy (P_6)`,
+        idWewStatus: 'NIE (ID-Wew puste!)',
+        idWewRequired: false,
+        glnRequired: '5909000848054',
+        idWewDescription:
+          'W DOZ pole <IDWew> musi pozostać PUSTE! Wymagany jest natomiast numer <GLN> w Podmiot3: 5909000848054 (ul. Kinga C. Gillette 1, 9 i 11, Łódź).',
+        addBatchAndExpiryStatus: 'TAK — OBOWIĄZKOWO na FV KSeF',
+        addBatchAndExpiryRequired: true,
+        addBatchAndExpiryDescription:
+          'Dodać datę przydatności (MHD) oraz numer serii (LOT) bezpośrednio na FV KSeF (dzięki temu nie wysyłamy już osobnej tabeli specyfikacji).',
+        formatStatus: 'Klucz łączony GS1 (NumerSeriiDataPrzydatnosciIlosc)',
+        formatDescription:
+          'Węzeł <DodatkowyOpis>: <Klucz>NumerSeriiDataPrzydatnosciIlosc</Klucz> i <Wartosc>(10)SERIA(17)DATA(37)ILOSC</Wartosc> + kod GTIN.',
+        recommendedLogisticsFormat: 'gs1_composite' as LogisticsFormat,
+        priceRule: '💰 Cennik Specjalny DOZ (-15%): Na FV cena po rabacie netto!',
+        extraTip: 'Wysyłka FV po wystawieniu na: kpd_dd@doz.pl oraz dwd_dd@doz.pl',
+      };
+    }
+
+    // 2. SUPER-PHARM
+    if (
+      matchedKnowledgeClient?.id === 'client-superpharm' ||
+      selectedChain === 'Super-Pharm' ||
+      cleanNip === '5213842837' ||
+      combinedText.includes('super-pharm') ||
+      combinedText.includes('super pharm')
+    ) {
+      const expectedIdWew = matchedKnowledgeClient?.idWew || '5213842837-54936';
+      return {
+        id: 'superpharm',
+        recipientName: matchedKnowledgeClient?.shortName || 'Super-Pharm Holding Sp. z o.o.',
+        theme: 'blue' as const,
+        paymentDays: matchedKnowledgeClient?.paymentDays || 45,
+        paymentDescription: `${matchedKnowledgeClient?.paymentDays || 45} dni od daty dostawy (P_6)`,
+        idWewStatus: `TAK — WYMAGANY (${expectedIdWew})`,
+        idWewRequired: true,
+        expectedIdWew,
+        idWewDescription: `Obowiązkowy <Podmiot3> (Rola 2 – Odbiorca: Magazyn Centralny Teresin) z wpisanym <IDWew>${expectedIdWew}</IDWew>.`,
+        addBatchAndExpiryStatus: 'TAK — OBOWIĄZKOWO na FV KSeF',
+        addBatchAndExpiryRequired: true,
+        addBatchAndExpiryDescription:
+          'Obowiązkowo dodać datę przydatności (MHD) oraz numer serii (LOT) przy każdej pozycji na fakturze KSeF.',
+        formatStatus: 'Osobne pola ("Data ważności" + "Seria")',
+        formatDescription:
+          'Osobne wiersze w <DodatkowyOpis> dla każdej pozycji: osobny wiersz z kluczem "Data ważności" oraz osobny wiersz z kluczem "Seria".',
+        recommendedLogisticsFormat: 'separate_fields' as LogisticsFormat,
+        priceRule: '💰 Cennik Q3 (-5%): Na FV cena po rabacie netto!',
+        extraTip: 'Potwierdzenie realizacji i FV wysłać na: dsiwinski@superpharm.pl',
+      };
+    }
+
+    // 3. DR. MAX (LEKOMAT)
+    if (
+      matchedKnowledgeClient?.id === 'client-drmax' ||
+      selectedChain === 'Dr. Max' ||
+      cleanNip === '8943149010' ||
+      combinedText.includes('dr. max') ||
+      combinedText.includes('drmax') ||
+      combinedText.includes('lekomat')
+    ) {
+      return {
+        id: 'drmax',
+        recipientName: matchedKnowledgeClient?.shortName || 'Dr. Max (Hurtownia Drogeryjna Lekomat)',
+        theme: 'emerald' as const,
+        paymentDays: matchedKnowledgeClient?.paymentDays || 30,
+        paymentDescription: `${matchedKnowledgeClient?.paymentDays || 30} dni (Hurtownia Drogeryjna Lekomat)`,
+        idWewStatus: 'NIE — brak wymogu ID-Wew',
+        idWewRequired: false,
+        idWewDescription:
+          'Brak wymogu ID-Wew oraz brak Podmiot3 — faktura wystawiana bezpośrednio na Nabywcę (Podmiot2: Dr. Max Lekomat Sp. z o.o.).',
+        addBatchAndExpiryStatus: 'Lekomat: NIE (bez MHD/serii) | Spółki apteczne: TAK',
+        addBatchAndExpiryRequired: false,
+        addBatchAndExpiryDescription:
+          'Dla Dr. Max Hurtownia Drogeryjna Lekomat: FV KSeF BEZ daty ważności i serii. (Dla pozostałych spółek aptecznych Dr. Max: TAK – z serią i datą).',
+        formatStatus: 'Bez serii i dat (Lekomat) / Klucz łączony GS1 (Apteki)',
+        formatDescription:
+          'Hurtownia Drogeryjna Lekomat: tryb "Bez serii i dat (none)". Spółki apteczne Dr. Max: Klucz łączony GS1 (NumerSeriiDataPrzydatnosciIlosc).',
+        recommendedLogisticsFormat: 'none' as LogisticsFormat,
+        priceRule: '💰 Cennik Q3 (-5%): Na FV cena po rabacie netto!',
+        extraTip: 'Wysyłka FV na: dostawyecom@drmax.com.pl oraz zamowieniaecom@drmax.com.pl',
+      };
+    }
+
+    // 4. GEMINI
+    if (
+      matchedKnowledgeClient?.id === 'client-gemini' ||
+      selectedChain === 'Gemini' ||
+      cleanNip === '5252801825' ||
+      cleanNip === '5862276537' ||
+      combinedText.includes('gemini')
+    ) {
+      return {
+        id: 'gemini',
+        recipientName: matchedKnowledgeClient?.shortName || 'Gemini (Gemini Apps Sp. z o.o.)',
+        theme: 'purple' as const,
+        paymentDays: matchedKnowledgeClient?.paymentDays || 45,
+        paymentDescription: `${matchedKnowledgeClient?.paymentDays || 45} dni`,
+        idWewStatus: 'NIE — brak wymogu ID-Wew',
+        idWewRequired: false,
+        idWewDescription:
+          'Brak wymogu ID-Wew. Pamiętaj o dołączeniu papierowej FV i dokumentu WZ z kodami GTIN na oznaczonym kartonie/palecie!',
+        addBatchAndExpiryStatus: 'TAK — FV w-Firma + osobna tabela (specyfikacja)',
+        addBatchAndExpiryRequired: true,
+        addBatchAndExpiryDescription:
+          'Wystawiana FV w-Firma + osobna tabela (specyfikacja) z serią i datą przydatności (MHD).',
+        formatStatus: 'FV w-Firma + Tabela (w KSeF XML: Osobne pola)',
+        formatDescription:
+          'FV w-Firma + osobna tabela specyfikacji (w przypadku generowania KSeF XML: Osobne pola "Data ważności" i "Seria").',
+        recommendedLogisticsFormat: 'separate_fields' as LogisticsFormat,
+        priceRule: '💰 Cennik Q3 (-5%): Na FV cena po rabacie netto!',
+        extraTip: 'Po potwierdzeniu awizacji wysłać FV i tabelę na: ri@gemini.pl oraz aleksandra.teclaw@gemini.pl',
+      };
+    }
+
+    // 5. Pozostali klienci z Centrum Wiedzy (np. Nabea, Modum Pharma lub nowo dodani)
+    if (matchedKnowledgeClient) {
+      const hasIdWew = Boolean(matchedKnowledgeClient.idWew?.trim());
+      const isExternal = matchedKnowledgeClient.invoiceSystem === 'ZEWNETRZNY_SYSTEM';
+      const fmtLower = matchedKnowledgeClient.ksefLogisticsFormat.toLowerCase();
+      const recFmt: LogisticsFormat = fmtLower.includes('osobne')
+        ? 'separate_fields'
+        : fmtLower.includes('bez')
+        ? 'none'
+        : 'gs1_composite';
+
+      return {
+        id: matchedKnowledgeClient.id,
+        recipientName: matchedKnowledgeClient.shortName,
+        theme: 'rose' as const,
+        paymentDays: matchedKnowledgeClient.paymentDays,
+        paymentDescription: `${matchedKnowledgeClient.paymentDays} dni`,
+        idWewStatus: hasIdWew ? `TAK (${matchedKnowledgeClient.idWew})` : 'NIE — brak wymogu ID-Wew',
+        idWewRequired: hasIdWew,
+        expectedIdWew: matchedKnowledgeClient.idWew,
+        idWewDescription: hasIdWew
+          ? `Wymagany identyfikator wewnętrzny w Podmiot3: ${matchedKnowledgeClient.idWew}.`
+          : 'Brak wymogu podawania ID-Wew w Podmiot3.',
+        addBatchAndExpiryStatus: isExternal
+          ? matchedKnowledgeClient.invoiceSystemLabel
+          : fmtLower.includes('bez')
+          ? 'NIE — bez serii i daty ważności na FV'
+          : 'TAK — dodać datę przydatności i serię na FV',
+        addBatchAndExpiryRequired: !fmtLower.includes('bez'),
+        addBatchAndExpiryDescription: `Wymóg MHD: ${matchedKnowledgeClient.minExpiryRequirement}.`,
+        formatStatus: matchedKnowledgeClient.ksefLogisticsFormat,
+        formatDescription: matchedKnowledgeClient.invoiceSystemLabel,
+        recommendedLogisticsFormat: recFmt,
+        priceRule:
+          matchedKnowledgeClient.priceListType === 'DOZ_SPECIAL'
+            ? '💰 Cennik Specjalny DOZ (-15%): Na FV cena po rabacie netto!'
+            : '💰 Cennik Q3 (-5%): Na FV cena po rabacie netto!',
+        extraTip: matchedKnowledgeClient.contacts[0]
+          ? `Kontakt / wysyłka: ${matchedKnowledgeClient.contacts.map((c) => c.email).join(', ')}`
+          : '',
+      };
+    }
+
+    // 6. Dowolny inny / nowy odbiorca z zamówienia spoza predefiniowanej listy
+    return {
+      id: 'custom',
+      recipientName: buyer.name || thirdParty?.name || 'Przypisany Odbiorca',
+      theme: 'rose' as const,
+      paymentDays: meta.paymentDays || 14,
+      paymentDescription: `${meta.paymentDays || 14} dni (zgodnie z zamówieniem)`,
+      idWewStatus: thirdParty?.idWew ? `TAK (${thirdParty.idWew})` : 'NIE (chyba że wskazano na zamówieniu)',
+      idWewRequired: Boolean(thirdParty?.idWew),
+      expectedIdWew: thirdParty?.idWew,
+      idWewDescription: thirdParty?.idWew
+        ? `Wpisany ID-Wew w Podmiot3: ${thirdParty.idWew}.`
+        : 'Standardowo brak wymogu ID-Wew (wymagany głównie dla Super-Pharm: 5213842837-54936).',
+      addBatchAndExpiryStatus:
+        logisticsFormat === 'none'
+          ? 'NIE (tryb standardowy bez serii/dat)'
+          : 'TAK — seria i data przydatności włączone',
+      addBatchAndExpiryRequired: logisticsFormat !== 'none',
+      addBatchAndExpiryDescription:
+        'Sprawdź na zamówieniu, czy odbiorca wymaga serii (LOT) i daty ważności (MHD) na fakturze KSeF.',
+      formatStatus:
+        logisticsFormat === 'gs1_composite'
+          ? 'Klucz łączony GS1 (NumerSeriiDataPrzydatnosciIlosc)'
+          : logisticsFormat === 'separate_fields'
+          ? 'Osobne pola ("Data ważności" + "Seria")'
+          : 'Bez serii i dat ważności (Standardowa FV)',
+      formatDescription:
+        'Możesz przełączyć format zapisu serii i daty ważności w KSeF przyciskami poniżej.',
+      recommendedLogisticsFormat: logisticsFormat,
+      priceRule: '💰 Cennik Q3 (-5%): Pamiętaj, że na FV ma być cena po rabacie netto!',
+      extraTip: '',
+    };
+  }, [buyer.name, buyer.nip, thirdParty?.name, thirdParty?.idWew, selectedChain, knowledgeClients, meta.paymentDays, logisticsFormat]);
 
   return (
     <div className="space-y-6 mb-6">
@@ -630,6 +893,265 @@ Numer zamówienia: ZAM/2026/10/01
           </div>
         </div>
 
+        {/* ===================================================================== */}
+        {/* 📌 MINI-NOTATKA DLA WYSTAWIAJĄCEGO FV (PO PRZYPISANIU ODBIORCY)        */}
+        {/* ===================================================================== */}
+        {recipientCheatSheet && (
+          <div
+            className={`mt-4 p-4 rounded-2xl border-2 shadow-xs animate-in fade-in duration-200 ${
+              recipientCheatSheet.theme === 'amber'
+                ? 'bg-gradient-to-r from-amber-50/90 via-orange-50/50 to-white border-amber-300'
+                : recipientCheatSheet.theme === 'blue'
+                ? 'bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-white border-blue-300'
+                : recipientCheatSheet.theme === 'emerald'
+                ? 'bg-gradient-to-r from-emerald-50/90 via-teal-50/50 to-white border-emerald-300'
+                : recipientCheatSheet.theme === 'purple'
+                ? 'bg-gradient-to-r from-purple-50/90 via-fuchsia-50/50 to-white border-purple-300'
+                : 'bg-gradient-to-r from-rose-50/90 via-pink-50/50 to-white border-rose-300'
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200/80">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black bg-slate-900 text-white shadow-2xs">
+                  <span>📌</span>
+                  <span>MINI-NOTATKA DLA WYSTAWIAJĄCEGO FV</span>
+                </span>
+                <span className="text-xs sm:text-sm font-black text-slate-900">
+                  Odbiorca: <span className="underline decoration-fuchsia-400 decoration-2">{recipientCheatSheet.recipientName}</span>
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-rose-600 text-white shadow-2xs">
+                  {recipientCheatSheet.priceRule}
+                </span>
+              </div>
+            </div>
+
+            {/* 4 KLUCZOWE PUNKTY DLA WYSTAWIAJĄCEGO FV */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              {/* 1. TERMIN PŁATNOŚCI */}
+              <div className="bg-white/95 p-3 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-fuchsia-600" />
+                      <span>1. Termin płatności</span>
+                    </span>
+                    {meta.paymentDays === recipientCheatSheet.paymentDays ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        ✓ Ustawiono
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentDaysFromDelivery(recipientCheatSheet.paymentDays)}
+                        className="px-2 py-0.5 rounded text-[10px] font-bold bg-fuchsia-600 hover:bg-fuchsia-700 text-white cursor-pointer transition-colors"
+                      >
+                        Ustaw {recipientCheatSheet.paymentDays} dni
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-base font-black text-slate-900">
+                    {recipientCheatSheet.paymentDays} dni
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                    {recipientCheatSheet.paymentDescription}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. CZY WYMAGANY JEST ID-WEW.? */}
+              <div className="bg-white/95 p-3 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Warehouse className="w-3.5 h-3.5 text-blue-600" />
+                      <span>2. Czy wymagany ID-Wew.?</span>
+                    </span>
+                    {recipientCheatSheet.idWewRequired ? (
+                      thirdParty?.idWew === recipientCheatSheet.expectedIdWew ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          ✓ Wpisany
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateThirdParty &&
+                            onUpdateThirdParty({
+                              name: thirdParty?.name || 'Magazyn Centralny Super Pharm Holding',
+                              countryCode: 'PL',
+                              addressLine1: thirdParty?.addressLine1 || 'Aleja 20-lecia 23, 96-515 Teresin',
+                              postalCode: thirdParty?.postalCode || '96-515',
+                              city: thirdParty?.city || 'Teresin',
+                              role: '2',
+                              idWew: recipientCheatSheet.expectedIdWew,
+                            })
+                          }
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition-colors"
+                        >
+                          + Wstaw ID-Wew
+                        </button>
+                      )
+                    ) : recipientCheatSheet.glnRequired ? (
+                      thirdParty?.gln === recipientCheatSheet.glnRequired ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          ✓ GLN OK
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateThirdParty &&
+                            onUpdateThirdParty({
+                              name:
+                                thirdParty?.name ||
+                                'DOZ SPÓŁKA AKCYJNA DIRECT SPÓŁKA KOMANDYTOWA - HURTOWNIA FARMACEUTYCZNA',
+                              countryCode: 'PL',
+                              addressLine1:
+                                thirdParty?.addressLine1 ||
+                                'UL. KINGA C. GILLETTE 1, 9, 11 r. 17-21',
+                              postalCode: thirdParty?.postalCode || '94-406',
+                              city: thirdParty?.city || 'Łódź',
+                              role: '2',
+                              gln: recipientCheatSheet.glnRequired,
+                              idWew: undefined,
+                            })
+                          }
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer transition-colors"
+                        >
+                          + Wstaw GLN DOZ
+                        </button>
+                      )
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        Brak wymogu
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className={`text-xs font-black ${
+                      recipientCheatSheet.idWewRequired
+                        ? 'text-blue-900'
+                        : recipientCheatSheet.glnRequired
+                        ? 'text-amber-900'
+                        : 'text-slate-800'
+                    }`}
+                  >
+                    {recipientCheatSheet.idWewStatus}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                    {recipientCheatSheet.idWewDescription}
+                  </p>
+                </div>
+              </div>
+
+              {/* 3. CZY DODAĆ DATĘ PRZYDATNOŚCI I SERIĘ NA FV? */}
+              <div className="bg-white/95 p-3 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>3. Data przydatności i seria na FV?</span>
+                    </span>
+                  </div>
+                  <div
+                    className={`text-xs font-black ${
+                      recipientCheatSheet.addBatchAndExpiryRequired
+                        ? 'text-emerald-900'
+                        : 'text-amber-900'
+                    }`}
+                  >
+                    {recipientCheatSheet.addBatchAndExpiryStatus}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                    {recipientCheatSheet.addBatchAndExpiryDescription}
+                  </p>
+                </div>
+              </div>
+
+              {/* 4. W JAKIM FORMACIE NA FV? */}
+              <div className="bg-white/95 p-3 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>4. W jakim formacie na FV?</span>
+                    </span>
+                    {onToggleLogisticsFormat &&
+                      logisticsFormat !== recipientCheatSheet.recommendedLogisticsFormat && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onToggleLogisticsFormat(
+                              recipientCheatSheet.recommendedLogisticsFormat
+                            )
+                          }
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer transition-colors"
+                        >
+                          Ustaw ten format
+                        </button>
+                      )}
+                  </div>
+                  <div className="text-xs font-black text-indigo-950">
+                    {recipientCheatSheet.formatStatus}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                    {recipientCheatSheet.formatDescription}
+                  </p>
+                </div>
+
+                {onToggleLogisticsFormat && (
+                  <div className="mt-2 pt-1.5 border-t border-slate-100 flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Aktywny w KSeF:</span>
+                    <button
+                      type="button"
+                      onClick={() => onToggleLogisticsFormat('gs1_composite')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer border ${
+                        logisticsFormat === 'gs1_composite'
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      GS1 łączony
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleLogisticsFormat('separate_fields')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer border ${
+                        logisticsFormat === 'separate_fields'
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Osobne pola
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleLogisticsFormat('none')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer border ${
+                        logisticsFormat === 'none'
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Bez serii/dat
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {recipientCheatSheet.extraTip && (
+              <div className="mt-2.5 pt-2 border-t border-slate-200/70 flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                <Info className="w-3.5 h-3.5 text-fuchsia-600 shrink-0" />
+                <span>{recipientCheatSheet.extraTip}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* GŁÓWNA SIATKA DANYCH ZAMÓWIENIA & FAKTURY Z POLAMI DO ZATWIERDZENIA */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
         
@@ -761,16 +1283,31 @@ Numer zamówienia: ZAM/2026/10/01
               <p className="text-[10px] text-slate-400 mt-0.5">Wgraj plik z zamówieniem lub wybierz sieć apteczną powyżej</p>
             </div>
           ) : (
-            <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-900 truncate" title={buyer.name}>{buyer.name}</p>
-                <span className="shrink-0 text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 px-1.5 py-0.5 rounded border border-fuchsia-200">
-                  {lastExtractedInfo?.isRecognizedChain ? 'Sieć' : 'Z zamówienia'}
-                </span>
+            <div className="space-y-2">
+              <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-slate-900 truncate" title={buyer.name}>{buyer.name}</p>
+                  <span className="shrink-0 text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 px-1.5 py-0.5 rounded border border-fuchsia-200">
+                    {lastExtractedInfo?.isRecognizedChain ? 'Sieć' : 'Z zamówienia'}
+                  </span>
+                </div>
+                <p className="font-mono">NIP: <strong>{buyer.nip}</strong></p>
+                <p className="truncate text-slate-500">{buyer.addressLine1}, {buyer.postalCode} {buyer.city}</p>
+                {buyer.email && <p className="truncate text-slate-500 font-mono text-[10px]">✉️ {buyer.email}</p>}
               </div>
-              <p className="font-mono">NIP: <strong>{buyer.nip}</strong></p>
-              <p className="truncate text-slate-500">{buyer.addressLine1}, {buyer.postalCode} {buyer.city}</p>
-              {buyer.email && <p className="truncate text-slate-500 font-mono text-[10px]">✉️ {buyer.email}</p>}
+
+              {recipientCheatSheet && (
+                <div className="p-2 rounded-lg bg-amber-50/90 border border-amber-200 text-[10px] text-slate-800 space-y-0.5 leading-snug">
+                  <div className="font-black text-amber-950 flex items-center gap-1">
+                    <span>📌</span>
+                    <span>Ściąga dla wystawiającego ({recipientCheatSheet.recipientName}):</span>
+                  </div>
+                  <div>• <strong>Termin płatności:</strong> {recipientCheatSheet.paymentDays} dni</div>
+                  <div>• <strong>ID-Wew.:</strong> {recipientCheatSheet.idWewStatus}</div>
+                  <div>• <strong>Seria i data ważności na FV:</strong> {recipientCheatSheet.addBatchAndExpiryStatus}</div>
+                  <div>• <strong>Format:</strong> {recipientCheatSheet.formatStatus}</div>
+                </div>
+              )}
             </div>
           )}
         </div>
