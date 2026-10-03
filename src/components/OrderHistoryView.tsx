@@ -72,7 +72,7 @@ interface OrderHistoryViewProps {
   onLoadOrderForInvoiceCreation?: (order: ArchivedOrder) => void;
 }
 
-export type OrderLifecycleTab = 'in_progress' | 'completed' | 'all';
+export type OrderLifecycleTab = 'new' | 'in_progress' | 'completed' | 'all';
 
 export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   orders,
@@ -1002,10 +1002,67 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   return (
     <div className="space-y-6">
       {/* ==================================================================== */}
-      {/* 3 GŁÓWNE KAFELKI NA SAMEJ GÓRZE: W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE */}
+      {/* 4 GŁÓWNE KAFELKI NA SAMEJ GÓRZE: NOWE / W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE */}
       {/* ==================================================================== */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* KAFELEK 1: W REALIZACJI */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* KAFELEK 1: NOWE */}
+        <button
+          type="button"
+          onClick={() => {
+            setLifecycleTab('new');
+          }}
+          className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
+            lifecycleTab === 'new'
+              ? 'bg-gradient-to-br from-fuchsia-50/95 via-pink-50/40 to-white border-fuchsia-500 ring-2 ring-fuchsia-400/30 shadow-fuchsia-100 scale-[1.01]'
+              : 'bg-white hover:bg-fuchsia-50/40 border-slate-200 hover:border-fuchsia-300'
+          }`}
+        >
+          {lifecycleTab === 'new' && (
+            <span className="absolute top-3.5 right-3.5 flex items-center gap-1 text-[11px] font-bold text-fuchsia-800 bg-fuchsia-100/90 px-2.5 py-0.5 rounded-full border border-fuchsia-300 shadow-2xs">
+              <CheckCircle2 className="w-3 h-3 text-fuchsia-600" /> Aktywny
+            </span>
+          )}
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 transition-colors shadow-xs ${
+                lifecycleTab === 'new'
+                  ? 'bg-gradient-to-tr from-fuchsia-500 to-pink-500 text-white shadow-fuchsia-300'
+                  : 'bg-fuchsia-100 text-fuchsia-600'
+              }`}
+            >
+              ➕
+            </div>
+            <div className="pr-10 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
+                  NOWE
+                </h3>
+                <span
+                  className={`px-2 py-0.5 text-xs font-black rounded-lg ${
+                    lifecycleTab === 'new'
+                      ? 'bg-fuchsia-600 text-white shadow-2xs'
+                      : 'bg-fuchsia-100 text-fuchsia-900'
+                  }`}
+                >
+                  2 opcje
+                </span>
+              </div>
+              <p className="text-xs font-medium text-fuchsia-800/80 mt-0.5">
+                Dodaj nowe zamówienie sieciowe
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2.5 text-[11px]">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-semibold border border-amber-200/60">
+                  📦 Nowe Zamówienie
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-pink-100/80 text-pink-900 font-semibold border border-pink-200/60">
+                  🧾 Z wystawieniem FV
+                </span>
+              </div>
+            </div>
+          </div>
+        </button>
+
+        {/* KAFELEK 2: W REALIZACJI */}
         <button
           type="button"
           onClick={() => {
@@ -1071,7 +1128,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
         </button>
 
-        {/* KAFELEK 2: ZAKOŃCZONE */}
+        {/* KAFELEK 3: ZAKOŃCZONE */}
         <button
           type="button"
           onClick={() => {
@@ -1126,7 +1183,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
         </button>
 
-        {/* KAFELEK 3: WSZYSTKIE */}
+        {/* KAFELEK 4: WSZYSTKIE */}
         <button
           type="button"
           onClick={() => {
@@ -1182,6 +1239,118 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         </button>
       </div>
 
+      {/* ==================================================================== */}
+      {/* WIDOK DLA KAFELKI "NOWE" (TYLKO DWIE OPCJE DODAWANIA ZAMÓWIENIA)     */}
+      {/* ==================================================================== */}
+      {lifecycleTab === 'new' ? (
+        <div className="bg-white rounded-3xl border border-fuchsia-200/80 p-6 sm:p-8 shadow-sm animate-in fade-in duration-200">
+          <div className="text-center max-w-2xl mx-auto mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fuchsia-50 border border-fuchsia-200 text-fuchsia-800 text-xs font-bold mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-fuchsia-600" />
+              <span>Dodawanie Nowego Zamówienia</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Wybierz tryb wprowadzenia zamówienia
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Wczytaj zamówienie do realizacji bez wystawiania faktury teraz albo przejdź od razu do wystawienia e-Faktury KSeF.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+            {/* OPCJA 1: NOWE ZAMÓWIENIE */}
+            <div
+              onClick={() => setIsImportModalOpen(true)}
+              className="group bg-gradient-to-br from-amber-50/70 via-orange-50/30 to-white hover:from-amber-100/70 hover:to-orange-50/50 border-2 border-amber-300 hover:border-amber-500 rounded-3xl p-6 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between"
+            >
+              <div>
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center text-2xl shadow-md shadow-amber-200 mb-4 group-hover:scale-105 transition-transform">
+                  📦
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/90 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  Zapisz do realizacji (PDF / TXT / XLSX)
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 mt-2.5 tracking-tight">
+                  NOWE ZAMÓWIENIE
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+                  Wrzuć plik zamówienia, aby zapisać je w zakładce <strong>W REALIZACJI</strong> bez wystawiania faktury w tym momencie:
+                </p>
+                <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
+                  <li className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Zamówienie z wyprzedzeniem — zaplanuj pakowanie, a FV wystaw przed awizacją</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Globe className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Sieć z fakturą w zewnętrznym systemie (bez generowania XML KSeF)</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-amber-200/60">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsImportModalOpen(true);
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-xs sm:text-sm font-black text-amber-950 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-300 hover:from-amber-400 hover:to-orange-300 border border-amber-400 rounded-2xl shadow-xs hover:shadow transition-all cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-amber-900" />
+                  <span>NOWE ZAMÓWIENIE</span>
+                </button>
+              </div>
+            </div>
+
+            {/* OPCJA 2: NOWE ZAMÓWIENIE Z WYSTAWIENIEM FV */}
+            <div
+              onClick={onNavigateToInvoiceCreation}
+              className="group bg-gradient-to-br from-rose-50/70 via-pink-50/30 to-white hover:from-rose-100/70 hover:to-pink-50/50 border-2 border-rose-300 hover:border-rose-500 rounded-3xl p-6 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between"
+            >
+              <div>
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-600 text-white flex items-center justify-center text-2xl shadow-md shadow-rose-200 mb-4 group-hover:scale-105 transition-transform">
+                  🧾
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-200">
+                  Kreator e-Faktury KSeF FA(3)
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 mt-2.5 tracking-tight">
+                  NOWE ZAMÓWIENIE Z WYSTAWIENIEM FV
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+                  Przejdź bezpośrednio do generatora faktur, aby wczytać plik zamówienia i od razu wystawić e-Fakturę XML:
+                </p>
+                <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
+                  <li className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Automatyczny odczyt zamówienia, serii/dat ważności i weryfikacja z cennikiem</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <FileCode className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Generowanie pliku XML FA(3) oraz dokumentu WZ i zapis do historii</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-rose-200/60">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigateToInvoiceCreation();
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-xs sm:text-sm font-black text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-2xl shadow-sm hover:shadow transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>NOWE ZAMÓWIENIE Z WYSTAWIENIEM FV</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* NAGŁÓWEK MODUŁU I FILTRY SIECIOWE */}
       <div className="bg-white rounded-2xl border border-rose-200/80 p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
@@ -1247,25 +1416,6 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               <span>Importuj plik XML</span>
               <input type="file" accept=".xml" className="hidden" onChange={handleImportXmlFile} />
             </label>
-
-            <button
-              type="button"
-              onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-amber-950 bg-gradient-to-r from-amber-200 via-orange-200 to-amber-300 hover:from-amber-300 hover:to-orange-300 border border-amber-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer hover:scale-[1.02]"
-              title="Wczytaj zamówienie (PDF, TXT, Excel) do realizacji — zaplanuj pakowanie bez wystawiania faktury lub dla sieci zewnętrznej"
-            >
-              <Upload className="w-3.5 h-3.5 text-amber-800" />
-              <span>Nowe Zamówienie</span>
-            </button>
-
-            <button
-              onClick={onNavigateToInvoiceCreation}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.02]"
-              title="Przejdź do kreatora faktur, aby wczytać zamówienie i od razu wystawić e-Fakturę KSeF"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Nowe Zamówienie z wystawieniem FV</span>
-            </button>
           </div>
         </div>
 
@@ -2703,6 +2853,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           })}
         </div>
       )}
+        </>
+      )}
 
       {/* MODAL PODGLĄDU XML Z ARCHIWUM */}
       {viewXmlOrder && (
@@ -3076,8 +3228,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
         onClose={() => setIsImportModalOpen(false)}
         onOrderSaved={(newOrder) => {
           onRefreshOrders();
+          setLifecycleTab('in_progress');
           setInvoiceNotice(
-            `Pomyślnie dodano zamówienie ${newOrder.orderNumber || newOrder.id} (${newOrder.chain}) do realizacji!`
+            `Pomyślnie dodano zamówienie ${newOrder.orderNumber || newOrder.id} (${newOrder.chain}) do zakładki W REALIZACJI!`
           );
           setTimeout(() => setInvoiceNotice(null), 4000);
         }}
