@@ -1052,7 +1052,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               </p>
               <div className="flex flex-wrap items-center gap-1.5 mt-2.5 text-[11px]">
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-semibold border border-amber-200/60">
-                  📦 Nowe Zamówienie
+                  📦 Bez faktury
                 </span>
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-pink-100/80 text-pink-900 font-semibold border border-pink-200/60">
                   🧾 Z wystawieniem FV
@@ -1258,7 +1258,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {/* OPCJA 1: NOWE ZAMÓWIENIE */}
+            {/* OPCJA 1: NOWE ZAMÓWIENIE BEZ FAKTURY */}
             <div
               onClick={() => setIsImportModalOpen(true)}
               className="group bg-gradient-to-br from-amber-50/70 via-orange-50/30 to-white hover:from-amber-100/70 hover:to-orange-50/50 border-2 border-amber-300 hover:border-amber-500 rounded-3xl p-6 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between"
@@ -1271,7 +1271,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                   Zapisz do realizacji (PDF / TXT / XLSX)
                 </span>
                 <h3 className="text-lg sm:text-xl font-black text-slate-900 mt-2.5 tracking-tight">
-                  NOWE ZAMÓWIENIE
+                  NOWE ZAMÓWIENIE BEZ FAKTURY
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
                   Wrzuć plik zamówienia, aby zapisać je w zakładce <strong>W REALIZACJI</strong> bez wystawiania faktury w tym momencie:
@@ -1298,7 +1298,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                   className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-xs sm:text-sm font-black text-amber-950 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-300 hover:from-amber-400 hover:to-orange-300 border border-amber-400 rounded-2xl shadow-xs hover:shadow transition-all cursor-pointer"
                 >
                   <Upload className="w-4 h-4 text-amber-900" />
-                  <span>NOWE ZAMÓWIENIE</span>
+                  <span>NOWE ZAMÓWIENIE BEZ FAKTURY</span>
                 </button>
               </div>
             </div>
