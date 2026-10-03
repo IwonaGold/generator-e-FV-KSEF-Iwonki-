@@ -325,7 +325,6 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
       if ((combinedText.includes('dr. max') || combinedText.includes('drmax') || combinedText.includes('lekomat')) && kc.id === 'client-drmax') return true;
       if ((combinedText.includes('super-pharm') || combinedText.includes('super pharm') || combinedText.includes('superpharm')) && kc.id === 'client-superpharm') return true;
       if (combinedText.includes('gemini') && kc.id === 'client-gemini') return true;
-      if (combinedText.includes('nabea') && kc.id === 'client-nabea') return true;
       if (combinedText.includes('modum') && kc.id === 'client-modumpharma') return true;
       const shortLower = kc.shortName.toLowerCase();
       return shortLower.length > 2 && combinedText.includes(shortLower);

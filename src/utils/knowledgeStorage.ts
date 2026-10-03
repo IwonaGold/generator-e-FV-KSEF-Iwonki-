@@ -74,6 +74,9 @@ function mergeServerAndLocalClients(
     }
   }
 
+  // Usuń wycofanych klientów (np. Nabea)
+  map.delete('client-nabea');
+
   return Array.from(map.values());
 }
 
@@ -91,6 +94,10 @@ export async function getKeyClients(): Promise<KeyClientProfile[]> {
     }
   } catch (err) {
     console.warn('Serwer API Centrum Wiedzy niedostępny, używam pamięci lokalnej:', err);
+  }
+
+  if (serverClients.some((c) => c.id === 'client-nabea')) {
+    fetch('/api/knowledge-base/client-nabea', { method: 'DELETE' }).catch(() => {});
   }
 
   if (serverClients.length > 0 || localClients.length > 0) {

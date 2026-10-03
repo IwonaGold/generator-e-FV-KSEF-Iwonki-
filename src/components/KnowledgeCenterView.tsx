@@ -613,7 +613,7 @@ export const KnowledgeCenterView: React.FC = () => {
         )}
 
         {/* KAFELKI WYBORU KLIENTA KLUCZOWEGO */}
-        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
           {filteredClients.map((client) => {
             const isSelected = activeClient?.id === client.id;
             const cTheme = THEME_STYLES[client.colorTheme] || THEME_STYLES.rose;
