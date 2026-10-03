@@ -462,7 +462,7 @@ const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const DEFAULT_VAULT_REPO_NAME = 'ksef-prywatny-sejf';
 let activeVaultRepo = (process.env.GITHUB_DATA_REPO || `IwonaGold/${DEFAULT_VAULT_REPO_NAME}`).trim();
 const GITHUB_DATA_BRANCH = (process.env.GITHUB_DATA_BRANCH || 'app-data').trim();
-const ENCRYPTION_SECRET = (process.env.DATA_ENCRYPTION_KEY || GITHUB_TOKEN || 'local-fallback-key').trim();
+const ENCRYPTION_SECRET = (process.env.DATA_ENCRYPTION_KEY || 'ksef-iwonka-2026-aes256-master-vault-key-9f8e7d6c5b4a').trim();
 let vaultRepoVerified = false;
 
 function getEncryptionKey(): Buffer {
