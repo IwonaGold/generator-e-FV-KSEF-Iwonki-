@@ -88,6 +88,10 @@ interface CombinedOrderInvoiceStepProps {
   onLoadPresetDoz?: () => void;
   onLoadPresetSuperPharm?: () => void;
   onLoadPresetNoBatches?: () => void;
+  onSendTaskToWarehouse?: (customTaskNote?: string) => Promise<void> | void;
+  warehouseTaskStatus?: 'none' | 'assigned' | 'in_progress' | 'completed';
+  warehouseTaskNote?: string;
+  viewMode?: 'new_order' | 'invoice_only';
 }
 
 export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> = ({
@@ -114,6 +118,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   onLoadPresetDoz,
   onLoadPresetSuperPharm,
   onLoadPresetNoBatches,
+  onSendTaskToWarehouse,
+  warehouseTaskStatus = 'none',
+  warehouseTaskNote = '',
+  viewMode = 'invoice_only',
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [showAddressDetails, setShowAddressDetails] = useState(false);
@@ -123,7 +131,12 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
   const [lastExtractedInfo, setLastExtractedInfo] = useState<OrderIngestionMatch | null>(null);
   const [isEditingBuyer, setIsEditingBuyer] = useState(false);
   const [knowledgeClients, setKnowledgeClients] = useState<KeyClientProfile[]>(INITIAL_KEY_CLIENTS);
+  const [taskNoteInput, setTaskNoteInput] = useState<string>(warehouseTaskNote || '');
   const orderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTaskNoteInput(warehouseTaskNote || '');
+  }, [warehouseTaskNote, meta.orderNumber]);
 
   useEffect(() => {
     getKeyClients()
@@ -388,11 +401,11 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
         idWewRequired: true,
         expectedIdWew,
         idWewDescription: `Obowiązkowy <Podmiot3> (Rola 2 – Odbiorca: Magazyn Centralny Teresin) z wpisanym <IDWew>${expectedIdWew}</IDWew>.`,
-        addBatchAndExpiryStatus: 'TAK — OBOWIĄZKOWO na FV KSeF',
+        addBatchAndExpiryStatus: 'TAK — WYMAGANE (osobne wiersze)',
         addBatchAndExpiryRequired: true,
         addBatchAndExpiryDescription:
-          'Obowiązkowo dodać datę przydatności (MHD) oraz numer serii (LOT) przy każdej pozycji na fakturze KSeF.',
-        formatStatus: 'Osobne pola ("Data ważności" + "Seria")',
+          'Super-Pharm wymaga podania dat ważności (MHD) oraz numeru serii (LOT) w osobnych wierszach <DodatkowyOpis> przy każdej pozycji na fakturze KSeF.',
+        formatStatus: 'Osobne wiersze ("Data ważności" + "Seria")',
         formatDescription:
           'Osobne wiersze w <DodatkowyOpis> dla każdej pozycji: osobny wiersz z kluczem "Data ważności" oraz osobny wiersz z kluczem "Seria".',
         recommendedLogisticsFormat: 'separate_fields' as LogisticsFormat,
@@ -532,7 +545,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
         logisticsFormat === 'gs1_composite'
           ? 'Klucz łączony GS1 (NumerSeriiDataPrzydatnosciIlosc)'
           : logisticsFormat === 'separate_fields'
-          ? 'Osobne pola ("Data ważności" + "Seria")'
+          ? 'Osobne wiersze ("Data ważności" + "Seria")'
           : 'Bez serii i dat ważności (Standardowa FV)',
       formatDescription:
         'Możesz przełączyć format zapisu serii i daty ważności w KSeF przyciskami poniżej.',
@@ -542,12 +555,27 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     };
   }, [buyer.name, buyer.nip, thirdParty?.name, thirdParty?.idWew, selectedChain, knowledgeClients, meta.paymentDays, logisticsFormat]);
 
-  // Automatyczne zaznaczanie terminu płatności (np. 30 / 45 / 60 dni) oraz wyliczanie daty płatności wg Centrum Wiedzy
+  // Automatyczne zaznaczanie terminu płatności (np. 30 / 45 / 60 dni), daty płatności oraz wymaganego formatu serii/dat wg Centrum Wiedzy
   const lastAutoPaymentKeyRef = useRef<string>('');
+  const lastAutoFormatKeyRef = useRef<string>('');
   useEffect(() => {
     if (!recipientCheatSheet || recipientCheatSheet.id === 'custom') {
       lastAutoPaymentKeyRef.current = '';
+      lastAutoFormatKeyRef.current = '';
       return;
+    }
+
+    // Automatyczne ustawienie zalecanego formatu serii i daty ważności (np. Super-Pharm -> Osobne wiersze: Data ważności + Seria)
+    const formatKey = `${recipientCheatSheet.id}|${buyer.nip || ''}|${orderFile?.name || ''}|${meta.orderNumber || ''}`;
+    if (lastAutoFormatKeyRef.current !== formatKey) {
+      lastAutoFormatKeyRef.current = formatKey;
+      if (
+        onToggleLogisticsFormat &&
+        recipientCheatSheet.recommendedLogisticsFormat &&
+        logisticsFormat !== recipientCheatSheet.recommendedLogisticsFormat
+      ) {
+        onToggleLogisticsFormat(recipientCheatSheet.recommendedLogisticsFormat);
+      }
     }
 
     const targetDays = recipientCheatSheet.paymentDays;
@@ -580,6 +608,8 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     meta.orderDate,
     meta.paymentDays,
     meta.dueDate,
+    logisticsFormat,
+    onToggleLogisticsFormat,
     onUpdateMeta,
   ]);
 
@@ -588,10 +618,10 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
       {/* ===================================================================== */}
       {/* KROK 1: WCZYTAJ ZAMÓWIENIE SIECIOWE (DROPZONE + WYBÓR Z HISTORII)     */}
       {/* ===================================================================== */}
-      <div className="bg-white rounded-2xl border border-fuchsia-200/80 p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-3 mb-4">
+      <div className="bg-white rounded-2xl border-2 border-slate-600 p-5 shadow-md">
+        <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-3 mb-4 pb-3.5 border-b-2 border-slate-300">
           <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
+            <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
               1
             </div>
             <div className="min-w-0 pr-2">
@@ -608,7 +638,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
             <button
               type="button"
               onClick={() => setIsPasteOpen(!isPasteOpen)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl cursor-pointer transition-colors shadow-2xs shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl cursor-pointer transition-colors shadow-2xs shrink-0"
               title="Wklej treść zamówienia ze schowka (np. z maila)"
             >
               <Upload className="w-3.5 h-3.5 text-slate-500" />
@@ -622,7 +652,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
                   setVerified(EMPTY_VERIFICATION_CHECKS);
                   onLoadPresetDrMax();
                 }}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer shrink-0"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition-colors cursor-pointer shrink-0"
                 title="Wczytaj przykładowe zamówienie Dr. Max"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
@@ -638,10 +668,11 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
                   setLastExtractedInfo(null);
                   setPastedText('');
                   setIsPasteOpen(false);
+                  setTaskNoteInput('');
                   if (orderInputRef.current) orderInputRef.current.value = '';
                   onResetEverything();
                 }}
-                className="inline-flex items-center gap-2 px-4 py-2 sm:px-4.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border-2 border-rose-300 hover:border-rose-400 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2 sm:px-4.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border-2 border-rose-400 hover:border-rose-600 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer shrink-0"
                 title="Wyczyść wszystkie wprowadzone dane i zresetuj weryfikację"
               >
                 <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
@@ -662,8 +693,8 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
           onClick={() => orderInputRef.current?.click()}
           className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer mb-4 ${
             isDragging
-              ? 'border-fuchsia-500 bg-fuchsia-50/80 scale-[1.01]'
-              : 'border-fuchsia-200 hover:border-fuchsia-400 bg-gradient-to-b from-fuchsia-50/30 via-white to-pink-50/20 hover:bg-fuchsia-50/40'
+              ? 'border-fuchsia-600 bg-fuchsia-50/80 scale-[1.01]'
+              : 'border-slate-400 hover:border-fuchsia-600 bg-gradient-to-b from-fuchsia-50/30 via-white to-pink-50/20 hover:bg-fuchsia-50/40'
           }`}
         >
           <input
@@ -694,7 +725,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
 
         {/* Szybki wybór z historii zamówień sieciowych (identycznie jak na zrzucie ekranu z Kafelka 2!) */}
         {archivedOrders && archivedOrders.length > 0 && (
-          <div className="mb-4 p-3 bg-fuchsia-50/50 rounded-xl border border-fuchsia-100">
+          <div className="mb-4 p-3 bg-fuchsia-50/50 rounded-xl border-2 border-slate-300">
             <div className="text-xs font-semibold text-fuchsia-950 mb-2 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-fuchsia-600" />
               <span>Lub wybierz z Historii Zamówień Sieciowych:</span>
@@ -708,7 +739,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
                     setVerified(EMPTY_VERIFICATION_CHECKS);
                     if (onLoadArchivedOrder) onLoadArchivedOrder(ord);
                   }}
-                  className="text-xs px-2.5 py-1.5 rounded-lg border text-left transition-all cursor-pointer bg-white hover:bg-fuchsia-100/70 border-fuchsia-200 text-slate-700 shadow-2xs hover:border-fuchsia-400"
+                  className="text-xs px-2.5 py-1.5 rounded-lg border text-left transition-all cursor-pointer bg-white hover:bg-fuchsia-100/70 border-slate-300 text-slate-700 shadow-2xs hover:border-fuchsia-500"
                 >
                   <span className="font-bold text-fuchsia-700">{ord.chain}</span> · {ord.invoiceNumber || ord.orderNumber} ({ord.totalGross.toFixed(2)} zł)
                 </button>
@@ -719,7 +750,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
 
         {/* Rozwijany panel wklejania treści zamówienia ze schowka */}
         {isPasteOpen && (
-          <div className="mb-4 p-4 rounded-xl bg-fuchsia-50/70 border border-fuchsia-200 animate-in fade-in duration-150">
+          <div className="mb-4 p-4 rounded-xl bg-fuchsia-50/70 border-2 border-fuchsia-400 animate-in fade-in duration-150">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <span>📋</span> Wklej tekst lub tabelę zamówienia (z maila, komunikatora lub pliku):
@@ -766,7 +797,7 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* Wczytany plik */}
         {orderFile && (
-          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-fuchsia-50/40 to-white border border-emerald-300 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-fuchsia-50/40 to-white border-2 border-emerald-600 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg shrink-0">
                 ✓
@@ -789,11 +820,11 @@ Numer zamówienia: ZAM/2026/10/01
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            <div className="flex flex-wrap items-center gap-2 self-end sm:self-center shrink-0">
               <button
                 type="button"
                 onClick={() => orderInputRef.current?.click()}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
               >
                 Wgraj inny plik
               </button>
@@ -815,7 +846,7 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* Baner potwierdzenia danych odczytanych z zamówienia */}
         {lastExtractedInfo && (
-          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-fuchsia-50/90 via-pink-50/80 to-rose-50/90 border border-fuchsia-300 shadow-2xs animate-in fade-in duration-200">
+          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-fuchsia-50/90 via-pink-50/80 to-rose-50/90 border-2 border-fuchsia-600 shadow-xs animate-in fade-in duration-200">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-start gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
@@ -858,7 +889,7 @@ Numer zamówienia: ZAM/2026/10/01
                 </div>
               </div>
 
-              <div className="shrink-0 flex items-center gap-2">
+              <div className="shrink-0 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={handleVerifyAll}
@@ -871,13 +902,151 @@ Numer zamówienia: ZAM/2026/10/01
             </div>
           </div>
         )}
+
+        {/* ===================================================================== */}
+        {/* KARTA ZAMÓWIENIA — ZADANIE 1 DLA MAGAZYNU: UZUPEŁNIJ ZDJĘCIA PRODUKTÓW */}
+        {/* ===================================================================== */}
+        {onSendTaskToWarehouse && (
+            <div className="mt-4 rounded-2xl border-2 border-fuchsia-700 bg-gradient-to-r from-fuchsia-50/90 via-pink-50/50 to-amber-50/60 p-4 sm:p-5 shadow-sm animate-in fade-in duration-200">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b-2 border-fuchsia-300">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-fuchsia-600 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Warehouse className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-fuchsia-700 text-white">
+                        Etap 1 z 2 • Karta zamówienia
+                      </span>
+                      <h3 className="text-sm font-black text-slate-900">
+                        📸 Zadanie 1 dla Magazynu: Uzupełnij zdjęcia produktów (LOT i MHD)
+                      </h3>
+                      <span
+                        className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${
+                          warehouseTaskStatus === 'completed'
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                            : warehouseTaskStatus === 'assigned' || warehouseTaskStatus === 'in_progress'
+                            ? 'bg-fuchsia-100 text-fuchsia-950 border-fuchsia-400'
+                            : 'bg-white text-slate-700 border-slate-400'
+                        }`}
+                      >
+                        {warehouseTaskStatus === 'completed'
+                          ? '✅ Zadanie 1 wykonane (Zdjęcia produktów uzupełnione)'
+                          : warehouseTaskStatus === 'in_progress'
+                          ? '📸 W trakcie (Magazyn dodaje zdjęcia produktów)'
+                          : warehouseTaskStatus === 'assigned'
+                          ? '📸 Wysłano zadanie: Uzupełnij zdjęcia produktów'
+                          : '⏳ Oczekuje na wysłanie zadania nr 1'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Z poziomu karty zamówienia wysyłasz do Magazynu <strong>Zadanie 1: Uzupełnij zdjęcia produktów</strong> ({meta.orderNumber ? `zam. nr ${meta.orderNumber}` : 'bieżące'},{' '}
+                      <strong>{itemsCount} poz.</strong>). Kolejne zadanie (<em>2. Uzupełnij zdjęcia gotowej przesyłki</em>) wyślesz po przejściu zamówienia do folderu <strong>W REALIZACJI</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* GŁÓWNY PRZYCISK WYSYŁKI ZADANIA 1: UZUPEŁNIJ ZDJĘCIA PRODUKTÓW */}
+                <button
+                  type="button"
+                  onClick={() => onSendTaskToWarehouse(taskNoteInput)}
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-black rounded-2xl transition-all cursor-pointer shadow-sm shrink-0 ${
+                    warehouseTaskStatus === 'completed'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : warehouseTaskStatus === 'assigned' || warehouseTaskStatus === 'in_progress'
+                      ? 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white ring-2 ring-fuchsia-300'
+                      : 'bg-gradient-to-r from-fuchsia-600 via-pink-600 to-rose-600 hover:from-fuchsia-700 hover:to-rose-700 text-white hover:scale-[1.01]'
+                  }`}
+                >
+                  <Warehouse className="w-4 h-4" />
+                  <span>
+                    {warehouseTaskStatus === 'completed'
+                      ? '✅ Zdjęcia produktów wykonane — Wyślij ponownie'
+                      : warehouseTaskStatus === 'assigned' || warehouseTaskStatus === 'in_progress'
+                      ? '📸 Wysłano: Uzupełnij zdjęcia produktów ✓ (Zaktualizuj)'
+                      : '📸 Wyślij zadanie: Uzupełnij zdjęcia produktów'}
+                  </span>
+                </button>
+              </div>
+
+              {/* PODZIAŁ NA 2 ETAPY ZADAŃ MAGAZYNOWYCH */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3.5">
+                <div className="bg-white rounded-xl p-3 border-2 border-fuchsia-600 flex items-start gap-2.5 shadow-2xs">
+                  <div className="w-6 h-6 rounded-lg bg-fuchsia-600 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-black text-fuchsia-950 flex flex-wrap items-center gap-1.5">
+                      <span>📸 Zadanie 1 (Teraz — na karcie zamówienia): Uzupełnij zdjęcia produktów</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                      Pracownik magazynu fotografuje opakowania skompletowanych produktów tak, aby były czytelne{' '}
+                      <strong>numery serii (LOT)</strong> oraz <strong>daty ważności (MHD)</strong> potrzebne do weryfikacji w Kroku 3.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50/90 rounded-xl p-3 border-2 border-slate-400 flex items-start gap-2.5 opacity-90">
+                  <div className="w-6 h-6 rounded-lg bg-amber-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-bold text-slate-800 flex flex-wrap items-center gap-1.5">
+                      <span>📦 Zadanie 2 (Kolejno — w folderze „W REALIZACJI”): Uzupełnij zdjęcia gotowej przesyłki</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Gdy zamówienie będzie już w folderze <strong>W REALIZACJI</strong>, wyślesz stamtąd drugie oddzielne zadanie wykonania zdjęć spakowanych kartonów / palety z etykietą.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* DODATKOWY OPIS / WYTYCZNE DO ZADANIA 1 (ZDJĘCIA PRODUKTÓW) */}
+              <div className="mt-3 pt-3 border-t border-fuchsia-200/70 flex flex-col sm:flex-row sm:items-center gap-2">
+                <label className="text-xs font-extrabold text-fuchsia-950 shrink-0">
+                  📝 Wytyczne do Zadania 1 (Zdjęcia produktów):
+                </label>
+                <input
+                  type="text"
+                  value={taskNoteInput}
+                  onChange={(e) => setTaskNoteInput(e.target.value)}
+                  placeholder="np. Zrób wyraźne zdjęcia LOT i daty ważności (MHD) każdego produktu, sprawdź min. 12 mies. ważności..."
+                  className="flex-1 px-3 py-1.5 text-xs bg-white border border-fuchsia-300 rounded-xl text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-fuchsia-400"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold text-fuchsia-900 uppercase tracking-wider mr-1">
+                  Szybkie wytyczne (Produkty):
+                </span>
+                {[
+                  'Wyraźne zdjęcia LOT i dat ważności każdego produktu',
+                  'Sprawdź min. 1 rok daty ważności (MHD)',
+                  'Jeśli produkt ma 2 serie LOT — zrób zdjęcia obu serii',
+                  'Pilna kompletacja produktów — priorytet',
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() =>
+                      setTaskNoteInput((prev) =>
+                        prev.includes(preset) ? prev : prev ? `${prev} | ${preset}` : preset
+                      )
+                    }
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white hover:bg-fuchsia-100 text-fuchsia-900 border border-fuchsia-300 transition-colors cursor-pointer"
+                  >
+                    + {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
       </div>
 
       {/* ===================================================================== */}
       {/* KROK 2: DANE E-FAKTURY KSEF I WERYFIKACJA NAGŁÓWKA                   */}
       {/* ===================================================================== */}
-      <div className="bg-white rounded-2xl border border-fuchsia-200/80 p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-fuchsia-100">
+      <div className="bg-white rounded-2xl border-2 border-slate-600 p-5 sm:p-6 shadow-md">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b-2 border-slate-300">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shadow-2xs">
               2
@@ -885,16 +1054,22 @@ Numer zamówienia: ZAM/2026/10/01
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <FileCheck2 className="w-4 h-4 text-fuchsia-600" />
-                <span>Dane E-Faktury KSeF i Weryfikacja Nagłówka</span>
+                <span>
+                  {viewMode === 'new_order'
+                    ? 'Dane Zamówienia i Faktury (Weryfikacja Nagłówka)'
+                    : 'Dane E-Faktury KSeF i Weryfikacja Nagłówka'}
+                </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Sprawdź i zatwierdź dane kontrahenta, daty transakcji, termin płatności oraz numer faktury zgodny z ustawą o VAT.
+                {viewMode === 'new_order'
+                  ? 'Sprawdź i zatwierdź dane kontrahenta, daty zamówienia, termin płatności oraz dane nagłówka.'
+                  : 'Sprawdź i zatwierdź dane kontrahenta, daty transakcji, termin płatności oraz numer faktury zgodny z ustawą o VAT.'}
               </p>
             </div>
           </div>
 
-          {/* Akcja zatwierdzenia */}
-          <div className="flex items-center gap-2">
+          {/* Akcja zatwierdzenia danych */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleVerifyAll}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
@@ -1097,7 +1272,11 @@ Numer zamówienia: ZAM/2026/10/01
                       <span>4. W jakim formacie na FV?</span>
                     </span>
                     {onToggleLogisticsFormat &&
-                      logisticsFormat !== recipientCheatSheet.recommendedLogisticsFormat && (
+                      (logisticsFormat === recipientCheatSheet.recommendedLogisticsFormat ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          ✓ Ustawiono
+                        </span>
+                      ) : (
                         <button
                           type="button"
                           onClick={() =>
@@ -1109,7 +1288,7 @@ Numer zamówienia: ZAM/2026/10/01
                         >
                           Ustaw ten format
                         </button>
-                      )}
+                      ))}
                   </div>
                   <div className="text-xs font-black text-indigo-950">
                     {recipientCheatSheet.formatStatus}
@@ -1142,7 +1321,7 @@ Numer zamówienia: ZAM/2026/10/01
                           : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
-                      Osobne pola
+                      Osobne wiersze (Data + Seria)
                     </button>
                     <button
                       type="button"
@@ -1174,10 +1353,10 @@ Numer zamówienia: ZAM/2026/10/01
         
         {/* KARTA 1: Nabywca / Sieć apteczna */}
         <div
-          className={`p-3.5 rounded-2xl border transition-all ${
+          className={`p-3.5 rounded-2xl border-2 transition-all ${
             verified.buyer
-              ? 'bg-fuchsia-50/30 border-fuchsia-300 ring-1 ring-fuchsia-200/60 shadow-2xs'
-              : 'bg-white border-slate-200'
+              ? 'bg-fuchsia-50/30 border-fuchsia-600 ring-1 ring-fuchsia-200/60 shadow-2xs'
+              : 'bg-white border-slate-400'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
@@ -1316,10 +1495,10 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* KARTA 2: Numer Faktury & Typ */}
         <div
-          className={`p-3.5 rounded-2xl border transition-all ${
+          className={`p-3.5 rounded-2xl border-2 transition-all ${
             verified.invoiceNumber
-              ? 'bg-fuchsia-50/30 border-fuchsia-300 ring-1 ring-fuchsia-200/60 shadow-2xs'
-              : 'bg-white border-slate-200'
+              ? 'bg-fuchsia-50/30 border-fuchsia-600 ring-1 ring-fuchsia-200/60 shadow-2xs'
+              : 'bg-white border-slate-400'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
@@ -1369,10 +1548,10 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* KARTA 3: Daty Wystawienia (P_1) & Dostawy (P_6) */}
         <div
-          className={`p-3.5 rounded-2xl border transition-all ${
+          className={`p-3.5 rounded-2xl border-2 transition-all ${
             verified.dates
-              ? 'bg-fuchsia-50/30 border-fuchsia-300 ring-1 ring-fuchsia-200/60 shadow-2xs'
-              : 'bg-white border-slate-200'
+              ? 'bg-fuchsia-50/30 border-fuchsia-600 ring-1 ring-fuchsia-200/60 shadow-2xs'
+              : 'bg-white border-slate-400'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
@@ -1421,10 +1600,10 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* KARTA 4: Dane Zamówienia (Numer & Data złożenia) */}
         <div
-          className={`p-3.5 rounded-2xl border transition-all ${
+          className={`p-3.5 rounded-2xl border-2 transition-all ${
             verified.orderNumber && verified.orderDate
-              ? 'bg-fuchsia-50/30 border-fuchsia-300 ring-1 ring-fuchsia-200/60 shadow-2xs'
-              : 'bg-white border-slate-200'
+              ? 'bg-fuchsia-50/30 border-fuchsia-600 ring-1 ring-fuchsia-200/60 shadow-2xs'
+              : 'bg-white border-slate-400'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
@@ -1477,10 +1656,10 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* KARTA 5: Płatność & Termin płatności */}
         <div
-          className={`p-3.5 rounded-2xl border transition-all ${
+          className={`p-3.5 rounded-2xl border-2 transition-all ${
             verified.dueDate
-              ? 'bg-fuchsia-50/30 border-fuchsia-300 ring-1 ring-fuchsia-200/60 shadow-2xs'
-              : 'bg-white border-slate-200'
+              ? 'bg-fuchsia-50/30 border-fuchsia-600 ring-1 ring-fuchsia-200/60 shadow-2xs'
+              : 'bg-white border-slate-400'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
@@ -1589,12 +1768,12 @@ Numer zamówienia: ZAM/2026/10/01
 
         {/* KARTA 6: Odbiorca / Miejsce dostawy (Podmiot3) - opcjonalny */}
         <div
-          className={`p-3.5 rounded-2xl border transition-all ${
+          className={`p-3.5 rounded-2xl border-2 transition-all ${
             thirdParty?.name
               ? verified.thirdParty
-                ? 'bg-fuchsia-50/30 border-fuchsia-300 ring-1 ring-fuchsia-200/60 shadow-2xs'
-                : 'bg-white border-slate-200'
-              : 'bg-slate-50/50 border-dashed border-slate-200'
+                ? 'bg-fuchsia-50/30 border-fuchsia-600 ring-1 ring-fuchsia-200/60 shadow-2xs'
+                : 'bg-white border-slate-400'
+              : 'bg-slate-50/50 border-dashed border-slate-400'
           }`}
         >
           <div className="flex items-center justify-between mb-2">

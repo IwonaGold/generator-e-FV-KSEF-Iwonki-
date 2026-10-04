@@ -588,7 +588,7 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
     setOriginalInvoiceNumber(order.invoiceNumber);
     setOriginalInvoiceDate(order.issueDate);
     if (order.orderDate) setOrderDate(order.orderDate);
-    if (order.avisoDate || order.deliveryDate) setDeliveryDate(order.avisoDate || order.deliveryDate);
+    if (order.avisoDate || order.deliveryDate) setDeliveryDate(order.avisoDate || order.deliveryDate || '');
     if (order.orderNumber) setOrderNumber(order.orderNumber);
     setBuyer(order.buyer);
     setThirdParty(order.thirdParty || null);
@@ -1340,8 +1340,8 @@ export const InvoiceCorrectionView: React.FC<InvoiceCorrectionViewProps> = ({
       quantity: it.correctedQuantity,
       netPrice: it.correctedNetPrice,
       vatRate: ((it.correctedVatRate || it.vatRate) as VatRate) || '8%',
-      batchNumber: it.correctedBatchNumber || it.batchNumber,
-      expiryDate: it.correctedExpiryDate || it.expiryDate,
+      batchNumber: it.correctedBatchNumber || it.batchNumber || '',
+      expiryDate: it.correctedExpiryDate || it.expiryDate || '',
     }));
     const res = comparePricesWithInvoice(mappedForComparison, effectivePriceList);
     return { priceComparisons: res.comparisons, priceAuditSummary: res.summary };

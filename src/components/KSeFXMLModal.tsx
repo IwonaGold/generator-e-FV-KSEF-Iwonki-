@@ -13,7 +13,7 @@ interface KSeFXMLModalProps {
   logisticsFormat: LogisticsFormat;
   schemaVersion: KSeFSchemaVersion;
   onSchemaVersionChange: (ver: KSeFSchemaVersion) => void;
-  onSaveToHistory?: () => void;
+  onSaveToHistory?: (navigateToInProgress?: boolean) => void;
   onOpenWzModal?: () => void;
   onOpenEdiModal?: () => void;
 }
@@ -46,9 +46,9 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
     }
   }, [isOpen, xmlContent]);
 
-  const handleSaveHistoryClick = () => {
+  const handleSaveHistoryClick = (navigateToInProgress = false) => {
     if (onSaveToHistory) {
-      onSaveToHistory();
+      onSaveToHistory(navigateToInProgress);
       setIsSavedToHistory(true);
       setTimeout(() => setIsSavedToHistory(false), 3000);
     }
@@ -82,6 +82,12 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
 
   const handleDownload = () => {
     downloadKSeFXMLFile(xmlContent, invoiceNumber, schemaVersion);
+    // Automatyczny zapis zamówienia z wystawioną fakturą do folderu W REALIZACJI
+    if (onSaveToHistory) {
+      onSaveToHistory(false);
+      setIsSavedToHistory(true);
+      setTimeout(() => setIsSavedToHistory(false), 3000);
+    }
   };
 
   return (
@@ -106,7 +112,7 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={runXsdValidation}
               disabled={isValidatingXsd}
@@ -124,23 +130,33 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
               <span>{copied ? 'Skopiowano' : 'Kopiuj XML'}</span>
             </button>
             {onSaveToHistory && (
-              <button
-                onClick={handleSaveHistoryClick}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
-                title="Zapisz to zamówienie i wygenerowaną fakturę w Historii Zamówień Sieciowych"
-              >
-                {isSavedToHistory ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-emerald-800">Zapisano!</span>
-                  </>
-                ) : (
-                  <>
-                    <span>💾</span>
-                    <span>Zapisz w Historii</span>
-                  </>
-                )}
-              </button>
+              <>
+                <button
+                  onClick={() => handleSaveHistoryClick(false)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                  title="Zapisz to zamówienie i wygenerowaną fakturę w folderze W REALIZACJI"
+                >
+                  {isSavedToHistory ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-800">W REALIZACJI ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>💾</span>
+                      <span>Zapisz w „W REALIZACJI”</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleSaveHistoryClick(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                  title="Zapisz zamówienie z fakturą i przejdź do folderu W REALIZACJI, aby uzupełnić list przewozowy"
+                >
+                  <span>🚚</span>
+                  <span>Przejdź do W REALIZACJI (List przewozowy)</span>
+                </button>
+              </>
             )}
             <button
               onClick={handleDownload}
@@ -371,14 +387,27 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>
-              Silnik walidacji: <strong>libxml2 (xmllint-wasm)</strong> · Schemat XSD: <strong>FA(3) wzór 13775 wersja 1-0E</strong>
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <div className="flex flex-wrap items-center gap-2">
+            {onSaveToHistory && (
+              <button
+                type="button"
+                onClick={() => handleSaveHistoryClick(false)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-fuchsia-800 bg-fuchsia-100 hover:bg-fuchsia-200 border border-fuchsia-300 rounded-lg cursor-pointer transition-colors"
+              >
+                <span>
+                  {isSavedToHistory ? '✓ Zapisano w Historii Zamówień' : '💾 Zapisz również w Historii Zamówień'}
+                </span>
+              </button>
+            )}
+            <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>
+                FA(3) wzór 13775 wersja 1-0E
+              </span>
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {onOpenEdiModal && (
               <button
                 type="button"
@@ -407,10 +436,11 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
             )}
             {onSaveToHistory && (
               <button
-                onClick={handleSaveHistoryClick}
-                className="px-3.5 py-1.5 text-xs font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-lg transition-colors cursor-pointer"
+                type="button"
+                onClick={() => handleSaveHistoryClick(true)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors cursor-pointer"
               >
-                {isSavedToHistory ? '✓ Zapisano w Historii' : '💾 Zapisz w Historii Zamówień'}
+                {isSavedToHistory ? '✓ Zapisano w W REALIZACJI' : '🚚 Zapisz i przejdź do W REALIZACJI'}
               </button>
             )}
             <button

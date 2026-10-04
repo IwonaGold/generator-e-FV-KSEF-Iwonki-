@@ -4,6 +4,7 @@ import { CorrectionItem } from '../types/correction';
 export interface ParsedKSeFXMLInvoice {
   invoiceNumber: string;
   issueDate: string;
+  deliveryDate?: string;
   issuePlace?: string;
   currency: string;
   totalGross: number;

@@ -191,7 +191,7 @@ export interface EdiDesadvConfig {
   ssccCode: string;
 }
 
-const escapeXml = (str: string): string =>
+const escapeXml = (str?: string): string =>
   (str || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

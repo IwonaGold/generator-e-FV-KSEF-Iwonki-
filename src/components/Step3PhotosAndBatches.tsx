@@ -38,6 +38,7 @@ import {
   subscribeToMultiUserSync,
 } from '../utils/cloudSyncService';
 import { PhotoZoomCropModal } from './PhotoZoomCropModal';
+import { OrderPackagingPhoto } from '../types/ordersHistory';
 
 interface Step3PhotosAndBatchesProps {
   logisticsFormat: LogisticsFormat;
@@ -49,6 +50,10 @@ interface Step3PhotosAndBatchesProps {
   onUpdateItem: (id: string, updatedFields: Partial<InvoiceItem>) => void;
   onOcrCompleted?: (ocrResults: any[]) => void;
   onOpenAiGuide?: () => void;
+  orderPackagingPhotos?: OrderPackagingPhoto[];
+  onOrderPackagingPhotosChange?: (photos: OrderPackagingPhoto[]) => void;
+  onSendTaskToWarehouse?: () => Promise<void> | void;
+  warehouseTaskStatus?: 'none' | 'assigned' | 'in_progress' | 'completed';
 }
 
 export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
@@ -59,6 +64,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   buyerName,
   buyerNip,
   onUpdateItem,
+  orderPackagingPhotos,
+  onOrderPackagingPhotosChange,
+  onSendTaskToWarehouse,
+  warehouseTaskStatus = 'none',
 }) => {
   const shelfLifeRule = getRequiredShelfLifeRule(selectedChain, buyerName, buyerNip);
   const [photoItems, setPhotoItems] = useState<PhotoVerificationItem[]>([]);
@@ -86,23 +95,38 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
     setWorkstationRoleState(newRole);
     setSyncNotice(
       newRole === 'warehouse'
-        ? '📦 Przełączono na Stanowisko 2: Magazyn (tryb szybkiego wgrywania zdjęć opakowań dla Koordynatora)'
+        ? '📦 Przełączono na Stanowisko 2: Magazyn (widok zadań magazynowych)'
         : '👩‍💼 Przełączono na Stanowisko 1: Koordynator (przypisywanie zdjęć z Magazynu do pozycji i weryfikacja LOT/MHD)'
     );
     setTimeout(() => setSyncNotice(null), 5000);
   };
 
   /**
-   * Pobiera zdjęcia opakowań wgrane przez Stanowisko 2 (Magazyn) z Chmury Live
+   * Pobiera zdjęcia opakowań przypisane do bieżącego zamówienia (oraz z bufora Chmury Live przy ręcznym odbiorze z Magazynu)
    */
   const syncPackagingPhotosFromCloud = useCallback(
-    async (showToast = false) => {
+    async (includeSharedBuffer = false) => {
       setIsSyncingPhotos(true);
       try {
-        const shared = await getSharedPackagingPhotos();
-        if (!shared || shared.length === 0) {
+        const orderAssigned = Array.isArray(orderPackagingPhotos) ? orderPackagingPhotos : [];
+        const shared = includeSharedBuffer ? await getSharedPackagingPhotos() : [];
+        const combinedPhotos = [
+          ...orderAssigned,
+          ...(Array.isArray(shared) ? shared : []),
+        ];
+        if (combinedPhotos.length === 0) {
           setIsSyncingPhotos(false);
           return;
+        }
+
+        // Jeśli odebrano nowe zdjęcia z bufora Magazynu, przypisz je trwale do bieżącego zamówienia i opróżnij bufor tymczasowy
+        if (includeSharedBuffer && Array.isArray(shared) && shared.length > 0) {
+          const existingOrderIds = new Set(orderAssigned.map((p) => p.id));
+          const newFromShared = shared.filter((p) => p?.id && !existingOrderIds.has(p.id));
+          if (newFromShared.length > 0) {
+            onOrderPackagingPhotosChange?.([...orderAssigned, ...newFromShared]);
+          }
+          await clearSharedPackagingPhotos();
         }
 
         const isSingleItem = items && items.length === 1;
@@ -113,8 +137,9 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           const existingIds = new Set(prev.map((p) => p.id));
           const toAdd: PhotoVerificationItem[] = [];
 
-          for (const sp of shared) {
+          for (const sp of combinedPhotos) {
             if (!sp?.id || !sp?.dataUrl || existingIds.has(sp.id)) continue;
+            existingIds.add(sp.id);
             const reconstructedFile = dataUrlToFile(sp.dataUrl, sp.fileName || 'opakowanie.jpg');
             const isCoordinator = getWorkstationRole() === 'coordinator';
             const rec: PhotoVerificationItem = {
@@ -138,18 +163,18 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           }
 
           if (toAdd.length === 0) return prev;
-          if (showToast) {
+          if (includeSharedBuffer) {
             setSyncNotice(
               `📥 Odebrano z Magazynu ${toAdd.length} ${
                 toAdd.length === 1 ? 'nowe zdjęcie opakowania' : 'nowe zdjęcia opakowań'
-              } do przypisania i weryfikacji!`
+              } i przypisano do tego zamówienia!`
             );
             setTimeout(() => setSyncNotice(null), 5500);
           }
           return [...prev, ...toAdd];
         });
 
-        // Jeśli jesteśmy na Stanowisku 1 (Koordynator), automatycznie uruchom Etap 1 (rozpoznanie produktu) dla nowych zdjęć z Magazynu
+        // Jeśli jesteśmy na Stanowisku 1 (Koordynator), automatycznie uruchom Etap 1 (rozpoznanie produktu) dla nowych zdjęć
         for (const rec of newlyAddedForStage1) {
           try {
             const stage1Res = await runStage1ProductRecognition(rec.file, items);
@@ -191,7 +216,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
         setIsSyncingPhotos(false);
       }
     },
-    [items]
+    [items, orderPackagingPhotos, onOrderPackagingPhotosChange]
   );
 
   useEffect(() => {
@@ -199,13 +224,14 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
     const unsub = subscribeToMultiUserSync({
       onRemoteUpdate: (ev) => {
         setWorkstationRoleState(getWorkstationRole());
-        if (
-          ev.activity?.type === 'PACKAGING_PHOTOS_UPLOADED' ||
+        if (ev.activity?.type === 'PACKAGING_PHOTOS_UPLOADED') {
+          syncPackagingPhotosFromCloud(true);
+        } else if (
+          ev.activity?.type === 'WAREHOUSE_PHOTOS_UPDATED' ||
+          ev.activity?.type === 'WAREHOUSE_TASK_COMPLETED' ||
           ev.activity?.type === 'MANUAL_CLOUD_SYNC'
         ) {
-          syncPackagingPhotosFromCloud(true);
-        } else if (ev.activity?.type === 'PACKAGING_PHOTOS_CLEARED') {
-          setPhotoItems([]);
+          syncPackagingPhotosFromCloud(false);
         }
       },
     });
@@ -213,9 +239,9 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   }, [syncPackagingPhotosFromCloud]);
 
   /**
-   * Dodaje nowe zdjęcia:
-   * - Na Stanowisku 2 (Magazyn): kompresuje i natychmiast wysyła zdjęcia do Chmury Live dla Koordynatora (bez wymuszania przypisywania na Magazynie).
-   * - Na Stanowisku 1 (Koordynator): wysyła do Chmury Live i uruchamia Etap 1 (Rozpoznanie produktu).
+   * Dodaje nowe zdjęcia i przypisuje je bezpośrednio do bieżącego zamówienia na karcie:
+   * - Na Stanowisku 2 (Magazyn): kompresuje, przypisuje do zamówienia i wysyła do Chmury Live dla Koordynatora.
+   * - Na Stanowisku 1 (Koordynator): przypisuje trwale do bieżącego zamówienia i uruchamia Etap 1 (Rozpoznanie produktu).
    */
   const handleAddNewPhotos = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
@@ -242,10 +268,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
     setPhotoItems((prev) => [...prev, ...newPhotoRecords]);
 
-    // Zapisz zdjęcia w Chmurze Live (aby Koordynator natychmiast je zobaczył)
+    // Skompresuj zdjęcia i przypisz je bezpośrednio do bieżącego zamówienia na karcie
     (async () => {
       try {
-        const compressedList = [];
+        const compressedList: OrderPackagingPhoto[] = [];
         for (const rec of newPhotoRecords) {
           const dataUrl = await compressImageToDataUrl(rec.file, 1600, 0.85);
           compressedList.push({
@@ -256,17 +282,25 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
             uploadedAt: new Date().toISOString(),
           });
         }
-        await uploadSharedPackagingPhotos(compressedList, getWorkstationName());
+        const existingOrderPhotos = Array.isArray(orderPackagingPhotos) ? orderPackagingPhotos : [];
+        const existingIds = new Set(existingOrderPhotos.map((p) => p.id));
+        const mergedForOrder = [
+          ...existingOrderPhotos,
+          ...compressedList.filter((p) => !existingIds.has(p.id)),
+        ];
+        onOrderPackagingPhotosChange?.(mergedForOrder);
+
         if (currentRole === 'warehouse') {
+          await uploadSharedPackagingPhotos(compressedList, getWorkstationName());
           setSyncNotice(
             `☁️ Wysłano ${compressedList.length} ${
               compressedList.length === 1 ? 'zdjęcie opakowania' : 'zdjęcia opakowań'
-            } do Stanowiska 1 (Koordynator)! Koordynator przypisze je do pozycji i zweryfikuje LOT/MHD.`
+            } do Stanowiska 1 (Koordynator) i przypisano do zamówienia!`
           );
           setTimeout(() => setSyncNotice(null), 6000);
         }
       } catch (e) {
-        console.warn('Błąd wysyłki zdjęć opakowań do Chmury Live:', e);
+        console.warn('Błąd zapisu zdjęć opakowań do zamówienia:', e);
       }
     })();
 
@@ -577,18 +611,21 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
   const removePhoto = (photoId: string) => {
     setPhotoItems((prev) => prev.filter((p) => p.id !== photoId));
+    const currentOrderPhotos = Array.isArray(orderPackagingPhotos) ? orderPackagingPhotos : [];
+    onOrderPackagingPhotosChange?.(currentOrderPhotos.filter((p) => p.id !== photoId));
     deleteSharedPackagingPhoto(photoId);
   };
 
   const handleClearAllPhotos = () => {
     setPhotoItems([]);
+    onOrderPackagingPhotosChange?.([]);
     clearSharedPackagingPhotos();
   };
 
   return (
-    <div className="bg-white/95 border border-fuchsia-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+    <div className="bg-white/95 border-2 border-slate-600 rounded-2xl p-5 mb-6 shadow-md">
       {/* Nagłówek sekcji */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-fuchsia-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-slate-300">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shadow-2xs">
@@ -661,7 +698,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => syncPackagingPhotosFromCloud(true)}
@@ -717,16 +754,29 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                 Wybrano tryb: Standardowa faktura KSeF bez serii i dat ważności
               </p>
               <p className="text-[11px] text-blue-700 mt-0.5">
-                W tym trybie zdjęcia i odczyt LOT/MHD są pomijane. Faktura zostanie wygenerowana z czystymi pozycjami towarowymi &lt;FaWiersz&gt; bez węzłów &lt;DodatkowyOpis&gt;.
+                {selectedChain === 'Super-Pharm' || (buyerNip || '').replace(/\D/g, '') === '5213842837'
+                  ? 'Uwaga: Super-Pharm wymaga dat ważności (MHD) oraz serii (LOT) w osobnych wierszach <DodatkowyOpis>!'
+                  : 'W tym trybie zdjęcia i odczyt LOT/MHD są pomijane. Faktura zostanie wygenerowana z czystymi pozycjami towarowymi <FaWiersz> bez węzłów <DodatkowyOpis>.'}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => onToggleLogisticsFormat('gs1_composite')}
-            className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shrink-0"
-          >
-            Włącz serie i daty (GS1)
-          </button>
+          {selectedChain === 'Super-Pharm' ||
+          selectedChain === 'Gemini' ||
+          (buyerNip || '').replace(/\D/g, '') === '5213842837' ? (
+            <button
+              onClick={() => onToggleLogisticsFormat('separate_fields')}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shrink-0"
+            >
+              Włącz daty ważności (Osobne wiersze)
+            </button>
+          ) : (
+            <button
+              onClick={() => onToggleLogisticsFormat('gs1_composite')}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shrink-0"
+            >
+              Włącz serie i daty (GS1)
+            </button>
+          )}
         </div>
       )}
 
@@ -821,12 +871,12 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
               return (
                 <div
                   key={photo.id}
-                  className={`border rounded-xl p-4 transition-all shadow-xs ${
+                  className={`border-2 rounded-xl p-4 transition-all shadow-xs ${
                     photo.status === 'CONFIRMED'
-                      ? 'border-emerald-300 bg-emerald-50/20'
+                      ? 'border-emerald-600 bg-emerald-50/20'
                       : photo.status === 'MANUAL_VERIFICATION_REQUIRED'
-                      ? 'border-amber-300 bg-amber-50/15'
-                      : 'border-slate-200 bg-white'
+                      ? 'border-amber-500 bg-amber-50/15'
+                      : 'border-slate-500 bg-white'
                   }`}
                 >
                   <div className="flex flex-col md:flex-row items-start gap-4">

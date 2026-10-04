@@ -23,7 +23,12 @@ interface ItemsPreviewTableProps {
   onApplySingleGtin?: (itemId: string, newGtin: string) => void;
   onOpenXmlModal?: () => void;
   onOpenWzModal?: () => void;
-  onSaveToHistory?: () => void;
+  onSaveToHistory?: (navigateToInProgress?: boolean) => void;
+  onSaveOrderWithMode?: (
+    mode: 'with_fv_xml' | 'complete_later' | 'without_fv',
+    navigateToInProgress?: boolean
+  ) => void;
+  viewMode?: 'new_order' | 'invoice_only';
 }
 
 export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
@@ -45,6 +50,8 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   onOpenXmlModal,
   onOpenWzModal,
   onSaveToHistory,
+  onSaveOrderWithMode,
+  viewMode = 'invoice_only',
 }) => {
   const shelfLifeRule = getRequiredShelfLifeRule(selectedChain, buyerName, buyerNip);
 
@@ -105,9 +112,9 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   const totals = calculateTotals();
 
   return (
-    <div className="bg-white/95 border border-fuchsia-200/80 rounded-2xl shadow-xs overflow-hidden mb-6">
+    <div className="bg-white/95 border-2 border-slate-600 rounded-2xl shadow-md overflow-hidden mb-6">
       {/* Table Header Bar */}
-      <div className="p-4 sm:p-5 border-b border-fuchsia-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-fuchsia-50/20">
+      <div className="p-4 sm:p-5 border-b-2 border-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-fuchsia-50/20">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shadow-2xs">
@@ -115,7 +122,11 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <span>Pozycje Towarowe i Podsumowanie E-Faktury</span>
+                <span>
+                  {viewMode === 'new_order'
+                    ? 'Pozycje Towarowe i Podsumowanie Zamówienia'
+                    : 'Pozycje Towarowe i Podsumowanie E-Faktury'}
+                </span>
                 <span className="text-xs text-fuchsia-700 font-mono font-medium">
                   ({items.length} {items.length === 1 ? 'pozycja' : 'pozycji'})
                 </span>
@@ -150,9 +161,9 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                     ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-fuchsia-700'
                 }`}
-                title="Osobne pola Seria oraz Data ważności"
+                title="Osobne wiersze w <DodatkowyOpis>: Data ważności oraz Seria (wymagane m.in. przez Super-Pharm)"
               >
-                Osobne pola
+                Osobne wiersze (Data + Seria)
               </button>
               <button
                 type="button"
@@ -201,6 +212,39 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
         </div>
       </div>
 
+      {/* PODPOWIEDŹ DLA SUPER-PHARM: WYMAGANE DATY WAŻNOŚCI W OSOBNYCH WIERSZACH */}
+      {(selectedChain === 'Super-Pharm' ||
+        (buyerNip || '').replace(/\D/g, '') === '5213842837' ||
+        (buyerName || '').toLowerCase().includes('super-pharm') ||
+        (buyerName || '').toLowerCase().includes('super pharm')) && (
+        <div className="mx-4 sm:mx-5 mt-3 p-3 rounded-xl bg-blue-50/90 border border-blue-200 text-blue-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-2">
+            <Calendar className="w-4 h-4 text-blue-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <span className="font-bold text-blue-900">
+                Wymóg Super-Pharm: Daty ważności (MHD) oraz serie (LOT) w osobnych wierszach!
+              </span>{' '}
+              <span className="text-[11px] text-blue-800">
+                W pliku KSeF XML dla każdej pozycji generowane są 2 osobne wiersze <code>&lt;DodatkowyOpis&gt;</code>: wiersz <strong>Data ważności</strong> oraz wiersz <strong>Seria</strong>.
+              </span>
+            </div>
+          </div>
+          {logisticsFormat !== 'separate_fields' && onToggleLogisticsFormat ? (
+            <button
+              type="button"
+              onClick={() => onToggleLogisticsFormat('separate_fields')}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition-colors shrink-0"
+            >
+              Włącz: Osobne wiersze (Data + Seria)
+            </button>
+          ) : (
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+              ✓ Aktywny tryb: Osobne wiersze
+            </span>
+          )}
+        </div>
+      )}
+
       {/* ALERT KRÓTKICH DAT WAŻNOŚCI (WG WYMOGU ODBIORCY: DR. MAX > 6 MSC, DOZ/SUPER-PHARM MIN. 12 MSC, MODUM MIN. 13 MSC) */}
       {shelfLifeWarnings.length > 0 && (
         <div className="mx-4 sm:mx-5 my-3 p-3.5 rounded-xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
@@ -248,7 +292,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                 </div>
               </th>
               <th className="py-2.5 px-3 min-w-[190px] text-slate-700 bg-slate-50">
-                Format KSeF ({logisticsFormat === 'gs1_composite' ? 'Ciąg GS1' : logisticsFormat === 'separate_fields' ? 'Osobne pola' : 'Bez serii/dat'})
+                Format KSeF ({logisticsFormat === 'gs1_composite' ? 'Ciąg GS1' : logisticsFormat === 'separate_fields' ? 'Osobne wiersze' : 'Bez serii/dat'})
               </th>
               <th className="py-2.5 px-3 w-16 text-right">Ilość</th>
               <th className="py-2.5 px-3 w-16 text-center">Miara</th>
@@ -470,10 +514,17 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                         </div>
                       ) : (
                         <div
-                          className="bg-slate-100 text-slate-700 border border-slate-200 px-2 py-1 rounded select-all truncate max-w-[210px]"
-                          title={`Data ważności: ${item.expiryDate || 'BRAK'}\nSeria: ${item.batchNumber || 'BRAK'}`}
+                          className="bg-blue-50/70 text-blue-950 border border-blue-200 px-2 py-1 rounded select-all max-w-[215px] flex flex-col gap-0.5 leading-tight"
+                          title={`Wiersz 1 (<DodatkowyOpis>): Data ważności = ${item.expiryDate || 'BRAK'}\nWiersz 2 (<DodatkowyOpis>): Seria = ${item.batchNumber || 'BRAK'}`}
                         >
-                          Data ważności: {item.expiryDate || '—'} · Seria: {item.batchNumber || '—'}
+                          <div className="truncate">
+                            <span className="font-bold text-blue-800">Data ważności:</span>{' '}
+                            {item.expiryDate || <span className="text-amber-700 font-bold">BRAK</span>}
+                          </div>
+                          <div className="truncate border-t border-blue-100 pt-0.5">
+                            <span className="font-bold text-blue-800">Seria:</span>{' '}
+                            {item.batchNumber || <span className="text-amber-700 font-bold">BRAK</span>}
+                          </div>
                         </div>
                       )}
                     </td>
@@ -650,46 +701,166 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
         </div>
       </div>
 
-      {/* Pasek akcji generowania XML i zapisu do historii (Krok 5) */}
-      <div className="p-4 sm:p-5 bg-gradient-to-r from-fuchsia-50/70 via-pink-50/40 to-white border-t border-fuchsia-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="text-xs text-slate-600">
-          <span className="font-bold text-slate-900">Status faktury:</span> Gotowa do wygenerowania oficjalnego pliku XML FA(3) do KSeF ({items.length} pozycji).
+      {viewMode === 'new_order' ? (
+        /* Pasek wyboru trybu zapisu zamówienia (wszystkie 3 opcje trafiają do folderu W REALIZACJI) + Wygeneruj WZ */
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-fuchsia-50/70 via-pink-50/40 to-amber-50/40 border-t-2 border-slate-500 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="text-xs text-slate-600">
+              <span className="font-black text-slate-900 text-sm">
+                Wybierz sposób zapisu zamówienia ({items.length} poz.):
+              </span>{' '}
+              Każda opcja zapisuje zamówienie w folderze{' '}
+              <strong className="text-amber-800">„W REALIZACJI”</strong>, aby uzupełnić list przewozowy, śledzić status przesyłki i po zaznaczeniu{' '}
+              <strong className="text-emerald-800">„Towar dotarł do klienta”</strong> przenieść do ZAKOŃCZONE.
+            </div>
+            {onOpenXmlModal && (
+              <button
+                type="button"
+                onClick={onOpenXmlModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-fuchsia-800 bg-white hover:bg-fuchsia-50 border border-fuchsia-300 rounded-xl shadow-2xs transition-colors cursor-pointer self-start sm:self-auto shrink-0"
+                title="Otwórz sam podgląd wygenerowanego pliku XML FA(3)"
+              >
+                <FileCode className="w-3.5 h-3.5 text-fuchsia-600" />
+                <span>Podgląd XML FA(3)</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {/* OPCJA 1: Zapisz z wystawieniem FV XML */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onSaveOrderWithMode) {
+                  onSaveOrderWithMode('with_fv_xml');
+                } else if (onSaveToHistory) {
+                  onSaveToHistory(false);
+                }
+              }}
+              className="text-left p-3.5 rounded-2xl bg-gradient-to-br from-fuchsia-600 via-pink-600 to-rose-600 hover:from-fuchsia-700 hover:to-rose-700 text-white border-2 border-fuchsia-900 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black tracking-tight">
+                    <FileCode className="w-4 h-4 shrink-0" />
+                    <span>1. Zapisz z wystawieniem FV XML</span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-pink-100 leading-snug">
+                  Generuje e-Fakturę KSeF FA(3) XML, otwiera pobranie pliku XML i zapisuje zamówienie w folderze <strong>W REALIZACJI</strong> (do listu przewozowego).
+                </p>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] font-bold text-white/90">
+                <span>🧾 Faktura XML FA(3) + W REALIZACJI</span>
+                <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+              </div>
+            </button>
+
+            {/* OPCJA 2: Zapisz i uzupełnij zamówienie później */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onSaveOrderWithMode) {
+                  onSaveOrderWithMode('complete_later', true);
+                }
+              }}
+              className="text-left p-3.5 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50/70 to-white hover:from-amber-100/90 hover:to-orange-50 border-2 border-amber-500 hover:border-amber-700 text-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-amber-950 tracking-tight">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>2. Zapisz i uzupełnij zamówienie później</span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  Pakowanie, zdjęcia opakowań (LOT/MHD), uzupełnienie danych do FV i wystawienie FV odbędzie się później — z poziomu <strong>W REALIZACJI</strong> wrócisz do tej karty zamówienia.
+                </p>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-amber-200/80 flex items-center justify-between text-[10px] font-bold text-amber-900">
+                <span>⏳ Wrócisz do karty z „W REALIZACJI”</span>
+                <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+              </div>
+            </button>
+
+            {/* OPCJA 3: Zapisz bez wystawiania FV */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onSaveOrderWithMode) {
+                  onSaveOrderWithMode('without_fv', true);
+                }
+              }}
+              className="text-left p-3.5 rounded-2xl bg-gradient-to-br from-sky-50 via-cyan-50/60 to-white hover:from-sky-100/80 hover:to-cyan-50 border-2 border-sky-500 hover:border-sky-700 text-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-sky-950 tracking-tight">
+                    <BookmarkPlus className="w-4 h-4 text-sky-600 shrink-0" />
+                    <span>3. Zapisz bez wystawiania FV</span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  Zapisuje zamówienie w folderze <strong>W REALIZACJI</strong> bez generowania FV XML — z opcją wpisania numeru dokumentu ręcznie z poziomu <strong>W REALIZACJI</strong>.
+                </p>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-sky-200/80 flex items-center justify-between text-[10px] font-bold text-sky-900">
+                <span>📝 Ręczny nr dokumentu w „W REALIZACJI”</span>
+                <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+              </div>
+            </button>
+
+            {/* PRZYCISK 4: Wygeneruj WZ */}
+            {onOpenWzModal && (
+              <button
+                type="button"
+                onClick={onOpenWzModal}
+                className="text-left p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50 via-violet-50/60 to-white hover:from-indigo-100/80 hover:to-violet-50 border-2 border-indigo-500 hover:border-indigo-700 text-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-indigo-950 tracking-tight">
+                      <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>📄 Wygeneruj WZ</span>
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Generuje i pozwala wydrukować dokument magazynowy <strong>WZ (Wydanie Zewnętrzne)</strong> z seriami i datami ważności do paczki / dla kierowcy.
+                  </p>
+                </div>
+                <div className="mt-2.5 pt-2 border-t border-indigo-200/80 flex items-center justify-between text-[10px] font-bold text-indigo-900">
+                  <span>🖨️ Podgląd i druk dokumentu WZ</span>
+                  <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+      ) : (
+        /* Pasek akcji głównych w trybie "1. Wygeneruj Fakturę XML" — te same opcje co w "2. Wygeneruj Korektę Faktury XML" */
+        <div className="p-4 sm:p-5 bg-white border-t-2 border-slate-500 flex flex-wrap items-center justify-end gap-3">
           {onSaveToHistory && (
             <button
               type="button"
-              onClick={onSaveToHistory}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-fuchsia-800 bg-fuchsia-100 hover:bg-fuchsia-200 border border-fuchsia-300 rounded-xl shadow-xs transition-colors cursor-pointer"
-              title="Zapisz to zamówienie i wygenerowaną fakturę w Historii Zamówień Sieciowych"
+              onClick={() => onSaveToHistory(false)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-fuchsia-800 bg-fuchsia-100 hover:bg-fuchsia-200 border border-fuchsia-300 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.01]"
             >
-              <BookmarkPlus className="w-3.5 h-3.5 text-fuchsia-600" />
-              <span>💾 Zapisz w historii</span>
+              <span>💾 Zapisz w Historii Zamówień</span>
             </button>
           )}
-          {onOpenWzModal && (
-            <button
-              type="button"
-              onClick={onOpenWzModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl shadow-xs transition-colors cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-              title="Wygeneruj i wydrukuj magazynowy dokument WZ (Wydanie Zewnętrzne) z seriami i datami ważności do paczki/dla kierowcy"
-            >
-              <FileText className="w-3.5 h-3.5 text-indigo-600" />
-              <span>📄 Generuj WZ</span>
-            </button>
-          )}
+
           {onOpenXmlModal && (
             <button
               type="button"
               onClick={onOpenXmlModal}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-600 hover:to-pink-600 rounded-xl shadow-xs shadow-fuchsia-200 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-fuchsia-600 via-pink-600 to-rose-600 hover:from-fuchsia-700 hover:to-pink-700 rounded-xl shadow-sm shadow-fuchsia-300 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
             >
               <FileCode className="w-4 h-4" />
-              <span>Podgląd i Pobranie XML</span>
+              <span>Generuj KSeF XML Faktury (FA3 UTF-8)</span>
             </button>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

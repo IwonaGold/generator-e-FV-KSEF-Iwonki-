@@ -69,7 +69,11 @@ interface OrderHistoryViewProps {
   onRefreshOrders: () => void;
   onCreateCorrectionForOrder: (order: ArchivedOrder) => void;
   onNavigateToInvoiceCreation: () => void;
+  onStartNewOrder?: () => void;
   onLoadOrderForInvoiceCreation?: (order: ArchivedOrder) => void;
+  activeLifecycleTab?: OrderLifecycleTab;
+  onChangeLifecycleTab?: (tab: OrderLifecycleTab) => void;
+  newOrderCardContent?: React.ReactNode;
 }
 
 export type OrderLifecycleTab = 'new' | 'in_progress' | 'completed';
@@ -79,10 +83,21 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   onRefreshOrders,
   onCreateCorrectionForOrder,
   onNavigateToInvoiceCreation,
+  onStartNewOrder,
   onLoadOrderForInvoiceCreation,
+  activeLifecycleTab,
+  onChangeLifecycleTab,
+  newOrderCardContent,
 }) => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [lifecycleTab, setLifecycleTab] = useState<OrderLifecycleTab>('in_progress');
+  const [internalLifecycleTab, setInternalLifecycleTab] = useState<OrderLifecycleTab>('in_progress');
+  const lifecycleTab = activeLifecycleTab ?? internalLifecycleTab;
+  const setLifecycleTab = (nextTab: OrderLifecycleTab) => {
+    setInternalLifecycleTab(nextTab);
+    if (onChangeLifecycleTab) {
+      onChangeLifecycleTab(nextTab);
+    }
+  };
   const [chainFilter, setChainFilter] = useState<OrderChainFilter>('Wszystkie');
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
   const [paymentFilter, setPaymentFilter] = useState<OrderPaymentFilter>('all');
@@ -99,6 +114,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   // Stan lokalny edycji notatek i statusu dostawy
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [notesState, setNotesState] = useState<Record<string, string>>({});
+  const [warehouseTaskNoteState, setWarehouseTaskNoteState] = useState<Record<string, string>>({});
 
   // Stan lokalny edycji numeru listu przewozowego
   const [trackingNumberState, setTrackingNumberState] = useState<Record<string, string>>({});
@@ -151,19 +167,14 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxPhoto]);
 
-  // Liczniki dla 3 głównych kafelków cyklu życia: W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE
+  // Liczniki dla głównych kafelków cyklu życia: W REALIZACJI / ZAKOŃCZONE
+  // Zamówienie przechodzi do ZAKOŃCZONE wyłącznie po zaznaczeniu "Towar dotarł do klienta" (ord.isDelivered === true)
   const inProgressCount = useMemo(() => {
-    return orders.filter((ord) => {
-      const st = getOrderEffectiveShippingStatus(ord);
-      return !ord.isDelivered && st !== 'delivered';
-    }).length;
+    return orders.filter((ord) => !ord.isDelivered).length;
   }, [orders]);
 
   const completedCount = useMemo(() => {
-    return orders.filter((ord) => {
-      const st = getOrderEffectiveShippingStatus(ord);
-      return ord.isDelivered || st === 'delivered';
-    }).length;
+    return orders.filter((ord) => Boolean(ord.isDelivered)).length;
   }, [orders]);
 
   // Obliczenia liczników dla sieci w ramach aktywnego kafelka cyklu życia
@@ -178,7 +189,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     };
 
     const targetOrders = orders.filter((ord) => {
-      const isCompleted = ord.isDelivered || getOrderEffectiveShippingStatus(ord) === 'delivered';
+      const isCompleted = Boolean(ord.isDelivered);
       if (lifecycleTab === 'in_progress') return !isCompleted;
       if (lifecycleTab === 'completed') return isCompleted;
       return true;
@@ -218,12 +229,11 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return counts;
   }, [orders]);
 
-  // Lista przesyłek będących wyłącznie w drodze (posiadają list przewozowy i NIE są jeszcze doręczone)
+  // Lista przesyłek będących w realizacji (posiadają list przewozowy i NIE oznaczono jeszcze "Towar dotarł do klienta")
   const inTransitOrders = useMemo(() => {
     return orders.filter((ord) => {
       if (!ord.trackingNumber || !ord.trackingNumber.trim()) return false;
       if (ord.isDelivered) return false;
-      if (ord.shippingStatus === 'delivered') return false;
       return true;
     });
   }, [orders]);
@@ -249,10 +259,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
   // Obliczenia liczników dla okresów z uwzględnieniem wybranego pola daty (wyłącznie dla ZAKOŃCZONYCH)
   const periodCounts = useMemo(() => {
-    const completedOrders = orders.filter((ord) => {
-      const effectiveShipping = getOrderEffectiveShippingStatus(ord);
-      return ord.isDelivered || effectiveShipping === 'delivered';
-    });
+    const completedOrders = orders.filter((ord) => Boolean(ord.isDelivered));
     const mappedOrders = completedOrders.map((o) => {
       const targetDate =
         dateFilterField === 'orderDate'
@@ -280,7 +287,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     return orders.filter((ord) => {
       const resolvedChain = detectPharmacyChain(ord.buyer, ord.thirdParty, ord.chain);
       const effectiveShipping = getOrderEffectiveShippingStatus(ord);
-      const isCompleted = ord.isDelivered || effectiveShipping === 'delivered';
+      const isCompleted = Boolean(ord.isDelivered);
 
       // 0. Główny kafelek cyklu życia: W REALIZACJI / ZAKOŃCZONE / WSZYSTKIE
       if (lifecycleTab === 'in_progress' && isCompleted) {
@@ -446,7 +453,49 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     setTimeout(() => setInvoiceNotice(null), 2500);
   };
 
-  // Obsługa zmiany checkboxa "Towar dotarł do odbiorcy"
+  // 2. Wysłanie z poziomu W REALIZACJI zadania nr 2 do Magazynu: "Uzupełnij zdjęcia gotowej przesyłki"
+  const handleSendOrderToWarehouse = async (order: ArchivedOrder) => {
+    const nowIso = new Date().toISOString();
+    const customTaskNote =
+      warehouseTaskNoteState[order.id] !== undefined
+        ? warehouseTaskNoteState[order.id].trim()
+        : order.warehouseParcelTaskNote || order.warehouseTaskNote || '';
+    await updateArchivedOrderFields(order.id, {
+      warehouseParcelTaskStatus: 'assigned',
+      warehouseParcelTaskAssignedAt: nowIso,
+      warehouseParcelTaskNote: customTaskNote,
+      warehouseTaskStatus: 'assigned',
+      warehouseTaskAssignedAt: nowIso,
+      warehouseTaskAssignedBy: '1. Koordynator',
+      warehouseTaskNote: customTaskNote,
+    });
+    order.warehouseParcelTaskStatus = 'assigned';
+    order.warehouseParcelTaskAssignedAt = nowIso;
+    order.warehouseParcelTaskNote = customTaskNote;
+    order.warehouseTaskStatus = 'assigned';
+    order.warehouseTaskAssignedAt = nowIso;
+    order.warehouseTaskNote = customTaskNote;
+    onRefreshOrders();
+    setInvoiceNotice(
+      `📦 Wysłano do Magazynu Zadanie 2: „Uzupełnij zdjęcia gotowej przesyłki” dla zamówienia nr ${
+        order.orderNumber || order.invoiceNumber
+      } (${order.chain})!`
+    );
+    setTimeout(() => setInvoiceNotice(null), 5000);
+  };
+
+  // Usuwanie zdjęcia opakowania (LOT/MHD) z karty zamówienia
+  const handleDeleteOrderPackagingPhoto = async (order: ArchivedOrder, photoId: string) => {
+    const existingPkg = Array.isArray(order.packagingPhotos) ? order.packagingPhotos : [];
+    const updatedPkg = existingPkg.filter((p) => p.id !== photoId);
+    await updateArchivedOrderFields(order.id, { packagingPhotos: updatedPkg });
+    order.packagingPhotos = updatedPkg;
+    onRefreshOrders();
+    setInvoiceNotice('Usunięto zdjęcie opakowania.');
+    setTimeout(() => setInvoiceNotice(null), 2500);
+  };
+
+  // Obsługa zmiany checkboxa "Towar dotarł do klienta" (jedynym momentem zmiany statusu zamówienia na ZAKOŃCZONE)
   const handleToggleDelivered = async (order: ArchivedOrder) => {
     const newStatus = !order.isDelivered;
     const nowStr = new Date().toLocaleString('pl-PL', {
@@ -462,27 +511,22 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       deliveredAt: newStatus ? (order.deliveredAt || nowStr) : null,
     };
 
-    // Jeśli zamówienie ma przypisany list przewozowy, automatycznie synchronizujemy status przesyłki
     if (newStatus) {
-      if (order.trackingNumber) {
-        updates.shippingStatus = 'delivered';
-        updates.shippingStatusUpdatedAt = nowStr;
-      }
+      updates.shippingStatus = 'delivered';
+      updates.shippingStatusUpdatedAt = nowStr;
     } else {
-      if (order.trackingNumber && order.shippingStatus === 'delivered') {
-        updates.shippingStatus = 'in_transit';
-        updates.shippingStatusUpdatedAt = nowStr;
-      }
+      updates.shippingStatus = order.trackingNumber ? 'in_transit' : 'registered';
+      updates.shippingStatusUpdatedAt = nowStr;
     }
 
     await updateArchivedOrderFields(order.id, updates);
 
     setInvoiceNotice(
       newStatus
-        ? `Potwierdzono dostawę zamówienia ${order.invoiceNumber} (data: ${nowStr})`
-        : `Cofnięto status doręczenia dla ${order.invoiceNumber}`
+        ? `✅ Potwierdzono, że towar dotarł do klienta dla zamówienia ${order.invoiceNumber} (data: ${nowStr}) — status zmieniony na ZAKOŃCZONE!`
+        : `↩️ Cofnięto potwierdzenie doręczenia dla ${order.invoiceNumber} — zamówienie wróciło do „W REALIZACJI”.`
     );
-    setTimeout(() => setInvoiceNotice(null), 3000);
+    setTimeout(() => setInvoiceNotice(null), 4000);
     onRefreshOrders();
   };
 
@@ -504,19 +548,21 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       courierName: newTracking ? detectedCourier : null,
     };
 
-    if (newTracking && !order.shippingStatus) {
-      updates.shippingStatus = order.isDelivered ? 'delivered' : 'in_transit';
+    if (newTracking && (!order.shippingStatus || order.shippingStatus === 'registered')) {
+      updates.shippingStatus = 'in_transit';
       updates.shippingStatusUpdatedAt = new Date().toLocaleString('pl-PL');
+    } else if (!newTracking && !order.isDelivered) {
+      updates.shippingStatus = 'registered';
     }
 
     await updateArchivedOrderFields(order.id, updates);
     setSavingTrackingId(null);
     setInvoiceNotice(
       newTracking
-        ? `Zapisano list przewozowy: ${newTracking} (${detectedCourier})`
+        ? `🚚 Zapisano list przewozowy: ${newTracking} (${detectedCourier}) — przesyłka w śledzeniu (W REALIZACJI).`
         : 'Wyczyszczono list przewozowy.'
     );
-    setTimeout(() => setInvoiceNotice(null), 3000);
+    setTimeout(() => setInvoiceNotice(null), 3500);
     onRefreshOrders();
   };
 
@@ -528,7 +574,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     onRefreshOrders();
   };
 
-  // Zmiana statusu przesyłki kurierskiej z automatyczną aktualizacją doręczenia
+  // Zmiana statusu listu przewozowego (pozostawia zamówienie w W REALIZACJI do momentu zaznaczenia "Towar dotarł do klienta")
   const handleShippingStatusChange = async (order: ArchivedOrder, newStatus: ShippingStatus) => {
     const nowStr = new Date().toLocaleString('pl-PL', {
       day: '2-digit',
@@ -538,31 +584,20 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       minute: '2-digit',
     });
 
-    const isNowDelivered = newStatus === 'delivered';
     const updates: Partial<ArchivedOrder> = {
       shippingStatus: newStatus,
       shippingStatusUpdatedAt: nowStr,
     };
 
-    if (isNowDelivered) {
-      // Automatyczna aktualizacja statusu dostawy gdy przesyłka została doręczona
-      updates.isDelivered = true;
-      updates.deliveredAt = order.deliveredAt || nowStr;
-    } else if (order.shippingStatus === 'delivered' && !isNowDelivered) {
-      // Jeśli użytkownik cofnął status z 'doręczona', odznaczamy doręczenie
-      updates.isDelivered = false;
-      updates.deliveredAt = null;
-    }
-
     await updateArchivedOrderFields(order.id, updates);
 
     const statusCfg = getShippingStatusConfig(newStatus);
     setInvoiceNotice(
-      isNowDelivered
-        ? `✅ Przesyłka oznaczona jako DORĘCZONA! Automatycznie zaktualizowano: Towar dotarł do odbiorcy (${nowStr}).`
-        : `Zaktualizowano status przesyłki na: ${statusCfg.label}`
+      newStatus === 'delivered'
+        ? `📬 Status listu przewozowego: Doręczona wg kuriera (${nowStr}). Zaznacz pole „Towar dotarł do klienta”, aby zmienić status zamówienia na ZAKOŃCZONE.`
+        : `🚚 Zaktualizowano status listu przewozowego na: ${statusCfg.label}`
     );
-    setTimeout(() => setInvoiceNotice(null), 4000);
+    setTimeout(() => setInvoiceNotice(null), 4500);
     onRefreshOrders();
   };
 
@@ -586,7 +621,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
 
           if (rawStatus === 'delivered') {
             newStatus = 'delivered';
-            msg = '✅ InPost: Przesyłka została pomyślnie DORĘCZONA!';
+            msg = '📬 InPost: Przesyłka doręczona wg kuriera! Zaznacz „Towar dotarł do klienta”, aby przenieść do ZAKOŃCZONYCH.';
           } else if (rawStatus.includes('out_for_delivery') || rawStatus === 'ready_to_pickup') {
             newStatus = 'out_for_delivery';
             msg = '⚡ InPost: Paczka wydana do doręczenia / w Paczkomacie!';
@@ -598,7 +633,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           await handleShippingStatusChange(order, newStatus);
           setCheckingTrackingId(null);
           setInvoiceNotice(msg);
-          setTimeout(() => setInvoiceNotice(null), 4000);
+          setTimeout(() => setInvoiceNotice(null), 4500);
           return;
         }
       } catch (e) {
@@ -626,7 +661,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   // Zbiorcze sprawdzenie statusów przesyłek w drodze (wyłącznie niedoręczonych)
   const handleBulkCheckTransitShipments = async () => {
     if (inTransitOrders.length === 0) {
-      setInvoiceNotice('Brak przesyłek w drodze do weryfikacji. Wszystkie zarejestrowane zamówienia zostały już doręczone!');
+      setInvoiceNotice('Brak przesyłek w drodze do weryfikacji.');
       setTimeout(() => setInvoiceNotice(null), 4000);
       return;
     }
@@ -659,12 +694,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
               await updateArchivedOrderFields(ord.id, {
                 shippingStatus: 'delivered',
                 shippingStatusUpdatedAt: nowStr,
-                isDelivered: true,
-                deliveredAt: ord.deliveredAt || nowStr,
               });
               ord.shippingStatus = 'delivered';
-              ord.isDelivered = true;
-              ord.deliveredAt = ord.deliveredAt || nowStr;
               inpostDeliveredCount++;
             } else if (rawStatus.includes('out_for_delivery') || rawStatus === 'ready_to_pickup') {
               await updateArchivedOrderFields(ord.id, {
@@ -684,7 +715,9 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     onRefreshOrders();
 
     if (inpostDeliveredCount > 0) {
-      setInvoiceNotice(`✅ Automatycznie zaktualizowano ${inpostDeliveredCount} przesyłek InPost jako doręczone!`);
+      setInvoiceNotice(
+        `📬 Zaktualizowano status listu przewozowego dla ${inpostDeliveredCount} przesyłek InPost (Doręczona wg kuriera). Zaznacz „Towar dotarł do klienta”, aby przenieść je do ZAKOŃCZONYCH.`
+      );
       setTimeout(() => setInvoiceNotice(null), 5000);
     }
   };
@@ -721,6 +754,34 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     onRefreshOrders();
     setInvoiceNotice(`✅ Pomyślnie oznaczono ${inTransitOrders.length} przesyłek jako DORĘCZONE!`);
     setTimeout(() => setInvoiceNotice(null), 4500);
+  };
+
+  // Zapisanie informacji o osobach odpowiedzialnych (Koordynator / Kto pakował / Kto weryfikował) na karcie zamówienia
+  const COORDINATOR_OPTIONS = ['Iwona', 'Virdzinia'] as const;
+  const PACKED_BY_OPTIONS = ['Mateusz', 'Valerii', 'Agnieszka', 'Iwona'] as const;
+  const VERIFIED_BY_OPTIONS = ['Mateusz', 'Valerii', 'Agnieszka', 'Iwona'] as const;
+
+  const handleUpdateOrderPersonnel = async (
+    order: ArchivedOrder,
+    field: 'coordinatorName' | 'packedBy' | 'verifiedBy',
+    value: string
+  ) => {
+    const currentVal = order[field] || '';
+    const nextVal = currentVal === value ? '' : value;
+    order[field] = nextVal;
+    await updateArchivedOrderFields(order.id, { [field]: nextVal });
+    const labelMap: Record<'coordinatorName' | 'packedBy' | 'verifiedBy', string> = {
+      coordinatorName: 'Koordynator',
+      packedBy: 'Kto pakował zamówienie',
+      verifiedBy: 'Kto weryfikował zamówienie',
+    };
+    setInvoiceNotice(
+      nextVal
+        ? `👤 Zapisano na karcie zamówienia ${order.orderNumber || order.invoiceNumber}: ${labelMap[field]} ➔ ${nextVal}`
+        : `👤 Wyczyszczono pole „${labelMap[field]}” na karcie zamówienia ${order.orderNumber || order.invoiceNumber}`
+    );
+    setTimeout(() => setInvoiceNotice(null), 3500);
+    onRefreshOrders();
   };
 
   // Obsługa wpisywania notatki
@@ -777,12 +838,18 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     }
   };
 
-  // Rozpoczęcie edycji numeru faktury
+  // Rozpoczęcie edycji numeru faktury / dokumentu ręcznego
   const handleStartEditInvoice = (order: ArchivedOrder) => {
     const xmlNum = extractInvoiceNumberFromXml(order.xmlContent);
-    const initialVal = order.invoiceNumber && order.invoiceNumber !== 'FAKTURA'
+    const isPlaceholder =
+      !order.invoiceNumber ||
+      order.invoiceNumber === 'FAKTURA' ||
+      order.invoiceNumber === 'WPISZ NR DOKUMENTU' ||
+      order.invoiceNumber.startsWith('BEZ FV') ||
+      order.invoiceNumber.startsWith('ZAM:');
+    const initialVal = !isPlaceholder
       ? order.invoiceNumber
-      : (xmlNum || order.invoiceNumber || '');
+      : order.externalInvoiceNumber || xmlNum || '';
     setInvoiceNumberState((prev) => ({ ...prev, [order.id]: initialVal }));
     setEditingInvoiceId(order.id);
   };
@@ -797,18 +864,35 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     setEditingInvoiceId(null);
   };
 
-  // Zapis numeru faktury
+  // Zapis numeru faktury / dokumentu ręcznego
   const handleSaveInvoiceNumber = async (orderId: string) => {
     const newNum = invoiceNumberState[orderId]?.trim();
     if (newNum === undefined) {
       setEditingInvoiceId(null);
       return;
     }
+    const targetOrd = orders.find((o) => o.id === orderId);
+    const fallbackNum =
+      targetOrd?.invoiceStatus === 'external_billing'
+        ? targetOrd.orderNumber
+          ? `BEZ FV (ZAM ${targetOrd.orderNumber})`
+          : 'WPISZ NR DOKUMENTU'
+        : 'FAKTURA';
+    const finalNum = newNum || fallbackNum;
     setSavingInvoiceId(orderId);
-    await updateArchivedOrderFields(orderId, { invoiceNumber: newNum || 'FAKTURA' });
+    await updateArchivedOrderFields(orderId, {
+      invoiceNumber: finalNum,
+      ...(targetOrd?.invoiceStatus === 'external_billing'
+        ? { externalInvoiceNumber: newNum || '' }
+        : {}),
+    });
     setSavingInvoiceId(null);
     setEditingInvoiceId(null);
-    setInvoiceNotice(`Zapisano numer faktury: ${newNum || 'FAKTURA'}`);
+    setInvoiceNotice(
+      targetOrd?.invoiceStatus === 'external_billing'
+        ? `📝 Zapisano ręcznie numer dokumentu: ${finalNum}`
+        : `Zapisano numer faktury: ${finalNum}`
+    );
     setTimeout(() => setInvoiceNotice(null), 3500);
     onRefreshOrders();
   };
@@ -953,6 +1037,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           id: `imported-${Date.now()}`,
           chain,
           documentType: 'FV',
+          invoiceStatus: 'issued',
           invoiceNumber: parsed.invoiceNumber,
           orderNumber: parsed.orderNumber || 'ZAM-IMPORT',
           orderDate: parsed.orderDate || undefined,
@@ -971,15 +1056,17 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           xmlContent: text,
           isDelivered: false,
           deliveredAt: null,
-          notes: `Zaimportowano z pliku XML ${file.name}`,
+          shippingStatus: 'registered',
+          notes: `Zaimportowano z pliku XML ${file.name} (W REALIZACJI — oczekuje na list przewozowy i doręczenie)`,
           originalFileName: file.name,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
 
         await saveArchivedOrder(newOrder);
+        setLifecycleTab('in_progress');
         onRefreshOrders();
-        alert(`Pomyślnie zaimportowano fakturę ${parsed.invoiceNumber} do historii.`);
+        alert(`Pomyślnie zaimportowano fakturę ${parsed.invoiceNumber} do folderu „W REALIZACJI”.`);
       } catch (err: any) {
         alert('Błąd importu XML: ' + (err.message || 'Niepoprawny format'));
       }
@@ -1009,7 +1096,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       {/* 3 GŁÓWNE KAFELKI NA SAMEJ GÓRZE: NOWE / W REALIZACJI / ZAKOŃCZONE    */}
       {/* ==================================================================== */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* KAFELEK 1: NOWE */}
+        {/* KAFELEK 1: NOWE ZAMÓWIENIE (WSPÓLNA KARTA ZAMÓWIENIA POD TĄ KAFELKĄ) */}
         <button
           type="button"
           onClick={() => {
@@ -1017,8 +1104,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           }}
           className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
             lifecycleTab === 'new'
-              ? 'bg-gradient-to-br from-fuchsia-50/95 via-pink-50/40 to-white border-fuchsia-500 ring-2 ring-fuchsia-400/30 shadow-fuchsia-100 scale-[1.01]'
-              : 'bg-white hover:bg-fuchsia-50/40 border-slate-200 hover:border-fuchsia-300'
+              ? 'bg-gradient-to-br from-fuchsia-50/95 via-pink-50/40 to-white border-fuchsia-700 ring-2 ring-fuchsia-400/40 shadow-fuchsia-100 scale-[1.01]'
+              : 'bg-white hover:bg-fuchsia-50/40 border-slate-500 hover:border-fuchsia-600'
           }`}
         >
           {lifecycleTab === 'new' && (
@@ -1039,7 +1126,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             <div className="pr-10 flex-1">
               <div className="flex items-center gap-2">
                 <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
-                  NOWE
+                  NOWE ZAMÓWIENIE
                 </h3>
                 <span
                   className={`px-2 py-0.5 text-xs font-black rounded-lg ${
@@ -1048,18 +1135,24 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                       : 'bg-fuchsia-100 text-fuchsia-900'
                   }`}
                 >
-                  2 opcje
+                  Wystaw zamówienie
                 </span>
               </div>
               <p className="text-xs font-medium text-fuchsia-800/80 mt-0.5">
-                Dodaj nowe zamówienie sieciowe
+                Karta wprowadzania nowego zamówienia (kroki 1–5)
               </p>
-              <div className="flex flex-wrap items-center gap-1.5 mt-2.5 text-[11px]">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-semibold border border-amber-200/60">
-                  📦 Bez faktury
-                </span>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2.5 text-[10px]">
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-pink-100/80 text-pink-900 font-semibold border border-pink-200/60">
-                  🧾 Z wystawieniem FV
+                  1. Z wystawieniem FV XML
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-semibold border border-amber-200/60">
+                  2. Uzupełnij później
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-100/80 text-sky-900 font-semibold border border-sky-200/60">
+                  3. Bez FV (nr ręczny)
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-100/80 text-indigo-900 font-semibold border border-indigo-200/60">
+                  📄 WZ
                 </span>
               </div>
             </div>
@@ -1075,8 +1168,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           }}
           className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
             lifecycleTab === 'in_progress'
-              ? 'bg-gradient-to-br from-amber-50/95 via-orange-50/40 to-white border-amber-500 ring-2 ring-amber-400/30 shadow-amber-100 scale-[1.01]'
-              : 'bg-white hover:bg-amber-50/40 border-slate-200 hover:border-amber-300'
+              ? 'bg-gradient-to-br from-amber-50/95 via-orange-50/40 to-white border-amber-600 ring-2 ring-amber-400/40 shadow-amber-100 scale-[1.01]'
+              : 'bg-white hover:bg-amber-50/40 border-slate-500 hover:border-amber-600'
           }`}
         >
           {lifecycleTab === 'in_progress' && (
@@ -1141,8 +1234,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           }}
           className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md ${
             lifecycleTab === 'completed'
-              ? 'bg-gradient-to-br from-emerald-50/95 via-teal-50/40 to-white border-emerald-500 ring-2 ring-emerald-400/30 shadow-emerald-100 scale-[1.01]'
-              : 'bg-white hover:bg-emerald-50/40 border-slate-200 hover:border-emerald-300'
+              ? 'bg-gradient-to-br from-emerald-50/95 via-teal-50/40 to-white border-emerald-700 ring-2 ring-emerald-400/40 shadow-emerald-100 scale-[1.01]'
+              : 'bg-white hover:bg-emerald-50/40 border-slate-500 hover:border-emerald-600'
           }`}
         >
           {lifecycleTab === 'completed' && (
@@ -1189,119 +1282,50 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       </div>
 
       {/* ==================================================================== */}
-      {/* WIDOK DLA KAFELKI "NOWE" (TYLKO DWIE OPCJE DODAWANIA ZAMÓWIENIA)     */}
+      {/* WIDOK DLA KAFELKI "NOWE ZAMÓWIENIE" (BEZPOŚREDNIO POD KAFELKĄ)        */}
       {/* ==================================================================== */}
       {lifecycleTab === 'new' ? (
-        <div className="bg-white rounded-3xl border border-fuchsia-200/80 p-6 sm:p-8 shadow-sm animate-in fade-in duration-200">
-          <div className="text-center max-w-2xl mx-auto mb-8">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fuchsia-50 border border-fuchsia-200 text-fuchsia-800 text-xs font-bold mb-2">
-              <Sparkles className="w-3.5 h-3.5 text-fuchsia-600" />
-              <span>Dodawanie Nowego Zamówienia</span>
+        <div className="space-y-6 animate-in fade-in duration-150">
+          {/* Nagłówek sekcji Nowe Zamówienie */}
+          <div className="bg-white rounded-2xl border-2 border-slate-600 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-fuchsia-50/90 via-pink-50/40 to-white">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-fuchsia-600 to-pink-600 text-white flex items-center justify-center text-xl shadow-xs shrink-0">
+                ➕
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                    WYSTAW NOWE ZAMÓWIENIE — KARTA WPROWADZANIA ZAMÓWIENIA
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-300">
+                    Centrum Zamówień · Kroki 1–5
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Wczytaj plik zamówienia (Krok 1), wyślij zadanie nr 1 do magazynu (zdjęcia produktów), zweryfikuj ceny i na dole wybierz jeden z <strong>3 wariantów zapisu do W REALIZACJI</strong> lub wygeneruj <strong>WZ</strong>.
+                </p>
+              </div>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Wybierz tryb wprowadzenia zamówienia
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Wczytaj zamówienie do realizacji bez wystawiania faktury teraz albo przejdź od razu do wystawienia e-Faktury KSeF.
-            </p>
+
+            {onStartNewOrder && (
+              <button
+                type="button"
+                onClick={onStartNewOrder}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-fuchsia-800 bg-white hover:bg-fuchsia-50 border border-fuchsia-300 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0 self-start sm:self-auto"
+                title="Wyczyść formularz i rozpocznij zupełnie nowe zamówienie od zera"
+              >
+                <Plus className="w-3.5 h-3.5 text-fuchsia-600" />
+                <span>Nowa czysta karta</span>
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {/* OPCJA 1: NOWE ZAMÓWIENIE BEZ FAKTURY */}
-            <div
-              onClick={() => setIsImportModalOpen(true)}
-              className="group bg-gradient-to-br from-amber-50/70 via-orange-50/30 to-white hover:from-amber-100/70 hover:to-orange-50/50 border-2 border-amber-300 hover:border-amber-500 rounded-3xl p-6 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center text-2xl shadow-md shadow-amber-200 mb-4 group-hover:scale-105 transition-transform">
-                  📦
-                </div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/90 px-2.5 py-0.5 rounded-full border border-amber-200">
-                  Zapisz do realizacji (PDF / TXT / XLSX)
-                </span>
-                <h3 className="text-lg sm:text-xl font-black text-slate-900 mt-2.5 tracking-tight">
-                  NOWE ZAMÓWIENIE BEZ FAKTURY
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-                  Wrzuć plik zamówienia, aby zapisać je w zakładce <strong>W REALIZACJI</strong> bez wystawiania faktury w tym momencie:
-                </p>
-                <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
-                  <li className="flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Zamówienie z wyprzedzeniem — zaplanuj pakowanie, a FV wystaw przed awizacją</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Globe className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Sieć z fakturą w zewnętrznym systemie (bez generowania XML KSeF)</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-amber-200/60">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsImportModalOpen(true);
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-xs sm:text-sm font-black text-amber-950 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-300 hover:from-amber-400 hover:to-orange-300 border border-amber-400 rounded-2xl shadow-xs hover:shadow transition-all cursor-pointer"
-                >
-                  <Upload className="w-4 h-4 text-amber-900" />
-                  <span>NOWE ZAMÓWIENIE BEZ FAKTURY</span>
-                </button>
-              </div>
-            </div>
-
-            {/* OPCJA 2: NOWE ZAMÓWIENIE Z WYSTAWIENIEM FV */}
-            <div
-              onClick={onNavigateToInvoiceCreation}
-              className="group bg-gradient-to-br from-rose-50/70 via-pink-50/30 to-white hover:from-rose-100/70 hover:to-pink-50/50 border-2 border-rose-300 hover:border-rose-500 rounded-3xl p-6 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-600 text-white flex items-center justify-center text-2xl shadow-md shadow-rose-200 mb-4 group-hover:scale-105 transition-transform">
-                  🧾
-                </div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-200">
-                  Kreator e-Faktury KSeF FA(3)
-                </span>
-                <h3 className="text-lg sm:text-xl font-black text-slate-900 mt-2.5 tracking-tight">
-                  NOWE ZAMÓWIENIE Z WYSTAWIENIEM FV
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-                  Przejdź bezpośrednio do generatora faktur, aby wczytać plik zamówienia i od razu wystawić e-Fakturę XML:
-                </p>
-                <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
-                  <li className="flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                    <span>Automatyczny odczyt zamówienia, serii/dat ważności i weryfikacja z cennikiem</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <FileCode className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                    <span>Generowanie pliku XML FA(3) oraz dokumentu WZ i zapis do historii</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-rose-200/60">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onNavigateToInvoiceCreation();
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-xs sm:text-sm font-black text-white bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 rounded-2xl shadow-sm hover:shadow transition-all cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>NOWE ZAMÓWIENIE Z WYSTAWIENIEM FV</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          {newOrderCardContent}
         </div>
       ) : (
         <>
       {/* NAGŁÓWEK MODUŁU I FILTRY SIECIOWE */}
-      <div className="bg-white rounded-2xl border border-rose-200/80 p-5 shadow-xs">
+      <div className="bg-white rounded-2xl border-2 border-slate-600 p-5 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-2">
@@ -1878,7 +1902,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
             return (
               <div
                 key={ord.id}
-                className="bg-white rounded-2xl border border-slate-200 hover:border-rose-300 shadow-xs hover:shadow-md transition-all overflow-hidden"
+                className="bg-white rounded-2xl border-2 border-slate-600 hover:border-slate-800 shadow-md transition-all overflow-hidden"
               >
                 {/* GŁÓWNA KARTA ZAMÓWIENIA */}
                 <div className="p-5">
@@ -1888,7 +1912,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                       {/* ==================================================================== */}
                       {/* GŁÓWNY DUŻY NAGŁÓWEK NA SAMEJ GÓRZE: NAZWA SIECI - ZAMÓWIENIE NR ... Z DNIA ... */}
                       {/* ==================================================================== */}
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pb-1 border-b border-slate-100">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pb-1.5 border-b-2 border-slate-300">
                         <span
                           className={`text-xs font-black px-2.5 py-0.5 rounded-lg border uppercase tracking-wider ${getChainBadgeStyle(
                             displayChain
@@ -1924,14 +1948,14 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           </span>
                         ) : ord.documentType === 'ZAM' ? (
                           ord.invoiceStatus === 'external_billing' ? (
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-indigo-100 text-indigo-900 border-indigo-200 flex items-center gap-1">
-                              <Globe className="w-3 h-3 text-indigo-600" />
-                              <span>🌐 Zamówienie (FV zewnętrzna)</span>
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-sky-100 text-sky-900 border-sky-300 flex items-center gap-1">
+                              <Globe className="w-3 h-3 text-sky-600" />
+                              <span>📝 Bez wystawiania FV (ręczny nr dokumentu)</span>
                             </span>
                           ) : (
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-md border bg-amber-100 text-amber-900 border-amber-300 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-amber-600" />
-                              <span>⏳ Zamówienie (Oczekuje na FV)</span>
+                              <span>⏳ Do uzupełnienia później (pakowanie / zdjęcia / FV)</span>
                             </span>
                           )
                         ) : (
@@ -1939,6 +1963,22 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                             📄 Faktura VAT FA(3)
                           </span>
                         )}
+
+                        {/* BADGE ZDJĘĆ OPAKOWAŃ Z MAGAZYNU (LOT / MHD) */}
+                        {ord.packagingPhotos && ord.packagingPhotos.length > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-fuchsia-50 text-fuchsia-900 border border-fuchsia-200 shadow-2xs"
+                            title="Zdjęcia opakowań (LOT / MHD) dodane do tego zamówienia przez Magazyn"
+                          >
+                            <Camera className="w-3 h-3 text-fuchsia-600" />
+                            <span>
+                              {ord.packagingPhotos.length}{' '}
+                              {ord.packagingPhotos.length === 1
+                                ? 'zdjęcie opakowania (LOT)'
+                                : 'zdjęć opakowań (LOT)'}
+                            </span>
+                          </span>
+                        ) : null}
 
                         {/* BADGE ZDJĘĆ PRZESYŁKI */}
                         {ord.parcelPhotos && ord.parcelPhotos.length > 0 ? (
@@ -1955,33 +1995,108 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           </button>
                         ) : null}
 
-                        {/* DEDYKOWANE MIEJSCE NA NUMER FAKTURY (Z GENEROWANIEM Z XML) */}
-                        {isEditingThisInvoice ? (
-                          <div className="inline-flex items-center gap-1.5 bg-rose-50/90 border border-rose-300 rounded-xl px-2.5 py-1 shadow-2xs">
-                            <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                            <span className="text-[11px] font-bold text-rose-800">
-                              {ord.invoiceStatus === 'external_billing' ? 'Nr FV zewn.:' : 'Nr faktury:'}
+                        {/* STATUSY ZADAŃ W MAGAZYNIE NA GÓRNYM PASKU KARTY ZAMÓWIENIA */}
+                        {ord.warehouseProductTaskStatus && ord.warehouseProductTaskStatus !== 'none' && (
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-[11px] font-black px-2.5 py-0.5 rounded-lg border ${
+                              ord.warehouseProductTaskStatus === 'completed'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : 'bg-fuchsia-100 text-fuchsia-950 border-fuchsia-300'
+                            }`}
+                            title="Status Zadania 1 (Zdjęcia produktów) zleconego na karcie zamówienia"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>
+                              {ord.warehouseProductTaskStatus === 'completed'
+                                ? '✅ Zadanie 1: Zdjęcia produktów gotowe'
+                                : ord.warehouseProductTaskStatus === 'in_progress'
+                                ? '📸 Zadanie 1: Zdjęcia produktów w trakcie'
+                                : '📸 Zadanie 1: Zdjęcia produktów wysłane'}
+                            </span>
+                          </span>
+                        )}
+                        {ord.warehouseParcelTaskStatus && ord.warehouseParcelTaskStatus !== 'none' && (
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-[11px] font-black px-2.5 py-0.5 rounded-lg border ${
+                              ord.warehouseParcelTaskStatus === 'completed'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : 'bg-amber-100 text-amber-950 border-amber-300'
+                            }`}
+                            title="Status Zadania 2 (Zdjęcia gotowej przesyłki) zleconego w W REALIZACJI"
+                          >
+                            <Package className="w-3 h-3" />
+                            <span>
+                              {ord.warehouseParcelTaskStatus === 'completed'
+                                ? '✅ Zadanie 2: Zdjęcia przesyłki gotowe'
+                                : ord.warehouseParcelTaskStatus === 'in_progress'
+                                ? '📦 Zadanie 2: Zdjęcia przesyłki w trakcie'
+                                : '📦 Zadanie 2: Zdjęcia przesyłki wysłane'}
+                            </span>
+                          </span>
+                        )}
+
+                        {/* PODSUMOWANIE OSÓB ODPOWIEDZIALNYCH ZAPISANYCH NA KARCIE */}
+                        {ord.coordinatorName && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-violet-100 text-violet-900 border border-violet-300">
+                            <span>👩‍💼 Koordynator:</span>
+                            <strong>{ord.coordinatorName}</strong>
+                          </span>
+                        )}
+                        {ord.packedBy && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-300">
+                            <span>📦 Pakował(a):</span>
+                            <strong>{ord.packedBy}</strong>
+                          </span>
+                        )}
+                        {ord.verifiedBy && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-950 border border-emerald-300">
+                            <span>🛡️ Weryfikował(a):</span>
+                            <strong>{ord.verifiedBy}</strong>
+                          </span>
+                        )}
+
+                        {/* DEDYKOWANE MIEJSCE NA NUMER DOKUMENTU / FAKTURY (RĘCZNIE LUB Z XML) */}
+                        {isEditingThisInvoice ||
+                        (ord.invoiceStatus === 'external_billing' &&
+                          !ord.externalInvoiceNumber &&
+                          (!ord.invoiceNumber ||
+                            ord.invoiceNumber === 'WPISZ NR DOKUMENTU' ||
+                            ord.invoiceNumber.startsWith('BEZ FV'))) ? (
+                          <div className="inline-flex flex-wrap items-center gap-1.5 bg-sky-50/90 border border-sky-300 rounded-xl px-2.5 py-1 shadow-2xs">
+                            <FileText className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                            <span className="text-[11px] font-bold text-sky-900">
+                              {ord.invoiceStatus === 'external_billing'
+                                ? 'Nr dokumentu (ręcznie):'
+                                : 'Nr faktury:'}
                             </span>
                             <input
                               type="text"
-                              value={currentEditingInvoiceVal}
+                              value={
+                                invoiceNumberState[ord.id] !== undefined
+                                  ? invoiceNumberState[ord.id]
+                                  : ord.externalInvoiceNumber || ''
+                              }
                               onChange={(e) => handleInvoiceNumberChange(ord.id, e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') handleSaveInvoiceNumber(ord.id);
                                 if (e.key === 'Escape') handleCancelEditInvoice();
                               }}
-                              placeholder="Wpisz nr faktury..."
-                              className="px-2 py-0.5 text-xs font-mono font-bold bg-white border border-rose-300 rounded-lg text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-rose-400 w-36 sm:w-44"
-                              autoFocus
+                              placeholder={
+                                ord.invoiceStatus === 'external_billing'
+                                  ? 'Wpisz nr dokumentu ręcznie...'
+                                  : 'Wpisz nr faktury...'
+                              }
+                              className="px-2 py-0.5 text-xs font-mono font-bold bg-white border border-sky-300 rounded-lg text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-400 w-44 sm:w-52"
                             />
                             <button
                               type="button"
                               onClick={() => handleSaveInvoiceNumber(ord.id)}
                               disabled={savingInvoiceId === ord.id}
-                              className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
-                              title="Zapisz numer faktury"
+                              className="px-2 py-0.5 text-[11px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer inline-flex items-center gap-1"
+                              title="Zapisz numer dokumentu / faktury"
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Check className="w-3 h-3" />
+                              <span>Zapisz nr</span>
                             </button>
                             {xmlInvoiceNo && (
                               <button
@@ -1993,24 +2108,30 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                                 ⚡ Z XML ({xmlInvoiceNo})
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={handleCancelEditInvoice}
-                              className="p-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
-                              title="Anuluj"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            {isEditingThisInvoice && (
+                              <button
+                                type="button"
+                                onClick={handleCancelEditInvoice}
+                                className="p-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
+                                title="Anuluj"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         ) : (
-                          <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-rose-50 via-white to-pink-50 border border-rose-200 rounded-xl px-2.5 py-1 shadow-2xs">
+                          <div className="inline-flex flex-wrap items-center gap-1.5 bg-gradient-to-r from-rose-50 via-white to-pink-50 border border-rose-200 rounded-xl px-2.5 py-1 shadow-2xs">
                             <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                              {ord.invoiceStatus === 'external_billing' ? 'FV zewn.:' : 'Nr faktury:'}
+                              {ord.invoiceStatus === 'external_billing'
+                                ? 'Nr dokumentu:'
+                                : 'Nr faktury:'}
                             </span>
                             <span className="text-sm font-black text-slate-900 font-mono tracking-tight select-all">
-                              {ord.documentType === 'ZAM' && ord.invoiceStatus === 'awaiting_invoice' && (!ord.invoiceNumber || ord.invoiceNumber.startsWith('ZAM:'))
-                                ? '⏳ Wystaw przed awizacją'
+                              {ord.documentType === 'ZAM' &&
+                              ord.invoiceStatus === 'awaiting_invoice' &&
+                              (!ord.invoiceNumber || ord.invoiceNumber.startsWith('ZAM:'))
+                                ? '⏳ Do uzupełnienia na karcie'
                                 : effectiveInvoiceNumber}
                             </span>
                             {xmlInvoiceNo && (
@@ -2024,11 +2145,29 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                             <button
                               type="button"
                               onClick={() => handleStartEditInvoice(ord)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-100/60 transition-colors cursor-pointer"
-                              title="Edytuj numer faktury"
+                              className="px-1.5 py-0.5 text-[10px] font-bold text-slate-600 hover:text-rose-700 rounded-md bg-white hover:bg-rose-100/60 border border-slate-200 transition-colors cursor-pointer inline-flex items-center gap-1"
+                              title="Wpisz lub edytuj numer dokumentu / faktury ręcznie"
                             >
                               <Edit3 className="w-3 h-3" />
+                              <span>
+                                {ord.invoiceStatus === 'external_billing'
+                                  ? 'Zmień nr dokumentu'
+                                  : 'Edytuj nr'}
+                              </span>
                             </button>
+                            {ord.documentType === 'ZAM' &&
+                              ord.invoiceStatus === 'awaiting_invoice' &&
+                              onLoadOrderForInvoiceCreation && (
+                                <button
+                                  type="button"
+                                  onClick={() => onLoadOrderForInvoiceCreation(ord)}
+                                  className="px-2 py-0.5 text-[10px] font-black rounded-md bg-amber-500 hover:bg-amber-600 text-white transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                  title="Wróć do karty zamówienia, aby uzupełnić dane i wystawić FV"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  <span>✏️ Wróć do karty zamówienia i uzupełnij</span>
+                                </button>
+                              )}
                             {xmlInvoiceNo && ord.invoiceNumber !== xmlInvoiceNo && (
                               <button
                                 type="button"
@@ -2258,29 +2397,35 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         </div>
                       </div>
 
-                      {/* CHECKBOX: TOWAR DOTARŁ DO ODBIORCY */}
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 min-w-[180px]">
+                      {/* CHECKBOX: TOWAR DOTARŁ DO KLIENTA (ZMIANA STATUSU NA ZAKOŃCZONE) */}
+                      <div
+                        className={`p-2.5 rounded-xl border min-w-[205px] transition-all ${
+                          ord.isDelivered
+                            ? 'bg-emerald-50/90 border-emerald-300'
+                            : 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-200/70'
+                        }`}
+                      >
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                           <input
                             type="checkbox"
                             checked={ord.isDelivered}
                             onChange={() => handleToggleDelivered(ord)}
-                            className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                           />
-                          <span className="text-xs font-bold text-slate-800">
-                            Towar dotarł do odbiorcy
+                          <span className="text-xs font-black text-slate-900">
+                            Towar dotarł do klienta
                           </span>
                         </label>
                         <div className="mt-1 pl-6">
                           {ord.isDelivered ? (
-                            <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                            <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                              <span>{ord.deliveredAt ? `Dotarł: ${ord.deliveredAt}` : 'Potwierdzono dostawę'}</span>
+                              <span>{ord.deliveredAt ? `Zakończone: ${ord.deliveredAt}` : 'Status: ZAKOŃCZONE'}</span>
                             </span>
                           ) : (
-                            <span className="text-[11px] font-semibold text-amber-700 flex items-center gap-1">
+                            <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                              <span>Oczekuje na doręczenie</span>
+                              <span>Zaznacz po doręczeniu ➔ Zakończone</span>
                             </span>
                           )}
                         </div>
@@ -2289,7 +2434,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                   </div>
 
                   {/* MODUŁ SPEDYCJI: LIST PRZEWOZOWY, KURIER I STATUS PRZESYŁKI */}
-                  <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 via-rose-50/20 to-slate-50 p-3 rounded-xl border border-slate-200/80">
+                  <div className="mt-3.5 pt-3 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 via-rose-50/20 to-slate-50 p-3 rounded-xl border-2 border-slate-500">
                     {/* LEWA STRONA: PRZEWOŹNIK, NUMER LISTU, ŚLEDZENIE */}
                     <div className="flex flex-wrap items-center gap-2 flex-1">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 shrink-0">
@@ -2396,20 +2541,20 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                       )}
                     </div>
 
-                    {/* PRAWA STRONA: STATUS PRZESYŁKI & AUTOMATYCZNE OZNACZENIE DORĘCZENIA */}
+                    {/* PRAWA STRONA: STATUS LISTU PRZEWOZOWEGO & POTWIERDZENIE DORĘCZENIA DO KLIENTA */}
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Status paczki:
+                        Status listu:
                       </span>
 
-                      {/* DROPDOWN STATUSU PRZESYŁKI */}
+                      {/* DROPDOWN STATUSU LISTU PRZEWOZOWEGO */}
                       <select
-                        value={ord.shippingStatus || (ord.isDelivered ? 'delivered' : 'in_transit')}
+                        value={ord.shippingStatus || (ord.isDelivered ? 'delivered' : ord.trackingNumber ? 'in_transit' : 'registered')}
                         onChange={(e) => handleShippingStatusChange(ord, e.target.value as ShippingStatus)}
                         className={`px-2.5 py-1 text-xs font-bold rounded-lg border cursor-pointer shadow-2xs ${
                           currentShippingCfg.badgeClass
                         }`}
-                        title="Zmień status przesyłki. Wybór 'Doręczona' automatycznie zaktualizuje status zamówienia jako doręczone z datą!"
+                        title="Status śledzenia listu przewozowego u kuriera (zamówienie pozostaje w W REALIZACJI do momentu zaznaczenia 'Towar dotarł do klienta')"
                       >
                         {SHIPPING_STATUSES.map((st) => (
                           <option key={st.id} value={st.id}>
@@ -2418,18 +2563,156 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         ))}
                       </select>
 
-                      {/* SZYBKI PRZYCISK: ⚡ OZNACZ JAKO DORĘCZONA */}
+                      {/* SZYBKI PRZYCISK: ZAZNACZ ŻE TOWAR DOTARŁ DO KLIENTA (PRZENIEŚ DO ZAKOŃCZONE) */}
                       {!ord.isDelivered && (
                         <button
                           type="button"
-                          onClick={() => handleShippingStatusChange(ord, 'delivered')}
+                          onClick={() => handleToggleDelivered(ord)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                          title="Kliknij, aby jednym ruchem oznaczyć przesyłkę jako doręczoną i potwierdzić odbiór towaru przez aptekę"
+                          title="Kliknij, aby potwierdzić, że towar dotarł do klienta i zmienić status zamówienia na ZAKOŃCZONE"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>⚡ Doręczono</span>
+                          <span>✅ Towar dotarł do klienta</span>
                         </button>
                       )}
+                    </div>
+                  </div>
+
+                  {/* ===================================================================== */}
+                  {/* SEKCJA NA KARCIE ZAMÓWIENIA: KOORDYNATOR / KTO PAKOWAŁ / KTO WERYFIKOWAŁ */}
+                  {/* ===================================================================== */}
+                  <div className="mt-3.5 p-3.5 rounded-2xl border-2 border-slate-600 bg-gradient-to-r from-slate-50 via-white to-slate-50 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-300">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs sm:text-sm font-black text-slate-900">
+                          👥 Osoby odpowiedzialne na karcie zamówienia:
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700 border border-slate-300">
+                          Zapisywane automatycznie na karcie zamówienia
+                        </span>
+                      </div>
+                      {(ord.coordinatorName || ord.packedBy || ord.verifiedBy) && (
+                        <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Zapisano na karcie ✓</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      {/* 1. KOORDYNATOR: Iwona / Virdzinia */}
+                      <div className="p-2.5 rounded-xl bg-white border-2 border-slate-400 flex flex-col justify-between gap-2">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <span>👩‍💼</span>
+                            <span>Koordynator:</span>
+                          </span>
+                          {ord.coordinatorName ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-100 text-violet-900 border border-violet-300">
+                              ✓ {ord.coordinatorName}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-slate-400">Do wyboru</span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {COORDINATOR_OPTIONS.map((person) => {
+                            const isSelected = ord.coordinatorName === person;
+                            return (
+                              <button
+                                key={person}
+                                type="button"
+                                onClick={() => handleUpdateOrderPersonnel(ord, 'coordinatorName', person)}
+                                className={`flex-1 min-w-[90px] px-3 py-1.5 rounded-xl text-xs font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                  isSelected
+                                    ? 'bg-violet-600 text-white border-violet-800 shadow-xs'
+                                    : 'bg-slate-50 hover:bg-violet-50 text-slate-800 border-slate-300 hover:border-violet-400'
+                                }`}
+                                title={`Ustaw koordynatora zamówienia: ${person} (kliknij ponownie, aby odznaczyć)`}
+                              >
+                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                                <span>{person}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 2. KTO PAKOWAŁ ZAMÓWIENIE: Mateusz / Valerii / Agnieszka / Iwona */}
+                      <div className="p-2.5 rounded-xl bg-white border-2 border-slate-400 flex flex-col justify-between gap-2">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <span>📦</span>
+                            <span>Kto pakował zamówienie:</span>
+                          </span>
+                          {ord.packedBy ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-300">
+                              ✓ {ord.packedBy}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-slate-400">Do wyboru</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {PACKED_BY_OPTIONS.map((person) => {
+                            const isSelected = ord.packedBy === person;
+                            return (
+                              <button
+                                key={person}
+                                type="button"
+                                onClick={() => handleUpdateOrderPersonnel(ord, 'packedBy', person)}
+                                className={`px-2 py-1.5 rounded-xl text-xs font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                  isSelected
+                                    ? 'bg-amber-600 text-white border-amber-800 shadow-xs'
+                                    : 'bg-slate-50 hover:bg-amber-50 text-slate-800 border-slate-300 hover:border-amber-400'
+                                }`}
+                                title={`Ustaw osobę pakującą zamówienie: ${person} (kliknij ponownie, aby odznaczyć)`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                                <span>{person}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 3. KTO WERYFIKOWAŁ ZAMÓWIENIE: Mateusz / Valerii / Agnieszka / Iwona */}
+                      <div className="p-2.5 rounded-xl bg-white border-2 border-slate-400 flex flex-col justify-between gap-2">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <span>🛡️</span>
+                            <span>Kto weryfikował zamówienie:</span>
+                          </span>
+                          {ord.verifiedBy ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-950 border border-emerald-300">
+                              ✓ {ord.verifiedBy}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-slate-400">Do wyboru</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {VERIFIED_BY_OPTIONS.map((person) => {
+                            const isSelected = ord.verifiedBy === person;
+                            return (
+                              <button
+                                key={person}
+                                type="button"
+                                onClick={() => handleUpdateOrderPersonnel(ord, 'verifiedBy', person)}
+                                className={`px-2 py-1.5 rounded-xl text-xs font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-800 shadow-xs'
+                                    : 'bg-slate-50 hover:bg-emerald-50 text-slate-800 border-slate-300 hover:border-emerald-400'
+                                }`}
+                                title={`Ustaw osobę weryfikującą zamówienie: ${person} (kliknij ponownie, aby odznaczyć)`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                                <span>{person}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -2452,7 +2735,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                             handleSaveNote(ord.id);
                           }
                         }}
-                        className="w-full px-3 py-1.5 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded-xl transition-colors text-slate-800"
+                        className="w-full px-3 py-1.5 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 focus:border-rose-400 rounded-xl transition-colors text-slate-800"
                       />
                       {currentNote !== ord.notes && (
                         <button
@@ -2467,12 +2750,209 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     </div>
                   </div>
 
+                  {/* ===================================================================== */}
+                  {/* FOLDER W REALIZACJI — ZADANIE 2 DLA MAGAZYNU: ZDJĘCIA GOTOWEJ PRZESYŁKI */}
+                  {/* ===================================================================== */}
+                  <div className="mt-3.5 p-3.5 sm:p-4 rounded-2xl border-2 border-amber-600 bg-gradient-to-r from-amber-50/90 via-orange-50/50 to-amber-50/80 shadow-xs">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b-2 border-amber-300">
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <Package className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-600 text-white">
+                              Etap 2 z 2 • W realizacji
+                            </span>
+                            <span className="text-xs sm:text-sm font-black text-slate-900">
+                              📦 Zadanie 2 dla Magazynu: Uzupełnij zdjęcia gotowej przesyłki
+                            </span>
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                                ord.warehouseParcelTaskStatus === 'completed'
+                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                  : ord.warehouseParcelTaskStatus === 'assigned' ||
+                                    ord.warehouseParcelTaskStatus === 'in_progress'
+                                  ? 'bg-amber-200/80 text-amber-950 border-amber-400'
+                                  : 'bg-white text-slate-600 border-amber-200'
+                              }`}
+                            >
+                              {ord.warehouseParcelTaskStatus === 'completed'
+                                ? '✅ Zadanie 2 wykonane (Zdjęcia przesyłki uzupełnione)'
+                                : ord.warehouseParcelTaskStatus === 'in_progress'
+                                ? '📦 W trakcie (Magazyn dodaje zdjęcia przesyłki)'
+                                : ord.warehouseParcelTaskStatus === 'assigned'
+                                ? '📦 Wysłano zadanie: Uzupełnij zdjęcia gotowej przesyłki'
+                                : '⏳ Oczekuje na wysłanie zadania nr 2'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            Gdy zamówienie jest w realizacji, wyślij do Magazynu <strong>Zadanie 2: Uzupełnij zdjęcia gotowej przesyłki</strong> (zamknięte kartony / paleta z etykietą).
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSendOrderToWarehouse(ord)}
+                        className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer shadow-xs shrink-0 ${
+                          ord.warehouseParcelTaskStatus === 'completed'
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            : ord.warehouseParcelTaskStatus === 'assigned' ||
+                              ord.warehouseParcelTaskStatus === 'in_progress'
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white ring-2 ring-amber-300'
+                            : 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white hover:scale-[1.01]'
+                        }`}
+                      >
+                        <Package className="w-4 h-4" />
+                        <span>
+                          {ord.warehouseParcelTaskStatus === 'completed'
+                            ? '✅ Zdjęcia przesyłki wykonane — Wyślij ponownie'
+                            : ord.warehouseParcelTaskStatus === 'assigned' ||
+                              ord.warehouseParcelTaskStatus === 'in_progress'
+                            ? '📦 Wysłano: Uzupełnij zdjęcia gotowej przesyłki ✓ (Zaktualizuj)'
+                            : '📦 Wyślij zadanie: Uzupełnij zdjęcia gotowej przesyłki'}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* PODSUMOWANIE OBU ETAPÓW ZADAŃ DLA MAGAZYNU */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 mt-3">
+                      <div className="bg-slate-50/90 rounded-xl p-2.5 border border-fuchsia-200/80 flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-md bg-fuchsia-600 text-white font-black text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                          1
+                        </span>
+                        <div className="text-[11px] flex-1">
+                          <div className="font-bold text-slate-800 flex flex-wrap items-center justify-between gap-1">
+                            <span>📸 Etap 1 (Karta zamówienia): Uzupełnij zdjęcia produktów</span>
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                ord.packagingPhotos && ord.packagingPhotos.length > 0
+                                  ? 'bg-fuchsia-100 text-fuchsia-800'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {ord.packagingPhotos?.length || 0} zdjęć produktów
+                            </span>
+                          </div>
+                          <p className="text-slate-500 mt-0.5">
+                            Zadanie wysyłane z karty zamówienia (zdjęcia opakowań produktów z serią LOT i datą ważności MHD).
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-xl p-2.5 border-2 border-amber-400 flex items-start gap-2 shadow-2xs">
+                        <span className="w-5 h-5 rounded-md bg-amber-600 text-white font-black text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                          2
+                        </span>
+                        <div className="text-[11px] flex-1">
+                          <div className="font-black text-slate-900 flex flex-wrap items-center justify-between gap-1">
+                            <span>📦 Zadanie 2 (Teraz — W realizacji): Uzupełnij zdjęcia gotowej przesyłki</span>
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                ord.parcelPhotos && ord.parcelPhotos.length > 0
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {ord.parcelPhotos?.length || 0} zdjęć przesyłki
+                            </span>
+                          </div>
+                          <p className="text-slate-600 mt-0.5">
+                            Uzupełnienie zdjęć zamkniętych kartonów lub palety z etykietą adresową jako dowodu gotowej przesyłki.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* DODATKOWY OPIS / WYTYCZNE DO ZADANIA 2 (GOTOWA PRZESYŁKA) */}
+                    <div className="mt-2.5 pt-2.5 border-t border-amber-200/70 flex flex-col sm:flex-row sm:items-center gap-2">
+                      <span className="text-[11px] font-extrabold text-amber-950 shrink-0">
+                        📝 Wytyczne do Zadania 2 (Zdjęcia gotowej przesyłki):
+                      </span>
+                      <input
+                        type="text"
+                        value={
+                          warehouseTaskNoteState[ord.id] !== undefined
+                            ? warehouseTaskNoteState[ord.id]
+                            : ord.warehouseParcelTaskNote || ord.warehouseTaskNote || ''
+                        }
+                        onChange={(e) =>
+                          setWarehouseTaskNoteState((prev) => ({
+                            ...prev,
+                            [ord.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="np. Dołącz papierową FV i WZ w koszulce na 1. kartonie, zrób zdjęcie etykiety kurierskiej i całej palety..."
+                        className="flex-1 px-2.5 py-1 text-xs bg-white border border-amber-300 rounded-xl text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* SEKCJA ZDJĘĆ OPAKOWAŃ Z MAGAZYNU (LOT / MHD) — JEŚLI DODANE */}
+                  {ord.packagingPhotos && ord.packagingPhotos.length > 0 && (
+                    <div className="mt-3.5 pt-3 border-t border-slate-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Camera className="w-4 h-4 text-fuchsia-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">
+                            Zdjęcia opakowań zamówienia (LOT / MHD z Magazynu):
+                          </span>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200">
+                            {ord.packagingPhotos.length}{' '}
+                            {ord.packagingPhotos.length === 1 ? 'zdjęcie' : 'zdjęcia'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                        {ord.packagingPhotos.map((pkg, pkgIdx) => (
+                          <div
+                            key={pkg.id || pkgIdx}
+                            className="relative group w-20 h-20 sm:w-24 sm:h-24 rounded-xl border border-fuchsia-200 bg-slate-100 overflow-hidden shadow-2xs hover:shadow-md transition-all shrink-0"
+                          >
+                            <img
+                              src={pkg.dataUrl}
+                              alt={pkg.fileName || `Opakowanie #${pkgIdx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  downloadImageDataUrl(
+                                    pkg.dataUrl,
+                                    pkg.fileName || `opakowanie-${ord.orderNumber || ord.id}-${pkgIdx + 1}.jpg`
+                                  )
+                                }
+                                className="p-1.5 rounded-lg bg-white/90 text-slate-800 hover:bg-white hover:text-fuchsia-600 transition-colors shadow-xs cursor-pointer"
+                                title="Pobierz zdjęcie opakowania"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOrderPackagingPhoto(ord, pkg.id)}
+                                className="p-1.5 rounded-lg bg-rose-600/90 text-white hover:bg-rose-700 transition-colors shadow-xs cursor-pointer"
+                                title="Usuń to zdjęcie opakowania"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <span className="absolute bottom-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-fuchsia-950/80 text-white pointer-events-none">
+                              LOT #{pkgIdx + 1}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* SEKCJA ZDJĘĆ PRZESYŁKI / DOWODU SPAKOWANIA PACZKI */}
                   <div className="mt-3.5 pt-3 border-t border-slate-100">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2">
                         <Camera className="w-4 h-4 text-rose-500 shrink-0" />
-                        <span className="text-xs font-bold text-slate-800">Zdjęcia przesyłki / Dowód spakowania:</span>
+                        <span className="text-xs font-bold text-slate-800">Zdjęcia spakowanego zamówienia / Dowód spakowania:</span>
                         <span
                           className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
                             ord.parcelPhotos && ord.parcelPhotos.length > 0
@@ -2599,8 +3079,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                     </button>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* PRZYCISK: WYSTAW FAKTURĘ KSEF DLA ZAMÓWIENIA OCZEKUJĄCEGO */}
-                      {ord.documentType === 'ZAM' && ord.invoiceStatus !== 'external_billing' && (
+                      {/* PRZYCISK: WRÓĆ DO KARTY ZAMÓWIENIA I UZUPEŁNIJ DANE / WYSTAW FV */}
+                      {ord.documentType === 'ZAM' && ord.invoiceStatus !== 'external_billing' ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -2611,11 +3091,23 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                             }
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black text-white bg-gradient-to-r from-amber-500 via-rose-500 to-pink-500 hover:from-amber-600 hover:to-pink-600 rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer hover:scale-[1.02]"
-                          title="Wystaw e-Fakturę KSeF dla tego zamówienia przed awizacją — automatycznie wczyta dane i pozycje"
+                          title="Wróć do wspólnej karty zamówienia, aby uzupełnić pakowanie, zdjęcia opakowań, dane do FV i wystawić fakturę"
                         >
                           <Sparkles className="w-3.5 h-3.5" />
-                          <span>⚡ Wystaw Fakturę KSeF</span>
+                          <span>✏️ Wróć do karty zamówienia — uzupełnij i wystaw FV</span>
                         </button>
+                      ) : (
+                        onLoadOrderForInvoiceCreation && (
+                          <button
+                            type="button"
+                            onClick={() => onLoadOrderForInvoiceCreation(ord)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                            title="Otwórz to zamówienie ponownie na wspólnej karcie zamówienia"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                            <span>✏️ Wróć do karty zamówienia</span>
+                          </button>
+                        )
                       )}
 
                       {/* WYGENERUJ KOREKTĘ (tylko dla wystawionych faktur FV) */}

@@ -6,14 +6,14 @@ interface HomePortalViewProps {
   onSelectModule: (module: AppModule) => void;
   ordersCount: number;
   onOpenEdiPrototype?: () => void;
-  onOpenZenboxModal?: () => void;
+  onSelectOrderTab?: (tab: 'new' | 'in_progress' | 'completed') => void;
 }
 
 export const HomePortalView: React.FC<HomePortalViewProps> = ({
   onSelectModule,
   ordersCount,
   onOpenEdiPrototype,
-  onOpenZenboxModal,
+  onSelectOrderTab,
 }) => {
   return (
     <div className="max-w-7xl mx-auto py-6 sm:py-10 animate-in fade-in zoom-in-95 duration-200">
@@ -76,7 +76,7 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
                 <div>
                   <strong className="text-slate-900 font-bold block">1. Wygeneruj Fakturę XML</strong>
                   <span className="text-slate-500 text-[11px]">
-                    Wczytanie zamówienia (PDF/tekst), serie i daty OCR z opakowań, cennik XLSX, XML FA(3) i WZ.
+                    Wczytanie zamówienia (PDF/tekst), serie i daty OCR z opakowań, cennik XLSX i generowanie KSeF XML FA(3).
                   </span>
                 </div>
               </div>
@@ -154,25 +154,25 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
                 Moduł Logistyczny
               </span>
               <span className="text-slate-300">·</span>
-              <span className="text-[11px] font-semibold text-slate-500">Rejestr & Historia</span>
+              <span className="text-[11px] font-semibold text-slate-500">Nowe & W realizacji</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight group-hover:text-rose-900 transition-colors">
               Centrum Zamówień
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
-              Archiwum zamówień sieciowych, śledzenie przesyłek kurierskich, zdjęcia paczek i etapy realizacji dostaw.
+              Wprowadzanie nowych zamówień (z 4 wariantami zapisu), śledzenie przesyłek w realizacji i archiwum dostaw.
             </p>
 
             {/* Lista zawartych opcji */}
             <div className="mt-5 space-y-2.5 bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 group-hover:bg-white/80 group-hover:border-rose-200/80 transition-colors">
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <div className="w-5 h-5 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 font-bold text-[11px] mt-0.5">
-                  ✓
+                  ➕
                 </div>
                 <div>
-                  <strong className="text-slate-900 font-bold block">Historia i nowe zamówienia</strong>
+                  <strong className="text-slate-900 font-bold block">Wystaw Nowe Zamówienie</strong>
                   <span className="text-slate-500 text-[11px]">
-                    Zamówienia z fakturą i bez faktury dla sieci: <strong>DOZ, Dr. Max, Super-Pharm, Gemini</strong>.
+                    Karta nowego zamówienia z wariantami zapisu: <strong>1. Z FV XML</strong>, <strong>2. Uzupełnij później</strong>, <strong>3. Bez FV</strong> i <strong>WZ</strong>.
                   </span>
                 </div>
               </div>
@@ -182,7 +182,7 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
                   🚚
                 </div>
                 <div>
-                  <strong className="text-slate-900 font-bold block">Spedycja, zdjęcia paczek i awizacje</strong>
+                  <strong className="text-slate-900 font-bold block">W realizacji i Zakończone</strong>
                   <span className="text-slate-500 text-[11px]">
                     Listy przewozowe DPD/InPost/DHL, dokumentacja zdjęciowa paczek i etapy dostawy.
                   </span>
@@ -192,15 +192,42 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
           </div>
 
           {/* Dolny przycisk akcji */}
-          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
             <span className="text-xs font-bold text-rose-700 group-hover:text-rose-800 transition-colors flex items-center gap-1.5">
               <span>Otwórz Centrum Zamówień</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </span>
 
-            <span className="px-3 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg">
-              {ordersCount} w bazie ➔
-            </span>
+            <div className="flex items-center gap-1.5">
+              {onSelectOrderTab && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectOrderTab('new');
+                      onSelectModule('history');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold text-fuchsia-700 hover:text-fuchsia-900 bg-fuchsia-50 hover:bg-fuchsia-100 border border-fuchsia-200 rounded-lg transition-colors cursor-pointer"
+                    title="Otwórz bezpośrednio kartę Nowego Zamówienia"
+                  >
+                    ➕ Nowe zamówienie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectOrderTab('in_progress');
+                      onSelectModule('history');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                    title="Otwórz zamówienia W realizacji"
+                  >
+                    🚚 W realizacji
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -279,54 +306,6 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
           </div>
         </div>
       </div>
-
-      {/* ==================================================================== */}
-      {/* NOWOŚĆ: SKRZYNKA ZAMÓWIEŃ I AWIZACJI ZENBOX                           */}
-      {/* ==================================================================== */}
-      {onOpenZenboxModal && (
-        <div
-          onClick={onOpenZenboxModal}
-          className="mt-7 group relative bg-gradient-to-r from-emerald-950 via-teal-900 to-indigo-950 hover:from-emerald-900 hover:via-teal-800 hover:to-indigo-900 text-white rounded-3xl p-6 sm:p-7 border-2 border-emerald-500/40 hover:border-emerald-400 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-0.5 cursor-pointer"
-        >
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-3xl shadow-lg border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
-                📬
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider bg-emerald-400 text-slate-950 rounded-full">
-                    DEDYKOWANA SKRZYNKA ZAMÓWIEŃ
-                  </span>
-                  <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold bg-teal-800/80 text-teal-100 border border-teal-600 rounded-full">
-                    Zenbox IMAP/SMTP + Praca Hybrydowa
-                  </span>
-                </div>
-                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                  Skrzynka Zamówień i Awizacji Zenbox (Dr. Max • DOZ Direct • Centrum Wiedzy)
-                </h3>
-                <p className="text-xs sm:text-sm text-emerald-100 mt-1 max-w-3xl leading-relaxed">
-                  Wczytuj zamówienia z maila 1 kliknięciem, odpowiadaj z użyciem gotowych szablonów i automatycznej stopki, generuj <strong className="text-white">autouzupełniony plik Awizacji Dr. Max (.xlsx)</strong> i wybieraj adresy z Centrum Wiedzy. Wątki przechodzą do <strong className="text-white">Archiwum</strong> dopiero po wysłaniu FV oraz doręczeniu przesyłki!
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 self-end lg:self-center shrink-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenZenboxModal();
-                }}
-                className="inline-flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-black text-slate-950 bg-gradient-to-r from-emerald-300 via-teal-300 to-amber-300 hover:from-emerald-200 hover:to-amber-200 rounded-2xl shadow-md transition-all cursor-pointer"
-              >
-                <span>Otwórz Skrzynkę Zenbox</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ==================================================================== */}
       {/* INTERAKTYWNY PROTOTYP KOMUNIKACJI EDI DOZ DIRECT                      */}
