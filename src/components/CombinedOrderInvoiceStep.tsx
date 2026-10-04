@@ -234,7 +234,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
     try {
       const parsed = await parseOrderFromFile(file);
       if (parsed.headerData) {
-        const match = matchOrBuildBuyerFromOrder(parsed.headerData);
+        const match = matchOrBuildBuyerFromOrder(parsed.headerData, selectedChain);
         setLastExtractedInfo(match);
         onSelectChain(match.chain);
         onUpdateBuyer(match.buyer);
@@ -669,7 +669,7 @@ export const CombinedOrderInvoiceStep: React.FC<CombinedOrderInvoiceStepProps> =
           <input
             ref={orderInputRef}
             type="file"
-            accept=".xlsx,.xls,.pdf,.txt,.csv,.xml"
+            accept=".xlsx,.xls,.pdf,.txt,.csv,.xml,.html,.htm"
             onChange={handleOrderChange}
             className="hidden"
           />

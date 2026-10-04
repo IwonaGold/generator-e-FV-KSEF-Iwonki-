@@ -906,7 +906,7 @@ export default function App() {
     }
 
     if (parsedHeader) {
-      const match = matchOrBuildBuyerFromOrder(parsedHeader);
+      const match = matchOrBuildBuyerFromOrder(parsedHeader, selectedChain);
       setSelectedChain(match.chain);
       setBuyer(match.buyer);
       setThirdParty(match.thirdParty);

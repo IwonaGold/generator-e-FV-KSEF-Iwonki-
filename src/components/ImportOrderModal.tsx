@@ -250,7 +250,7 @@ export const ImportOrderModal: React.FC<ImportOrderModalProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.txt,.xlsx,.xls,.csv"
+                  accept=".pdf,.txt,.xlsx,.xls,.csv,.html,.htm"
                   className="hidden"
                   onChange={(e) => e.target.files?.[0] && handleFileProcess(e.target.files[0])}
                 />
