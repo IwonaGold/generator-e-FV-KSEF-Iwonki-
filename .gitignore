@@ -7,10 +7,6 @@ coverage/
 .env*
 !.env.example
 data/cloud_config.json
-data/orders_history.json
-data/deleted_orders_ids.json
-data/packaging_photos.json
-data/shared_drafts.json
-data/knowledge_base.json
+
 
 
