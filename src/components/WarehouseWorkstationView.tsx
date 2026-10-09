@@ -307,9 +307,8 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
   };
 
   /**
-  /**
    * 3. Oznaczenie konkretnego zadania (Zadania 1 lub Zadania 2) jako wykonane / przekazane Koordynatorowi
-   *    (zadania wykonane nie są przetrzymywane na stanowisku Magazyn)
+   *    (zadania wykonane są natychmiast usuwane ze stanowiska Magazyn — status ustawiany na 'none')
    */
   const handleToggleTaskCompleted = async (task: WarehouseSplitTaskItem) => {
     setStatusUpdatingKey(task.key);
@@ -318,17 +317,25 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
       const nowIso = new Date().toISOString();
 
       if (task.taskType === 'product_photos') {
+        const remainingParcel =
+          ord.warehouseParcelTaskStatus === 'assigned' || ord.warehouseParcelTaskStatus === 'in_progress'
+            ? ord.warehouseParcelTaskStatus
+            : 'none';
         await updateArchivedOrderFields(ord.id, {
-          warehouseProductTaskStatus: 'completed',
+          warehouseProductTaskStatus: 'none',
           warehouseProductTaskCompletedAt: nowIso,
-          warehouseTaskStatus: 'completed',
+          warehouseTaskStatus: remainingParcel,
           warehouseTaskCompletedAt: nowIso,
         });
       } else {
+        const remainingProd =
+          ord.warehouseProductTaskStatus === 'assigned' || ord.warehouseProductTaskStatus === 'in_progress'
+            ? ord.warehouseProductTaskStatus
+            : 'none';
         await updateArchivedOrderFields(ord.id, {
-          warehouseParcelTaskStatus: 'completed',
+          warehouseParcelTaskStatus: 'none',
           warehouseParcelTaskCompletedAt: nowIso,
-          warehouseTaskStatus: 'completed',
+          warehouseTaskStatus: remainingProd,
           warehouseTaskCompletedAt: nowIso,
         });
       }
@@ -339,7 +346,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
           ? 'Zadanie 1 (Uzupełnij zdjęcia produktów)'
           : 'Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki)';
       setNotice(
-        `✅ ${taskLabel} dla zamówienia nr ${ord.orderNumber || ord.invoiceNumber} zostało wykonane, przekazane Koordynatorowi i usunięte z listy zadań Magazynu!`
+        `✅ ${taskLabel} dla zamówienia nr ${ord.orderNumber || ord.invoiceNumber} zostało wykonane, przekazane Koordynatorowi i usunięte ze stanowiska Magazyn!`
       );
       setTimeout(() => setNotice(null), 5000);
     } finally {

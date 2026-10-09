@@ -74,10 +74,15 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       }
     }
 
-    const legacyStatus = ord.warehouseTaskStatus || 'none';
-    const effectiveProductTaskStatus =
+    const rawLegacyStatus = ord.warehouseTaskStatus || 'none';
+    const legacyStatus = rawLegacyStatus === 'completed' ? 'none' : rawLegacyStatus;
+    const rawProductStatus =
       ord.warehouseProductTaskStatus || (legacyStatus !== 'none' ? legacyStatus : 'none');
-    const effectiveParcelTaskStatus = ord.warehouseParcelTaskStatus || 'none';
+    const effectiveProductTaskStatus =
+      rawProductStatus === 'completed' ? 'none' : rawProductStatus;
+    const rawParcelStatus = ord.warehouseParcelTaskStatus || 'none';
+    const effectiveParcelTaskStatus =
+      rawParcelStatus === 'completed' ? 'none' : rawParcelStatus;
 
     return {
       ...ord,
