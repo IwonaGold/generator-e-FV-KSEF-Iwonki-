@@ -590,7 +590,16 @@ export default function App() {
 
     const resolvedChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
     const xmlInvoiceNum = extractInvoiceNumberFromXml(xmlPayload);
-    const existingOrder = activeMatchedArchivedOrder;
+    const rawMetaOrdNo = (meta.orderNumber || '').trim();
+    const existingOrder =
+      activeMatchedArchivedOrder ||
+      (rawMetaOrdNo
+        ? archivedOrders.find(
+            (o) =>
+              !o.isDelivered &&
+              (o.orderNumber || '').trim().toLowerCase() === rawMetaOrdNo.toLowerCase()
+          ) || null
+        : null);
     const preservedShippingStatus =
       existingOrder &&
       !existingOrder.isDelivered &&

@@ -360,6 +360,7 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
       const localMap = new Map(localOrders.map((o) => [o.id, o]));
       let serverOrders: ArchivedOrder[] = [];
 
+      const serverDeletedSet = new Set<string>();
       try {
         const useLightEndpoint = localOrders.length > 0;
         const headers: Record<string, string> = {};
@@ -370,24 +371,25 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
           useLightEndpoint ? '/api/orders-history?light=1' : '/api/orders-history',
           { headers }
         );
+        const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
+        if (deletedHeader) {
+          try {
+            const srvDeleted: string[] = JSON.parse(deletedHeader);
+            if (Array.isArray(srvDeleted)) {
+              for (const dId of srvDeleted) {
+                serverDeletedSet.add(dId);
+                deletedIds.add(dId);
+                addDeletedId(dId);
+              }
+            }
+          } catch {}
+        }
         if (res.status === 304 && lastServerOrdersCache) {
-          serverOrders = lastServerOrdersCache;
+          serverOrders = lastServerOrdersCache.filter((o) => o && o.id && !deletedIds.has(o.id));
         } else if (res.ok) {
           const etag = res.headers.get('ETag');
           if (etag) {
             lastServerOrdersEtag = etag;
-          }
-          const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
-          if (deletedHeader) {
-            try {
-              const srvDeleted: string[] = JSON.parse(deletedHeader);
-              if (Array.isArray(srvDeleted)) {
-                for (const dId of srvDeleted) {
-                  deletedIds.add(dId);
-                  addDeletedId(dId);
-                }
-              }
-            } catch {}
           }
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -425,33 +427,36 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
                 } catch {}
               }
 
-              const hydratedOrders: ArchivedOrder[] = (data as any[]).map((srv) => {
-                const loc = localMap.get(srv.id);
-                const fetched = fetchedPhotosMap[srv.id];
-                const srvParcelCount = Number(srv.parcelPhotosCount || 0);
-                const srvPkgCount = Number(srv.packagingPhotosCount || 0);
-                return {
-                  ...srv,
-                  parcelPhotos:
-                    fetched?.parcelPhotos ??
-                    (srvParcelCount > 0 ? loc?.parcelPhotos || [] : []),
-                  packagingPhotos:
-                    fetched?.packagingPhotos ??
-                    (srvPkgCount > 0 ? loc?.packagingPhotos || [] : []),
-                };
-              });
+              const hydratedOrders: ArchivedOrder[] = (data as any[])
+                .filter((srv) => srv && srv.id && !deletedIds.has(srv.id))
+                .map((srv) => {
+                  const loc = localMap.get(srv.id);
+                  const fetched = fetchedPhotosMap[srv.id];
+                  const srvParcelCount = Number(srv.parcelPhotosCount || 0);
+                  const srvPkgCount = Number(srv.packagingPhotosCount || 0);
+                  return {
+                    ...srv,
+                    parcelPhotos:
+                      fetched?.parcelPhotos ??
+                      (srvParcelCount > 0 ? loc?.parcelPhotos || [] : []),
+                    packagingPhotos:
+                      fetched?.packagingPhotos ??
+                      (srvPkgCount > 0 ? loc?.packagingPhotos || [] : []),
+                  };
+                });
 
               serverOrders = hydratedOrders;
               lastServerOrdersCache = hydratedOrders;
             } else {
-              serverOrders = data;
-              lastServerOrdersCache = data;
+              const filteredData = data.filter((o: any) => o && o.id && !deletedIds.has(o.id));
+              serverOrders = filteredData;
+              lastServerOrdersCache = filteredData;
             }
           }
         }
       } catch (err) {
         if (lastServerOrdersCache) {
-          serverOrders = lastServerOrdersCache;
+          serverOrders = lastServerOrdersCache.filter((o) => o && o.id && !deletedIds.has(o.id));
         } else {
           console.warn('Serwer API niedostępny, używam bazy lokalnej:', err);
         }
@@ -463,7 +468,8 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
         );
         await writeOrdersToBrowserStorage(merged);
 
-        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarce
+        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarce,
+        // oraz ewentualne usunięte ID (deletedIds), których serwer jeszcze nie znał
         if (serverOrders.length > 0) {
           const serverMap = new Map(serverOrders.map((o) => [o.id, o]));
           const ordersToPush = merged.filter((m) => {
@@ -479,11 +485,18 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
             return mPhotos > sPhotos || mPkgPhotos > sPkgPhotos;
           });
 
-          if (ordersToPush.length > 0) {
+          const missingDeletedOnServer = Array.from(deletedIds).filter(
+            (dId) => !serverDeletedSet.has(dId)
+          );
+
+          if (ordersToPush.length > 0 || missingDeletedOnServer.length > 0) {
             fetch('/api/orders-history/sync', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ orders: ordersToPush }),
+              body: JSON.stringify({
+                orders: ordersToPush,
+                deletedIds: missingDeletedOnServer,
+              }),
             }).catch(() => {});
           }
         }

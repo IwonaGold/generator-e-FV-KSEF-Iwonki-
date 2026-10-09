@@ -1552,18 +1552,18 @@ app.delete('/api/packaging-photos/:id', async (req: Request, res: Response) => {
 
 app.get('/api/orders-history', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
+  const deletedIds = readDeletedIdsFromDisk();
+  res.setHeader('X-Deleted-Order-Ids', JSON.stringify(deletedIds));
+
   const isLightMode = req.query.light === '1';
   const currentEtag = isLightMode
-    ? `W/"orders-light-rev-${ordersEtagVersion}"`
-    : `W/"orders-rev-${ordersEtagVersion}"`;
+    ? `W/"orders-light-rev-${ordersEtagVersion}-d${deletedIds.length}"`
+    : `W/"orders-rev-${ordersEtagVersion}-d${deletedIds.length}"`;
   res.setHeader('ETag', currentEtag);
 
   if (req.headers['if-none-match'] === currentEtag) {
     return res.status(304).end();
   }
-
-  const deletedIds = readDeletedIdsFromDisk();
-  res.setHeader('X-Deleted-Order-Ids', JSON.stringify(deletedIds));
 
   const acceptsGzip = String(req.headers['accept-encoding'] || '').includes('gzip');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -1752,21 +1752,36 @@ app.delete('/api/orders-history/:id', async (req: Request, res: Response) => {
 
 app.post('/api/orders-history/sync', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
-  const { orders } = req.body;
+  const { orders, deletedIds: incomingDeletedIds } = req.body || {};
   if (!Array.isArray(orders)) {
     return res.status(400).json({ error: 'Nieprawidłowa lista zamówień do synchronizacji' });
   }
-  const deletedSet = new Set(readDeletedIdsFromDisk());
+  const existingDeleted = readDeletedIdsFromDisk();
+  const deletedSet = new Set(existingDeleted);
+  let hasDeletedChanges = false;
+  if (Array.isArray(incomingDeletedIds)) {
+    for (const dId of incomingDeletedIds) {
+      if (typeof dId === 'string' && dId && !deletedSet.has(dId)) {
+        deletedSet.add(dId);
+        hasDeletedChanges = true;
+      }
+    }
+    if (hasDeletedChanges) {
+      writeDeletedIdsToDisk(Array.from(deletedSet));
+    }
+  }
+
   const existingOrders = readOrdersFromDisk();
+  let hasActualChanges = hasDeletedChanges;
 
   const map = new Map<string, any>();
   for (const srv of existingOrders) {
     if (srv?.id && !deletedSet.has(srv.id)) {
       map.set(srv.id, srv);
+    } else if (srv?.id && deletedSet.has(srv.id)) {
+      hasActualChanges = true;
     }
   }
-
-  let hasActualChanges = false;
 
   for (const inc of orders) {
     if (!inc?.id || deletedSet.has(inc.id)) continue;
