@@ -234,8 +234,8 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
   const matchedClient = findMatchingKnowledgeClient(buyer, selectedChain, knowledgeClients);
 
   // 1. Dane zamówienia i nabywcy (do faktury)
-  const orderNumber = (meta.orderNumber || meta.invoiceNumber || '').trim();
-  const orderDate = (meta.orderDate || meta.issueDate || '').trim();
+  const orderDate = (meta.orderDate || meta.issueDate || new Date().toISOString().slice(0, 10)).trim();
+  const orderNumber = (meta.orderNumber || meta.invoiceNumber || `ZAM-${orderDate}`).trim();
   const invoiceCompanyName = (buyer.name || matchedClient?.fullName || '').trim();
   const invoiceNip = cleanNumeric(buyer.nip || matchedClient?.nip || '');
 
@@ -321,7 +321,7 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
 
   const lines: string[] = [buildCsvRow(headers)];
 
-  items.forEach((it: any, index: number) => {
+  items.forEach((it: any) => {
     const qty = Number(it.quantity ?? it.correctedQuantity ?? 0);
     const netPrice = Number(
       it.netPrice ?? it.unitPriceNet ?? it.originalNetPrice ?? it.correctedNetPrice ?? 0
@@ -336,6 +336,9 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
     const eanCode = cleanNumeric(it.gtin || it.ean || '');
     const formattedVat = vatStr.includes('%') || vatStr.toLowerCase() === 'zw' ? vatStr : `${vatStr}%`;
 
+    // UWAGA: W kolumnie "Lp" wpisujemy stałe "1" dla całego zamówienia (a nie 1, 2, 3...),
+    // ponieważ Sellrocket Enterprise traktuje "Lp" jako identyfikator/numer porządkowy zamówienia (widoczny w nawiasie pod ID zamówienia, np. (1), (2), (3))
+    // i przy różnych wartościach Lp (1, 2, 3, 4, 5) rozbija każdą pozycję na osobne zamówienie.
     lines.push(
       buildCsvRow([
         orderNumber,
@@ -346,7 +349,7 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
         shippingCompanyName,
         shippingFullAddress,
         paymentDueDate,
-        index + 1,
+        1,
         cleanName,
         eanCode,
         qty,
@@ -362,8 +365,9 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
     );
   });
 
-  // Kodowanie UTF-8 (z BOM \uFEFF dla pełnej kompatybilności z Sellrocket / ERP oraz MS Excel)
-  return '\uFEFF' + lines.join('\r\n');
+  // Czyste kodowanie UTF-8 (bez ukrytego znaku BOM \uFEFF na początku pierwszego nagłówka "Numer zamówienia",
+  // który w importerach ERP / Sellrocket potrafi uszkodzić rozpoznanie pierwszej kolumny)
+  return lines.join('\r\n');
 }
 
 /**
