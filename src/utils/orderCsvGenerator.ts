@@ -196,19 +196,49 @@ function parseWarehouseAddressString(
 }
 
 /**
- * Generuje zawartość pliku CSV z zamówieniem (UTF-8 z BOM, separator ';'):
- * - wszystkie dane kupującego osobno w sekcji DANE DO WYSYŁKI oraz DANE DO FAKTURY
- * - adres e-mail oraz numer telefonu z Centrum Wiedzy (sekcja Potwierdzenie, FORMULARZ awizacji, forma wysyłki)
- * - wszystkie pozycje zamówienia z kodem EAN, ilościami i cenami jednostkowymi
+ * Wylicza termin płatności (RRRR-MM-DD), jeśli podano datę bazową oraz liczbę dni, a brakuje gotowego dueDate
+ */
+function resolvePaymentDueDate(
+  dueDate?: string,
+  baseDate?: string,
+  paymentDays?: number
+): string {
+  if (dueDate && dueDate.trim()) {
+    return dueDate.trim();
+  }
+  if (paymentDays && paymentDays > 0) {
+    if (baseDate && /^\d{4}-\d{2}-\d{2}$/.test(baseDate.trim())) {
+      const d = new Date(`${baseDate.trim()}T12:00:00Z`);
+      if (!isNaN(d.getTime())) {
+        d.setUTCDate(d.getUTCDate() + paymentDays);
+        return d.toISOString().slice(0, 10);
+      }
+    }
+    return `${paymentDays} dni`;
+  }
+  return '';
+}
+
+/**
+ * Generuje jednolity, płaski plik CSV z zamówieniem zdatny do importu do systemu e-commerce / ERP (Sellrocket).
+ * Format techniczny: Separator kolumn: średnik (;), kodowanie: UTF-8 (z BOM \uFEFF).
+ *
+ * Wymagane kolumny (20):
+ * - Dane zamówienia i kontrahenta:
+ *   Numer zamówienia; Data zamówienia; Nazwa nabywcy; NIP nabywcy; Adres do faktury; Nazwa odbiorcy; Adres dostawy; Termin płatności
+ * - Dane pozycji towarowych:
+ *   Lp; Nazwa produktu; Kod EAN; Ilość; Jednostka; Cena netto; Stawka VAT; Cena brutto; Wartość netto; Wartość brutto; Numer serii (LOT); Data ważności
  */
 export function generateOrderCSV(input: OrderCsvGenerationInput): string {
-  const { seller, buyer, thirdParty, meta, items, selectedChain, knowledgeClients } = input;
+  const { buyer, thirdParty, meta, items, selectedChain, knowledgeClients } = input;
   const matchedClient = findMatchingKnowledgeClient(buyer, selectedChain, knowledgeClients);
-  const avisoInfo = resolveAvisoConfirmationContact(matchedClient, buyer);
 
-  // 1. Dane do faktury (Nabywca)
+  // 1. Dane zamówienia i nabywcy (do faktury)
+  const orderNumber = (meta.orderNumber || meta.invoiceNumber || '').trim();
+  const orderDate = (meta.orderDate || meta.issueDate || '').trim();
   const invoiceCompanyName = (buyer.name || matchedClient?.fullName || '').trim();
   const invoiceNip = cleanNumeric(buyer.nip || matchedClient?.nip || '');
+
   const invoiceStreet = (
     buyer.addressLine1 ||
     [buyer.street, buyer.houseNumber, buyer.apartmentNumber ? `/${buyer.apartmentNumber}` : '']
@@ -219,34 +249,26 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
   ).trim();
   const invoicePostalCode = (buyer.postalCode || '').trim();
   const invoiceCity = (buyer.city || '').trim();
-  const invoiceCountry = (buyer.countryCode || 'PL').trim();
-  const invoiceFullAddress = formatAdresL1(buyer);
-  const invoiceGln = (buyer.gln || matchedClient?.glnBuyer || '').trim();
 
-  // 2. Dane do wysyłki (Odbiorca / Magazyn docelowy)
+  const rawFormattedBuyerAddress = formatAdresL1(buyer);
+  const invoiceFullAddress =
+    rawFormattedBuyerAddress && rawFormattedBuyerAddress !== 'Polska'
+      ? rawFormattedBuyerAddress
+      : [invoiceStreet, [invoicePostalCode, invoiceCity].filter(Boolean).join(' ')]
+          .filter(Boolean)
+          .join(', ');
+
+  // 2. Dane odbiorcy i adres dostawy
   let shippingCompanyName = '';
-  let shippingStreet = '';
-  let shippingPostalCode = '';
-  let shippingCity = '';
-  let shippingCountry = 'PL';
   let shippingFullAddress = '';
-  let shippingGlnOrIdWew = '';
-  let shippingRemarks = '';
 
   if (thirdParty && thirdParty.name && thirdParty.name.trim()) {
     shippingCompanyName = thirdParty.name.trim();
-    shippingStreet = (thirdParty.addressLine1 || '').trim();
-    shippingPostalCode = (thirdParty.postalCode || '').trim();
-    shippingCity = (thirdParty.city || '').trim();
-    shippingCountry = (thirdParty.countryCode || 'PL').trim();
-    shippingFullAddress = formatAdresL1(thirdParty);
-    shippingGlnOrIdWew = [
-      thirdParty.idWew ? `ID-Wew: ${thirdParty.idWew}` : '',
-      thirdParty.gln ? `GLN: ${thirdParty.gln}` : '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
-    shippingRemarks = matchedClient?.shippingRemarks || '';
+    const rawThirdPartyAddr = formatAdresL1(thirdParty);
+    shippingFullAddress =
+      rawThirdPartyAddr && rawThirdPartyAddr !== 'Polska'
+        ? rawThirdPartyAddr
+        : invoiceFullAddress;
   } else if (matchedClient && (matchedClient.shippingWarehouseName || matchedClient.shippingAddress)) {
     shippingCompanyName = (matchedClient.shippingWarehouseName || invoiceCompanyName).trim();
     const parsedShip = parseWarehouseAddressString(
@@ -254,189 +276,83 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
       invoicePostalCode,
       invoiceCity
     );
-    shippingStreet = parsedShip.streetLine || invoiceStreet;
-    shippingPostalCode = parsedShip.postalCode || invoicePostalCode;
-    shippingCity = parsedShip.city || invoiceCity;
-    shippingCountry = invoiceCountry;
+    const shippingStreet = parsedShip.streetLine || invoiceStreet;
+    const shippingPostalCode = parsedShip.postalCode || invoicePostalCode;
+    const shippingCity = parsedShip.city || invoiceCity;
     shippingFullAddress = [shippingStreet, [shippingPostalCode, shippingCity].filter(Boolean).join(' ')]
       .filter(Boolean)
       .join(', ');
-    shippingGlnOrIdWew = [
-      matchedClient.idWew ? `ID-Wew: ${matchedClient.idWew}` : '',
-      matchedClient.glnDelivery ? `GLN dostawy: ${matchedClient.glnDelivery}` : '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
-    shippingRemarks = matchedClient.shippingRemarks || '';
   } else {
     shippingCompanyName = invoiceCompanyName;
-    shippingStreet = invoiceStreet;
-    shippingPostalCode = invoicePostalCode;
-    shippingCity = invoiceCity;
-    shippingCountry = invoiceCountry;
     shippingFullAddress = invoiceFullAddress;
-    shippingGlnOrIdWew = invoiceGln ? `GLN: ${invoiceGln}` : '';
   }
 
-  const lines: string[] = [];
-
-  // Nagłówek dokumentu CSV
-  lines.push(buildCsvRow(['SPECYFIKACJA ZAMÓWIENIA (CSV) - DANE DO WYSYŁKI, DANE DO FAKTURY ORAZ POZYCJE TOWAROWE']));
-  lines.push(
-    buildCsvRow([
-      'Numer zamówienia',
-      meta.orderNumber || '-',
-      'Numer faktury / dokumentu',
-      meta.invoiceNumber || '-',
-      'Data zamówienia',
-      meta.orderDate || meta.issueDate || '-',
-      'Data dostawy / awizacji',
-      meta.deliveryDate || '-',
-    ])
-  );
-  lines.push(
-    buildCsvRow([
-      'Sprzedawca (Wystawca)',
-      seller.name,
-      'NIP Sprzedawcy',
-      cleanNumeric(seller.nip),
-      'Rachunek bankowy',
-      seller.bankAccount || '',
-      'Nazwa banku',
-      seller.bankName || 'ERSTE BANK POLSKA S.A.',
-    ])
-  );
-  lines.push('');
-
-  // SEKCJA 1: DANE KUPUJĄCEGO - DANE DO WYSYŁKI (DOSTAWY) + KONTAKT Z CENTRUM WIEDZY
-  lines.push(buildCsvRow(['=== 1. DANE KUPUJĄCEGO - DANE DO WYSYŁKI (DOSTAWY) ===']));
-  lines.push(buildCsvRow(['Pole', 'Wartość']));
-  lines.push(buildCsvRow(['Odbiorca / Magazyn docelowy (Nazwa)', shippingCompanyName]));
-  lines.push(buildCsvRow(['Ulica i numer (Adres dostawy)', shippingStreet]));
-  lines.push(buildCsvRow(['Kod pocztowy (Dostawa)', shippingPostalCode]));
-  lines.push(buildCsvRow(['Miejscowość (Dostawa)', shippingCity]));
-  lines.push(buildCsvRow(['Kraj (Dostawa)', shippingCountry]));
-  lines.push(buildCsvRow(['Pełny adres do wysyłki', shippingFullAddress]));
-  lines.push(buildCsvRow(['NIP Kupującego', invoiceNip]));
-  if (shippingGlnOrIdWew) {
-    lines.push(buildCsvRow(['Identyfikator magazynu (ID-Wew / GLN)', shippingGlnOrIdWew]));
-  }
-  lines.push(
-    buildCsvRow([
-      'Adres e-mail (Centrum Wiedzy: Potwierdzenie, FORMULARZ awizacji, forma wysyłki)',
-      avisoInfo.email || 'Brak przypisanego e-maila w Centrum Wiedzy',
-    ])
-  );
-  lines.push(
-    buildCsvRow([
-      'Numer telefonu (Centrum Wiedzy: Potwierdzenie, FORMULARZ awizacji, forma wysyłki)',
-      avisoInfo.phone || 'Brak przypisanego telefonu w Centrum Wiedzy',
-    ])
-  );
-  lines.push(
-    buildCsvRow([
-      'Osoba / Dział (Centrum Wiedzy - Potwierdzenie, FORMULARZ awizacji, forma wysyłki)',
-      [avisoInfo.roleLabel, avisoInfo.contactName].filter(Boolean).join(' — '),
-    ])
-  );
-  lines.push(
-    buildCsvRow([
-      'Forma wysyłki / awizacji (Centrum Wiedzy)',
-      avisoInfo.avisoMethod || '-',
-    ])
-  );
-  if (shippingRemarks) {
-    lines.push(buildCsvRow(['Uwagi logistyczne do wysyłki', shippingRemarks]));
-  }
-  lines.push('');
-
-  // SEKCJA 2: DANE KUPUJĄCEGO - DANE DO FAKTURY (NABYWCA)
-  lines.push(buildCsvRow(['=== 2. DANE KUPUJĄCEGO - DANE DO FAKTURY (NABYWCA) ===']));
-  lines.push(buildCsvRow(['Pole', 'Wartość']));
-  lines.push(buildCsvRow(['Nabywca (Pełna nazwa firmy do faktury)', invoiceCompanyName]));
-  lines.push(buildCsvRow(['NIP Nabywcy', invoiceNip]));
-  lines.push(buildCsvRow(['Ulica i numer (Adres siedziby do faktury)', invoiceStreet]));
-  lines.push(buildCsvRow(['Kod pocztowy (Faktura)', invoicePostalCode]));
-  lines.push(buildCsvRow(['Miejscowość (Faktura)', invoiceCity]));
-  lines.push(buildCsvRow(['Kraj (Faktura)', invoiceCountry]));
-  lines.push(buildCsvRow(['Pełny adres do faktury', invoiceFullAddress]));
-  if (invoiceGln) {
-    lines.push(buildCsvRow(['GLN / ILN Nabywcy', invoiceGln]));
-  }
-  lines.push(
-    buildCsvRow([
-      'Adres e-mail (Centrum Wiedzy: Potwierdzenie, FORMULARZ awizacji, forma wysyłki)',
-      avisoInfo.email || 'Brak przypisanego e-maila w Centrum Wiedzy',
-    ])
-  );
-  lines.push(
-    buildCsvRow([
-      'Numer telefonu (Centrum Wiedzy: Potwierdzenie, FORMULARZ awizacji, forma wysyłki)',
-      avisoInfo.phone || 'Brak przypisanego telefonu w Centrum Wiedzy',
-    ])
-  );
-  lines.push(
-    buildCsvRow([
-      'Termin płatności',
-      meta.dueDate
-        ? `${meta.dueDate}${meta.paymentDays ? ` (${meta.paymentDays} dni)` : ''}`
-        : meta.paymentDays
-        ? `${meta.paymentDays} dni`
-        : '-',
-    ])
-  );
-  lines.push('');
-
-  // SEKCJA 3: POZYCJE ZAMÓWIENIA (PRODUKTY Z KODEM EAN, ILOŚCI, CENY JEDNOSTKOWE)
-  lines.push(buildCsvRow(['=== 3. POZYCJE ZAMÓWIENIA (PRODUKTY) ===']));
-  lines.push(
-    buildCsvRow([
-      'Lp.',
-      'Nazwa produktu',
-      'Kod EAN (GTIN)',
-      'Ilość',
-      'Jednostka',
-      'Cena jednostkowa netto (PLN)',
-      'Stawka VAT',
-      'Cena jednostkowa brutto (PLN)',
-      'Wartość netto (PLN)',
-      'Wartość brutto (PLN)',
-      'Numer serii (LOT)',
-      'Data ważności (MHD/EXP)',
-    ])
+  // 3. Termin płatności
+  const effectivePaymentDays = meta.paymentDays ?? matchedClient?.paymentDays;
+  const paymentDueDate = resolvePaymentDueDate(
+    meta.dueDate,
+    meta.issueDate || meta.orderDate,
+    effectivePaymentDays
   );
 
-  let totalQty = 0;
-  let totalNet = 0;
-  let totalGross = 0;
+  // Nagłówek jednolitego, płaskiego pliku CSV (Sellrocket / ERP)
+  const headers = [
+    'Numer zamówienia',
+    'Data zamówienia',
+    'Nazwa nabywcy',
+    'NIP nabywcy',
+    'Adres do faktury',
+    'Nazwa odbiorcy',
+    'Adres dostawy',
+    'Termin płatności',
+    'Lp',
+    'Nazwa produktu',
+    'Kod EAN',
+    'Ilość',
+    'Jednostka',
+    'Cena netto',
+    'Stawka VAT',
+    'Cena brutto',
+    'Wartość netto',
+    'Wartość brutto',
+    'Numer serii (LOT)',
+    'Data ważności',
+  ];
+
+  const lines: string[] = [buildCsvRow(headers)];
 
   items.forEach((it: any, index: number) => {
     const qty = Number(it.quantity ?? it.correctedQuantity ?? 0);
     const netPrice = Number(
       it.netPrice ?? it.unitPriceNet ?? it.originalNetPrice ?? it.correctedNetPrice ?? 0
     );
-    const vatStr = String(it.vatRate || '8%');
-    const vatNum = parseFloat(vatStr.replace('%', '')) || 0;
+    const vatStr = String(it.vatRate || '8%').trim();
+    const vatNum = parseFloat(vatStr.replace('%', '').replace(',', '.')) || 0;
     const unitGross = Math.round(netPrice * (1 + vatNum / 100) * 100) / 100;
     const lineNet = Math.round(qty * netPrice * 100) / 100;
     const lineGross = Math.round(lineNet * (1 + vatNum / 100) * 100) / 100;
 
-    totalQty += qty;
-    totalNet = Math.round((totalNet + lineNet) * 100) / 100;
-    totalGross = Math.round((totalGross + lineGross) * 100) / 100;
-
     const cleanName = cleanProductName(it.name) || it.name || '';
     const eanCode = cleanNumeric(it.gtin || it.ean || '');
+    const formattedVat = vatStr.includes('%') || vatStr.toLowerCase() === 'zw' ? vatStr : `${vatStr}%`;
 
     lines.push(
       buildCsvRow([
+        orderNumber,
+        orderDate,
+        invoiceCompanyName,
+        invoiceNip,
+        invoiceFullAddress,
+        shippingCompanyName,
+        shippingFullAddress,
+        paymentDueDate,
         index + 1,
         cleanName,
         eanCode,
         qty,
         it.unit || 'szt.',
         netPrice.toFixed(2).replace('.', ','),
-        vatStr.includes('%') || vatStr === 'zw' ? vatStr : `${vatStr}%`,
+        formattedVat,
         unitGross.toFixed(2).replace('.', ','),
         lineNet.toFixed(2).replace('.', ','),
         lineGross.toFixed(2).replace('.', ','),
@@ -446,25 +362,7 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
     );
   });
 
-  // Wiersz podsumowania
-  lines.push(
-    buildCsvRow([
-      'RAZEM',
-      `Liczba pozycji: ${items.length}`,
-      '',
-      totalQty,
-      'szt.',
-      '',
-      '',
-      '',
-      totalNet.toFixed(2).replace('.', ','),
-      totalGross.toFixed(2).replace('.', ','),
-      '',
-      '',
-    ])
-  );
-
-  // Dodajemy BOM UTF-8 (\uFEFF), aby polski Microsoft Excel poprawnie wyświetlał polskie znaki i kolumny po średniku
+  // Kodowanie UTF-8 (z BOM \uFEFF dla pełnej kompatybilności z Sellrocket / ERP oraz MS Excel)
   return '\uFEFF' + lines.join('\r\n');
 }
 

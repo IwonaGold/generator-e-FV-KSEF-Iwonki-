@@ -213,7 +213,7 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
                 })
               }
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
-              title="Pobierz plik CSV z zamówieniem (pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy)"
+              title="Pobierz płaski plik CSV z zamówieniem gotowy do importu do systemu e-commerce / ERP (Sellrocket)"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
               <span>Pobierz CSV zamówienia</span>

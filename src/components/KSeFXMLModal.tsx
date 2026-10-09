@@ -441,7 +441,7 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
                 type="button"
                 onClick={onDownloadOrderCsv}
                 className="px-3.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
-                title="Pobierz plik CSV z zamówieniem (pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy)"
+                title="Pobierz płaski plik CSV z zamówieniem gotowy do importu do systemu e-commerce / ERP (Sellrocket)"
               >
                 📊 Pobierz CSV zamówienia
               </button>

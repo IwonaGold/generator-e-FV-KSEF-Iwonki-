@@ -3358,7 +3358,8 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                               issueDate: ord.issueDate,
                               orderDate: ord.orderDate,
                               deliveryDate: ord.avisoDate || ord.deliveryDate,
-                              dueDate: ord.dueDate,
+                              dueDate: ord.paymentDueDate || ord.dueDate || undefined,
+                              paymentDays: ord.paymentTermDays,
                               currency: ord.currency || 'PLN',
                             },
                             items: ord.items || [],
@@ -3366,7 +3367,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           })
                         }
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-colors cursor-pointer"
-                        title="Pobierz plik CSV z zamówieniem (pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy)"
+                        title="Pobierz płaski plik CSV z zamówieniem gotowy do importu do systemu e-commerce / ERP (Sellrocket)"
                       >
                         <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Pobierz CSV</span>
