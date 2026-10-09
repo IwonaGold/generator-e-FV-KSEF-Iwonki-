@@ -401,7 +401,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       const compressedUrls: string[] = [];
       for (const file of fileArray) {
         try {
-          const url = await compressImageToDataUrl(file, 1280, 0.82);
+          const url = await compressImageToDataUrl(file, 1024, 0.70);
           compressedUrls.push(url);
         } catch (err) {
           console.error('Błąd optymalizacji zdjęcia:', err);

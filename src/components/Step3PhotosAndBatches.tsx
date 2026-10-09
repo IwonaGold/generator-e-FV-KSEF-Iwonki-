@@ -220,23 +220,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   );
 
   useEffect(() => {
-    syncPackagingPhotosFromCloud(false);
-    const unsub = subscribeToMultiUserSync({
-      onRemoteUpdate: (ev) => {
-        setWorkstationRoleState(getWorkstationRole());
-        if (ev.activity?.type === 'PACKAGING_PHOTOS_UPLOADED') {
-          syncPackagingPhotosFromCloud(true);
-        } else if (
-          ev.activity?.type === 'WAREHOUSE_PHOTOS_UPDATED' ||
-          ev.activity?.type === 'WAREHOUSE_TASK_COMPLETED' ||
-          ev.activity?.type === 'MANUAL_CLOUD_SYNC'
-        ) {
-          syncPackagingPhotosFromCloud(false);
-        }
-      },
-    });
-    return () => unsub();
-  }, [syncPackagingPhotosFromCloud]);
+    if (orderPackagingPhotos && orderPackagingPhotos.length > 0) {
+      syncPackagingPhotosFromCloud(false);
+    }
+  }, [orderPackagingPhotos?.length, syncPackagingPhotosFromCloud]);
 
   /**
    * Dodaje nowe zdjęcia i przypisuje je bezpośrednio do bieżącego zamówienia na karcie:
@@ -273,7 +260,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
       try {
         const compressedList: OrderPackagingPhoto[] = [];
         for (const rec of newPhotoRecords) {
-          const dataUrl = await compressImageToDataUrl(rec.file, 1600, 0.85);
+          const dataUrl = await compressImageToDataUrl(rec.file, 1080, 0.72);
           compressedList.push({
             id: rec.id,
             fileName: rec.fileName,

@@ -71,10 +71,12 @@ const WORKSTATION_KEY = 'iwonka_ksef_workstation_name_v1';
 const LOCAL_DRAFTS_KEY = 'iwonka_ksef_shared_drafts_v1';
 const LOCAL_PACKAGING_PHOTOS_KEY = 'iwonka_ksef_packaging_photos_v1';
 const BROADCAST_CHANNEL_NAME = 'iwonka_ksef_multiuser_channel_v1';
+const CLIENT_TAB_ID = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function getWorkstationName(): string {
   try {
-    const val = localStorage.getItem(WORKSTATION_KEY);
+    const val =
+      sessionStorage.getItem(WORKSTATION_KEY) || localStorage.getItem(WORKSTATION_KEY);
     if (!val || val === 'Iwona – Faktury & KSeF') return WORKSTATION_COORDINATOR;
     if (val.toLowerCase().includes('magazyn')) return WORKSTATION_WAREHOUSE;
     return val;
@@ -84,9 +86,12 @@ export function getWorkstationName(): string {
 }
 
 export function setWorkstationName(name: string): void {
+  const cleanName = name.trim() || WORKSTATION_COORDINATOR;
   try {
-    localStorage.setItem(WORKSTATION_KEY, name.trim() || WORKSTATION_COORDINATOR);
-    notifyLocalBroadcast('WORKSTATION_CHANGED', `Zmieniono stanowisko na: ${name.trim() || WORKSTATION_COORDINATOR}`);
+    sessionStorage.setItem(WORKSTATION_KEY, cleanName);
+  } catch {}
+  try {
+    localStorage.setItem(WORKSTATION_KEY, cleanName);
   } catch {}
 }
 
@@ -384,6 +389,7 @@ export function notifyLocalBroadcast(type: string, summary: string) {
         summary,
         workstation: getWorkstationName(),
         timestamp: new Date().toISOString(),
+        senderTabId: CLIENT_TAB_ID,
       });
       bc.close();
     }
@@ -430,6 +436,9 @@ export function subscribeToMultiUserSync(callbacks: {
     if (typeof BroadcastChannel !== 'undefined') {
       bc = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
       bc.onmessage = (ev) => {
+        if (!ev.data || ev.data.senderTabId === CLIENT_TAB_ID) {
+          return;
+        }
         callbacks.onRemoteUpdate({
           activity: ev.data,
         });
@@ -446,3 +455,4 @@ export function subscribeToMultiUserSync(callbacks: {
     } catch {}
   };
 }
+

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Header } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
@@ -206,18 +206,39 @@ export default function App() {
     getWorkstationRole()
   );
 
-  const handleSwitchWorkstationRole = (role: WorkstationRole) => {
-    setWorkstationRole(role);
-    setWorkstationRoleState(role);
-    setLiveSyncToast(
-      role === 'warehouse'
-        ? '📦 Przełączono na Stanowisko 2: Magazyn — widoczne są wyłącznie zadania przypisane przez Koordynatora'
-        : '👩‍💼 Przełączono na Stanowisko 1: Koordynator — pełny dostęp do zamówień i faktur KSeF'
-    );
-    setTimeout(() => setLiveSyncToast(null), 5000);
-  };
+  const toastTimeoutRef = useRef<number | null>(null);
 
-  const refreshAllCloudData = async () => {
+  const showLiveToast = useCallback((message: string) => {
+    setLiveSyncToast(message);
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setLiveSyncToast(null);
+    }, 4500);
+  }, []);
+
+  const handleSwitchWorkstationRole = useCallback(
+    (role: WorkstationRole) => {
+      setWorkstationRole(role);
+      setWorkstationRoleState(role);
+      showLiveToast(
+        role === 'warehouse'
+          ? '📦 Przełączono na Stanowisko 2: Magazyn — widoczne są wyłącznie zadania przypisane przez Koordynatora'
+          : '👩‍💼 Przełączono na Stanowisko 1: Koordynator — pełny dostęp do zamówień i faktur KSeF'
+      );
+    },
+    [showLiveToast]
+  );
+
+  const refreshArchivedOrders = useCallback(async () => {
+    const data = await getArchivedOrders();
+    if (data && Array.isArray(data)) {
+      setArchivedOrders(data);
+    }
+  }, []);
+
+  const refreshAllCloudData = useCallback(async () => {
     try {
       const [ordersData, clientsData, draftsData] = await Promise.all([
         getArchivedOrders(),
@@ -234,43 +255,47 @@ export default function App() {
         setSharedDraftsCount(draftsData.length);
       }
     } catch {}
-  };
+  }, []);
 
-  // Pobranie historii oraz kart klientów z Centrum Wiedzy przy starcie
+  // Pobranie historii oraz kart klientów z Centrum Wiedzy jednorazowo przy starcie aplikacji
   useEffect(() => {
     refreshAllCloudData();
-  }, [activeModule]);
+  }, [refreshAllCloudData]);
 
   // Subskrypcja Real-Time Multi-User Sync (SSE + BroadcastChannel)
   useEffect(() => {
     const unsubscribe = subscribeToMultiUserSync({
       onRemoteUpdate: (ev) => {
-        setWorkstationRoleState(getWorkstationRole());
         if (typeof ev.activeUsersCount === 'number' && ev.activeUsersCount > 0) {
           setActiveUsersCount(ev.activeUsersCount);
         }
-        if (ev.activity && ev.activity.type !== 'INIT') {
-          refreshAllCloudData();
-          setLiveSyncToast(
+        const actType = ev.activity?.type;
+        if (ev.activity && actType && actType !== 'INIT' && actType !== 'WORKSTATION_CHANGED') {
+          if (actType === 'KNOWLEDGE_UPDATED' || actType === 'KNOWLEDGE_DELETED') {
+            getKeyClients().then((clients) => {
+              if (Array.isArray(clients) && clients.length > 0) setKnowledgeClients(clients);
+            });
+          } else if (actType === 'SHARED_DRAFT_SAVED' || actType === 'SHARED_DRAFT_DELETED') {
+            getSharedDrafts().then((drafts) => {
+              if (Array.isArray(drafts)) setSharedDraftsCount(drafts.length);
+            });
+          } else if (actType === 'MANUAL_CLOUD_SYNC' || actType === 'CONFIG_UPDATED') {
+            refreshAllCloudData();
+          } else {
+            refreshArchivedOrders();
+          }
+          showLiveToast(
             `☁️ Synchronizacja na żywo: ${ev.activity.summary} (${ev.activity.workstation})`
           );
-          setTimeout(() => setLiveSyncToast(null), 5000);
         }
       },
     });
     return () => unsubscribe();
-  }, []);
+  }, [refreshAllCloudData, refreshArchivedOrders, showLiveToast]);
 
-  const refreshArchivedOrders = async () => {
-    const data = await getArchivedOrders();
-    if (data && Array.isArray(data)) {
-      setArchivedOrders(data);
-    }
-  };
-
-  const handleOrderSaved = (savedOrder: ArchivedOrder) => {
+  const handleOrderSaved = useCallback((savedOrder: ArchivedOrder) => {
     setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
-  };
+  }, []);
 
   // Dopasowanie bieżącego zamówienia na Karcie Zamówienia (wyłącznie dla jawnie aktywnego zamówienia przed wyczyszczeniem)
   const activeMatchedArchivedOrder = useMemo(() => {
@@ -294,19 +319,22 @@ export default function App() {
   }, [activeMatchedArchivedOrder]);
 
   // Aktualizacja zdjęć opakowań przypisanych do bieżącego zamówienia na karcie
-  const handleUpdateCurrentOrderPackagingPhotos = async (nextPhotos: OrderPackagingPhoto[]) => {
-    setCurrentOrderPackagingPhotos(nextPhotos);
-    if (activeMatchedArchivedOrder) {
-      await updateArchivedOrderFields(activeMatchedArchivedOrder.id, {
-        packagingPhotos: nextPhotos,
-      });
-      setArchivedOrders((prev) =>
-        prev.map((o) =>
-          o.id === activeMatchedArchivedOrder.id ? { ...o, packagingPhotos: nextPhotos } : o
-        )
-      );
-    }
-  };
+  const handleUpdateCurrentOrderPackagingPhotos = useCallback(
+    async (nextPhotos: OrderPackagingPhoto[]) => {
+      setCurrentOrderPackagingPhotos(nextPhotos);
+      if (pendingOrderSourceId) {
+        await updateArchivedOrderFields(pendingOrderSourceId, {
+          packagingPhotos: nextPhotos,
+        });
+        setArchivedOrders((prev) =>
+          prev.map((o) =>
+            o.id === pendingOrderSourceId ? { ...o, packagingPhotos: nextPhotos } : o
+          )
+        );
+      }
+    },
+    [pendingOrderSourceId]
+  );
 
   const activeWarehouseTasksCount = useMemo(() => {
     let count = 0;

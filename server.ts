@@ -1,5 +1,4 @@
 import express, { Request, Response } from 'express';
-import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -10,7 +9,9 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction =
+  process.env.NODE_ENV === 'production' ||
+  (Boolean(process.env.RENDER) && fs.existsSync(path.join(process.cwd(), 'dist', 'index.html')));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -574,23 +575,33 @@ function broadcastSyncEvent(type: string, summary: string, workstation = 'Stanow
   }
 }
 
+import { promisify } from 'util';
+
+const gzipAsync = promisify(zlib.gzip);
+const gunzipAsync = promisify(zlib.gunzip);
+
+let cachedEncryptionKey: Buffer | null = null;
+
 function getEncryptionKey(): Buffer {
-  return crypto.scryptSync(ENCRYPTION_SECRET, 'ksef-iwonka-vault-salt-v1', 32);
+  if (!cachedEncryptionKey) {
+    cachedEncryptionKey = crypto.scryptSync(ENCRYPTION_SECRET, 'ksef-iwonka-vault-salt-v1', 32);
+  }
+  return cachedEncryptionKey;
 }
 
-function encryptVaultPayload(payload: {
+async function encryptVaultPayload(payload: {
   orders: any[];
   deletedIds: string[];
   knowledgeClients?: any[];
   sharedDrafts?: any[];
   updatedAt: string;
-}): string {
+}): Promise<string> {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
 
   const rawJson = Buffer.from(JSON.stringify(payload), 'utf8');
-  const compressed = zlib.gzipSync(rawJson);
+  const compressed = await gzipAsync(rawJson, { level: zlib.constants.Z_BEST_SPEED });
 
   const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
   const authTag = cipher.getAuthTag();
@@ -604,12 +615,12 @@ function encryptVaultPayload(payload: {
   });
 }
 
-function decryptVaultPayload(envelopeStr: string): {
+async function decryptVaultPayload(envelopeStr: string): Promise<{
   orders: any[];
   deletedIds: string[];
   knowledgeClients: any[];
   sharedDrafts: any[];
-} | null {
+} | null> {
   try {
     const env = JSON.parse(envelopeStr);
     if (!env || !env.iv || !env.tag || !env.data) return null;
@@ -623,10 +634,11 @@ function decryptVaultPayload(envelopeStr: string): {
     decipher.setAuthTag(authTag);
 
     const decryptedCompressed = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
-    const rawJson =
+    const rawBuffer =
       env.alg === 'aes-256-gcm-gzip'
-        ? zlib.gunzipSync(decryptedCompressed).toString('utf8')
-        : decryptedCompressed.toString('utf8');
+        ? await gunzipAsync(decryptedCompressed)
+        : decryptedCompressed;
+    const rawJson = rawBuffer.toString('utf8');
 
     const parsed = JSON.parse(rawJson);
     return {
@@ -750,7 +762,7 @@ async function loadVaultFromGitHubCloud(): Promise<{
     if (!blobData?.content) return null;
 
     const envelopeStr = Buffer.from(blobData.content.replace(/\s+/g, ''), 'base64').toString('utf8');
-    const decrypted = decryptVaultPayload(envelopeStr);
+    const decrypted = await decryptVaultPayload(envelopeStr);
     if (decrypted) {
       lastCloudSyncAt = new Date().toISOString();
       lastCloudSyncError = null;
@@ -772,7 +784,7 @@ async function saveVaultToGitHubCloud(
   if (!GITHUB_TOKEN) return false;
 
   try {
-    const encryptedEnvelope = encryptVaultPayload({
+    const encryptedEnvelope = await encryptVaultPayload({
       orders,
       deletedIds,
       knowledgeClients,
@@ -894,148 +906,239 @@ function scheduleCloudSync() {
         scheduleCloudSync();
       }
     }
-  }, 1200);
+  }, 3500);
 }
 
 function parseJsonWithoutBom(raw: string): any {
   return JSON.parse(raw.replace(/^\uFEFF/, ''));
 }
 
+// --- Bufor w pamięci RAM (In-Memory Cache) oszczędzający pamięć i I/O na darmowym planie ---
+let deletedIdsMemoryCache: string[] | null = null;
+let ordersMemoryCache: any[] | null = null;
+let ordersSerializedCache: string | null = null;
+let ordersEtagVersion = 1;
+let ordersDiskWriteTimer: NodeJS.Timeout | null = null;
+let knowledgeMemoryCache: any[] | null = null;
+let sharedDraftsMemoryCache: any[] | null = null;
+let packagingPhotosMemoryCache: any[] | null = null;
+
+function invalidateOrdersHttpCache() {
+  ordersEtagVersion += 1;
+  ordersSerializedCache = null;
+}
+
 function readDeletedIdsFromDisk(): string[] {
+  if (deletedIdsMemoryCache !== null) {
+    return deletedIdsMemoryCache;
+  }
   ensureDataDir();
   if (!fs.existsSync(deletedIdsFilePath)) {
-    return [];
+    deletedIdsMemoryCache = [];
+    return deletedIdsMemoryCache;
   }
   try {
     const raw = fs.readFileSync(deletedIdsFilePath, 'utf8');
     const parsed = parseJsonWithoutBom(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    deletedIdsMemoryCache = Array.isArray(parsed) ? parsed : [];
+    return deletedIdsMemoryCache;
   } catch {
-    return [];
+    deletedIdsMemoryCache = [];
+    return deletedIdsMemoryCache;
   }
 }
 
 function writeDeletedIdsToDisk(ids: string[]): void {
+  const unique = Array.from(new Set(ids));
+  deletedIdsMemoryCache = unique;
+  invalidateOrdersHttpCache();
   ensureDataDir();
-  try {
-    const unique = Array.from(new Set(ids));
-    fs.writeFileSync(deletedIdsFilePath, JSON.stringify(unique, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Błąd zapisu listy usuniętych zamówień:', e);
-  }
+  fs.promises
+    .writeFile(deletedIdsFilePath, JSON.stringify(unique), 'utf8')
+    .catch((e) => console.error('Błąd zapisu listy usuniętych zamówień:', e));
 }
 
 function readOrdersFromDisk(): any[] {
+  if (ordersMemoryCache !== null) {
+    return ordersMemoryCache;
+  }
   ensureDataDir();
   if (!fs.existsSync(ordersFilePath)) {
-    return [];
+    ordersMemoryCache = [];
+    return ordersMemoryCache;
   }
   try {
     const raw = fs.readFileSync(ordersFilePath, 'utf8');
-    return parseJsonWithoutBom(raw);
+    const parsed = parseJsonWithoutBom(raw);
+    ordersMemoryCache = Array.isArray(parsed) ? parsed : [];
+    return ordersMemoryCache;
   } catch (e) {
     console.error('Błąd odczytu bazy zamówień:', e);
-    throw new Error('Nie można bezpiecznie odczytać danych; synchronizacja została wstrzymana, aby chronić dane.');
+    return ordersMemoryCache || [];
   }
 }
 
 function writeOrdersToDisk(orders: any[], triggerCloud = true): boolean {
+  ordersMemoryCache = orders;
+  invalidateOrdersHttpCache();
   ensureDataDir();
-  try {
-    fs.writeFileSync(ordersFilePath, JSON.stringify(orders, null, 2), 'utf8');
-    if (triggerCloud) {
-      scheduleCloudSync();
-    }
-    return true;
-  } catch (e) {
-    console.error('Błąd zapisu bazy zamówień:', e);
-    return false;
+
+  if (ordersDiskWriteTimer) {
+    clearTimeout(ordersDiskWriteTimer);
   }
+  ordersDiskWriteTimer = setTimeout(() => {
+    const snapshot = ordersMemoryCache || [];
+    fs.promises
+      .writeFile(ordersFilePath, JSON.stringify(snapshot), 'utf8')
+      .catch((e) => console.error('Błąd asynchronicznego zapisu bazy zamówień:', e));
+  }, 350);
+
+  if (triggerCloud) {
+    scheduleCloudSync();
+  }
+  return true;
 }
 
 function readKnowledgeFromDisk(): any[] {
+  if (knowledgeMemoryCache !== null) {
+    return knowledgeMemoryCache;
+  }
   ensureDataDir();
   if (!fs.existsSync(knowledgeFilePath)) {
-    return [];
+    knowledgeMemoryCache = [];
+    return knowledgeMemoryCache;
   }
   try {
     const raw = fs.readFileSync(knowledgeFilePath, 'utf8');
     const parsed = parseJsonWithoutBom(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    knowledgeMemoryCache = Array.isArray(parsed) ? parsed : [];
+    return knowledgeMemoryCache;
   } catch (e) {
     console.error('Błąd odczytu bazy Centrum Wiedzy:', e);
-    throw new Error('Nie można bezpiecznie odczytać danych; synchronizacja została wstrzymana, aby chronić dane.');
+    return knowledgeMemoryCache || [];
   }
 }
 
 function writeKnowledgeToDisk(clients: any[], triggerCloud = true): boolean {
+  knowledgeMemoryCache = clients;
   ensureDataDir();
-  try {
-    fs.writeFileSync(knowledgeFilePath, JSON.stringify(clients, null, 2), 'utf8');
-    if (triggerCloud) {
-      scheduleCloudSync();
-    }
-    return true;
-  } catch (e) {
-    console.error('Błąd zapisu bazy Centrum Wiedzy:', e);
-    return false;
+  fs.promises
+    .writeFile(knowledgeFilePath, JSON.stringify(clients), 'utf8')
+    .catch((e) => console.error('Błąd zapisu bazy Centrum Wiedzy:', e));
+  if (triggerCloud) {
+    scheduleCloudSync();
   }
+  return true;
 }
 
 function readSharedDraftsFromDisk(): any[] {
+  if (sharedDraftsMemoryCache !== null) {
+    return sharedDraftsMemoryCache;
+  }
   ensureDataDir();
   if (!fs.existsSync(sharedDraftsFilePath)) {
-    return [];
+    sharedDraftsMemoryCache = [];
+    return sharedDraftsMemoryCache;
   }
   try {
     const raw = fs.readFileSync(sharedDraftsFilePath, 'utf8');
     const parsed = parseJsonWithoutBom(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    sharedDraftsMemoryCache = Array.isArray(parsed) ? parsed : [];
+    return sharedDraftsMemoryCache;
   } catch {
-    return [];
+    sharedDraftsMemoryCache = [];
+    return sharedDraftsMemoryCache;
   }
 }
 
 function writeSharedDraftsToDisk(drafts: any[], triggerCloud = true): boolean {
+  sharedDraftsMemoryCache = drafts;
   ensureDataDir();
-  try {
-    fs.writeFileSync(sharedDraftsFilePath, JSON.stringify(drafts, null, 2), 'utf8');
-    if (triggerCloud) {
-      scheduleCloudSync();
-    }
-    return true;
-  } catch (e) {
-    console.error('Błąd zapisu Wspólnego Stołu Roboczego:', e);
-    return false;
+  fs.promises
+    .writeFile(sharedDraftsFilePath, JSON.stringify(drafts), 'utf8')
+    .catch((e) => console.error('Błąd zapisu Wspólnego Stołu Roboczego:', e));
+  if (triggerCloud) {
+    scheduleCloudSync();
   }
+  return true;
 }
 
 function readPackagingPhotosFromDisk(): any[] {
+  if (packagingPhotosMemoryCache !== null) {
+    return packagingPhotosMemoryCache;
+  }
   ensureDataDir();
   if (!fs.existsSync(packagingPhotosFilePath)) {
-    return [];
+    packagingPhotosMemoryCache = [];
+    return packagingPhotosMemoryCache;
   }
   try {
     const raw = fs.readFileSync(packagingPhotosFilePath, 'utf8');
     const parsed = parseJsonWithoutBom(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    packagingPhotosMemoryCache = Array.isArray(parsed) ? parsed : [];
+    return packagingPhotosMemoryCache;
   } catch {
-    return [];
+    packagingPhotosMemoryCache = [];
+    return packagingPhotosMemoryCache;
   }
 }
 
 function writePackagingPhotosToDisk(photos: any[], triggerCloud = true): boolean {
+  packagingPhotosMemoryCache = photos;
   ensureDataDir();
-  try {
-    fs.writeFileSync(packagingPhotosFilePath, JSON.stringify(photos, null, 2), 'utf8');
-    if (triggerCloud) {
-      scheduleCloudSync();
-    }
-    return true;
-  } catch (e) {
-    console.error('Błąd zapisu kolejki zdjęć opakowań z Magazynu:', e);
-    return false;
+  fs.promises
+    .writeFile(packagingPhotosFilePath, JSON.stringify(photos), 'utf8')
+    .catch((e) => console.error('Błąd zapisu kolejki zdjęć opakowań z Magazynu:', e));
+  if (triggerCloud) {
+    scheduleCloudSync();
   }
+  return true;
+}
+
+function mergeParcelPhotosLightweightServer(newerPhotos?: any[], olderPhotos?: any[]): any[] {
+  const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
+  const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
+  if (nArr.length === 0) return oArr;
+  if (oArr.length === 0) return nArr;
+  if (nArr.length === oArr.length) {
+    return nArr.map((np, idx) => {
+      const op = oArr[idx];
+      if (typeof np === 'string' && typeof op === 'string' && np.length > 1000 && op.length > 1000) {
+        return np.length <= op.length ? np : op;
+      }
+      return np || op;
+    });
+  }
+  return nArr;
+}
+
+function mergePackagingPhotosLightweightServer(newerPhotos?: any[], olderPhotos?: any[]): any[] {
+  const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
+  const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
+  if (nArr.length === 0) return oArr;
+  if (oArr.length === 0) return nArr;
+
+  const olderById = new Map<string, any>();
+  for (const op of oArr) {
+    if (op?.id) olderById.set(op.id, op);
+  }
+
+  return nArr.map((np) => {
+    if (!np?.id) return np;
+    const op = olderById.get(np.id);
+    if (
+      op?.dataUrl &&
+      np.dataUrl &&
+      typeof op.dataUrl === 'string' &&
+      typeof np.dataUrl === 'string' &&
+      op.dataUrl.length > 1000 &&
+      np.dataUrl.length > 1000 &&
+      op.dataUrl.length < np.dataUrl.length
+    ) {
+      return { ...np, dataUrl: op.dataUrl };
+    }
+    return np;
+  });
 }
 
 // Pełna synchronizacja dwukierunkowa z zaszyfrowanym sejfem w chmurze GitHub
@@ -1062,7 +1165,9 @@ async function performFullCloudPullAndMerge(): Promise<{
     const mergedDeleted = Array.from(mergedDeletedSet);
     writeDeletedIdsToDisk(mergedDeleted);
 
-    // 1. Połącz zamówienia z chmury i z dysku lokalnego
+    let compressedReplacedCloud = false;
+
+    // 1. Połącz zamówienia z chmury i z dysku lokalnego (preferując lżejsze skompresowane zdjęcia)
     const map = new Map<string, any>();
     for (const ord of cloudVault.orders || []) {
       if (ord?.id && !mergedDeletedSet.has(ord.id)) {
@@ -1079,19 +1184,26 @@ async function performFullCloudPullAndMerge(): Promise<{
         const tLoc = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
         const newer = tLoc >= tCloud ? loc : existing;
         const older = tLoc >= tCloud ? existing : loc;
-        const photos =
-          newer.parcelPhotos && newer.parcelPhotos.length > 0
-            ? newer.parcelPhotos
-            : older.parcelPhotos || [];
-        const pkgPhotos =
-          newer.packagingPhotos && newer.packagingPhotos.length > 0
-            ? newer.packagingPhotos
-            : older.packagingPhotos || [];
+        const photos = mergeParcelPhotosLightweightServer(newer.parcelPhotos, older.parcelPhotos);
+        const pkgPhotos = mergePackagingPhotosLightweightServer(
+          newer.packagingPhotos,
+          older.packagingPhotos
+        );
+        const cloudFirstPkgLen = existing.packagingPhotos?.[0]?.dataUrl?.length || 0;
+        const mergedFirstPkgLen = pkgPhotos?.[0]?.dataUrl?.length || 0;
+        const cloudFirstParcelLen = existing.parcelPhotos?.[0]?.length || 0;
+        const mergedFirstParcelLen = photos?.[0]?.length || 0;
+        if (
+          (cloudFirstPkgLen > 0 && mergedFirstPkgLen > 0 && mergedFirstPkgLen < cloudFirstPkgLen) ||
+          (cloudFirstParcelLen > 0 && mergedFirstParcelLen > 0 && mergedFirstParcelLen < cloudFirstParcelLen)
+        ) {
+          compressedReplacedCloud = true;
+        }
         map.set(loc.id, { ...older, ...newer, parcelPhotos: photos, packagingPhotos: pkgPhotos });
       }
     }
     const mergedOrders = Array.from(map.values());
-    writeOrdersToDisk(mergedOrders, false);
+    writeOrdersToDisk(mergedOrders, compressedReplacedCloud);
 
     // 2. Połącz karty klientów Centrum Wiedzy (CRM)
     const kMap = new Map<string, any>();
@@ -1155,11 +1267,19 @@ async function ensureCloudInitialized(): Promise<void> {
   if (!GITHUB_TOKEN) return;
   if (!cloudInitPromise) {
     cloudInitPromise = (async () => {
-      const res = await performFullCloudPullAndMerge();
-      console.log(`☁️ [GitHub Vault AES-256] Zsynchronizowano ${res.ordersCount} zamówień, ${res.knowledgeCount} kart CRM i ${res.draftsCount} szkiców.`);
+      try {
+        const res = await performFullCloudPullAndMerge();
+        console.log(`☁️ [GitHub Vault AES-256] Zsynchronizowano ${res.ordersCount} zamówień, ${res.knowledgeCount} kart CRM i ${res.draftsCount} szkiców.`);
+      } catch (err) {
+        console.error('Uwaga: Inicjalizacja sejfu chmurowego zakończona ostrzeżeniem:', err);
+      }
     })();
   }
-  await cloudInitPromise;
+  // Jeśli mamy już dane w pamięci/na dysku, nie blokujemy bieżącego żądania HTTP czekaniem na GitHub API
+  const localOrders = readOrdersFromDisk();
+  if (localOrders.length === 0) {
+    await cloudInitPromise;
+  }
 }
 
 /**
@@ -1312,7 +1432,7 @@ app.post('/api/shared-drafts', async (req: Request, res: Response) => {
   if (!draft || !draft.id) {
     return res.status(400).json({ error: 'Brak identyfikatora szkicu roboczego' });
   }
-  const drafts = readSharedDraftsFromDisk();
+  const drafts = [...readSharedDraftsFromDisk()];
   const now = new Date().toISOString();
   const updatedDraft = { ...draft, updatedAt: now };
   const idx = drafts.findIndex((d: any) => d.id === draft.id);
@@ -1369,7 +1489,7 @@ app.post('/api/packaging-photos', async (req: Request, res: Response) => {
   }
   const merged = Array.from(map.values())
     .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-    .slice(0, 40);
+    .slice(0, 25);
   writePackagingPhotosToDisk(merged);
   broadcastSyncEvent(
     'PACKAGING_PHOTOS_UPLOADED',
@@ -1395,11 +1515,24 @@ app.delete('/api/packaging-photos/:id', async (req: Request, res: Response) => {
 
 app.get('/api/orders-history', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
+  const currentEtag = `W/"orders-rev-${ordersEtagVersion}"`;
+  res.setHeader('ETag', currentEtag);
+
+  if (req.headers['if-none-match'] === currentEtag) {
+    return res.status(304).end();
+  }
+
   const deletedIds = readDeletedIdsFromDisk();
-  const deletedSet = new Set(deletedIds);
-  const orders = readOrdersFromDisk().filter((o: any) => o && o.id && !deletedSet.has(o.id));
   res.setHeader('X-Deleted-Order-Ids', JSON.stringify(deletedIds));
-  return res.json(orders);
+
+  if (!ordersSerializedCache) {
+    const deletedSet = new Set(deletedIds);
+    const orders = readOrdersFromDisk().filter((o: any) => o && o.id && !deletedSet.has(o.id));
+    ordersSerializedCache = JSON.stringify(orders);
+  }
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  return res.send(ordersSerializedCache);
 });
 
 app.post('/api/orders-history', async (req: Request, res: Response) => {
@@ -1409,10 +1542,12 @@ app.post('/api/orders-history', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Nieprawidłowe dane zamówienia (brak id)' });
   }
 
-  const deletedIds = readDeletedIdsFromDisk().filter((id) => id !== newOrder.id);
-  writeDeletedIdsToDisk(deletedIds);
+  const deletedIds = readDeletedIdsFromDisk();
+  if (deletedIds.includes(newOrder.id)) {
+    writeDeletedIdsToDisk(deletedIds.filter((id) => id !== newOrder.id));
+  }
 
-  const orders = readOrdersFromDisk();
+  const orders = [...readOrdersFromDisk()];
   const idx = orders.findIndex((o: any) => o.id === newOrder.id);
   if (idx >= 0) {
     orders[idx] = { ...newOrder, updatedAt: new Date().toISOString() };
@@ -1443,7 +1578,7 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
   const { id } = req.params;
   const updates = req.body;
-  const orders = readOrdersFromDisk();
+  const orders = [...readOrdersFromDisk()];
   const idx = orders.findIndex((o: any) => o.id === id);
 
   if (idx === -1) {
@@ -1499,7 +1634,7 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
 app.delete('/api/orders-history/:id', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
   const { id } = req.params;
-  const deletedIds = readDeletedIdsFromDisk();
+  const deletedIds = [...readDeletedIdsFromDisk()];
   if (!deletedIds.includes(id)) {
     deletedIds.push(id);
     writeDeletedIdsToDisk(deletedIds);
@@ -1528,30 +1663,40 @@ app.post('/api/orders-history/sync', async (req: Request, res: Response) => {
       map.set(srv.id, srv);
     }
   }
+
+  let hasActualChanges = false;
+
   for (const inc of orders) {
     if (!inc?.id || deletedSet.has(inc.id)) continue;
     const ex = map.get(inc.id);
     if (!ex) {
       map.set(inc.id, inc);
+      hasActualChanges = true;
     } else {
       const tSrv = ex.updatedAt ? new Date(ex.updatedAt).getTime() : 0;
       const tInc = inc.updatedAt ? new Date(inc.updatedAt).getTime() : 0;
-      const newer = tInc >= tSrv ? inc : ex;
-      const older = tInc >= tSrv ? ex : inc;
-      const photos =
-        newer.parcelPhotos && newer.parcelPhotos.length > 0
-          ? newer.parcelPhotos
-          : older.parcelPhotos || [];
-      const pkgPhotos =
-        newer.packagingPhotos && newer.packagingPhotos.length > 0
-          ? newer.packagingPhotos
-          : older.packagingPhotos || [];
+      const newer = tInc > tSrv ? inc : ex;
+      const older = tInc > tSrv ? ex : inc;
+      const photos = mergeParcelPhotosLightweightServer(newer.parcelPhotos, older.parcelPhotos);
+      const pkgPhotos = mergePackagingPhotosLightweightServer(
+        newer.packagingPhotos,
+        older.packagingPhotos
+      );
+      if (
+        tInc > tSrv + 500 ||
+        photos.length !== (ex.parcelPhotos?.length || 0) ||
+        pkgPhotos.length !== (ex.packagingPhotos?.length || 0)
+      ) {
+        hasActualChanges = true;
+      }
       map.set(inc.id, { ...older, ...newer, parcelPhotos: photos, packagingPhotos: pkgPhotos });
     }
   }
 
   const finalOrders = Array.from(map.values());
-  writeOrdersToDisk(finalOrders);
+  if (hasActualChanges) {
+    writeOrdersToDisk(finalOrders);
+  }
   return res.json({ success: true, count: finalOrders.length });
 });
 
@@ -1571,7 +1716,7 @@ app.post('/api/knowledge-base', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Nieprawidłowe dane klienta (brak id)' });
   }
 
-  const clients = readKnowledgeFromDisk();
+  const clients = [...readKnowledgeFromDisk()];
   const idx = clients.findIndex((c: any) => c.id === client.id);
   if (idx >= 0) {
     clients[idx] = { ...client, updatedAt: new Date().toISOString() };
@@ -1605,25 +1750,33 @@ app.post('/api/knowledge-base/sync', async (req: Request, res: Response) => {
   for (const ex of existing) {
     if (ex?.id) map.set(ex.id, ex);
   }
+  let hasChanges = false;
   for (const inc of clients) {
     if (!inc?.id) continue;
     const prev = map.get(inc.id);
     if (!prev) {
       map.set(inc.id, inc);
+      hasChanges = true;
     } else {
       const tPrev = prev.updatedAt ? new Date(prev.updatedAt).getTime() : 0;
       const tInc = inc.updatedAt ? new Date(inc.updatedAt).getTime() : 0;
-      map.set(inc.id, tInc >= tPrev ? inc : prev);
+      if (tInc > tPrev + 500) {
+        map.set(inc.id, inc);
+        hasChanges = true;
+      }
     }
   }
 
   const finalClients = Array.from(map.values());
-  writeKnowledgeToDisk(finalClients);
+  if (hasChanges) {
+    writeKnowledgeToDisk(finalClients);
+  }
   return res.json({ success: true, count: finalClients.length });
 });
 
 async function startServer() {
   if (!isProduction) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

@@ -214,9 +214,59 @@ async function readOrdersFromBrowserStorage(): Promise<ArchivedOrder[]> {
   return [];
 }
 
+function mergeParcelPhotosLightweight(
+  newerPhotos?: string[],
+  olderPhotos?: string[]
+): string[] {
+  const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
+  const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
+  if (nArr.length === 0) return oArr;
+  if (oArr.length === 0) return nArr;
+  if (nArr.length === oArr.length) {
+    return nArr.map((np, idx) => {
+      const op = oArr[idx];
+      if (np && op && np.length > 1000 && op.length > 1000) {
+        return np.length <= op.length ? np : op;
+      }
+      return np || op;
+    });
+  }
+  return nArr;
+}
+
+function mergePackagingPhotosLightweight(
+  newerPhotos?: ArchivedOrder['packagingPhotos'],
+  olderPhotos?: ArchivedOrder['packagingPhotos']
+): NonNullable<ArchivedOrder['packagingPhotos']> {
+  const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
+  const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
+  if (nArr.length === 0) return oArr;
+  if (oArr.length === 0) return nArr;
+
+  const olderById = new Map<string, NonNullable<ArchivedOrder['packagingPhotos']>[number]>();
+  for (const op of oArr) {
+    if (op?.id) olderById.set(op.id, op);
+  }
+
+  return nArr.map((np) => {
+    if (!np?.id) return np;
+    const op = olderById.get(np.id);
+    if (
+      op?.dataUrl &&
+      np.dataUrl &&
+      op.dataUrl.length > 1000 &&
+      np.dataUrl.length > 1000 &&
+      op.dataUrl.length < np.dataUrl.length
+    ) {
+      return { ...np, dataUrl: op.dataUrl };
+    }
+    return np;
+  });
+}
+
 /**
  * Inteligentne łączenie danych z serwera (np. Render.com po restarcie) oraz lokalnej bazy przeglądarki,
- * aby nigdy nie utracić nowo dodanych zamówień ani załączonych zdjęć przesyłek.
+ * aby nigdy nie utracić nowo dodanych zamówień ani załączonych zdjęć przesyłek, preferując lżejsze (skompresowane) zdjęcia.
  */
 function mergeServerAndLocalOrders(
   serverList: ArchivedOrder[],
@@ -238,17 +288,13 @@ function mergeServerAndLocalOrders(
     } else {
       const srvTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
       const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
-      const newer = locTime >= srvTime ? loc : existing;
-      const older = locTime >= srvTime ? existing : loc;
-      // Zachowaj zdjęcia przesyłki i opakowań, jeśli w jednej z wersji są obecne
-      const mergedPhotos =
-        newer.parcelPhotos && newer.parcelPhotos.length > 0
-          ? newer.parcelPhotos
-          : older.parcelPhotos || [];
-      const mergedPackagingPhotos =
-        newer.packagingPhotos && newer.packagingPhotos.length > 0
-          ? newer.packagingPhotos
-          : older.packagingPhotos || [];
+      const newer = locTime > srvTime ? loc : existing;
+      const older = locTime > srvTime ? existing : loc;
+      const mergedPhotos = mergeParcelPhotosLightweight(newer.parcelPhotos, older.parcelPhotos);
+      const mergedPackagingPhotos = mergePackagingPhotosLightweight(
+        newer.packagingPhotos,
+        older.packagingPhotos
+      );
       map.set(loc.id, {
         ...older,
         ...newer,
@@ -265,116 +311,148 @@ function mergeServerAndLocalOrders(
   });
 }
 
+let lastServerOrdersEtag: string | null = null;
+let lastServerOrdersCache: ArchivedOrder[] | null = null;
+let inFlightGetOrdersPromise: Promise<ArchivedOrder[]> | null = null;
+
 /**
- * Pobiera listę archiwalnych zamówień (z serwera + IndexedDB/localStorage z fallbackiem do danych wzorcowych)
+ * Pobiera listę archiwalnych zamówień (z obsługą ETag 304, deduplikacją zapytań i synchronizacją różnicową)
  */
 export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
-  const deletedIds = getDeletedIds();
-  const localOrders = await readOrdersFromBrowserStorage();
-  let serverOrders: ArchivedOrder[] = [];
+  if (inFlightGetOrdersPromise) {
+    return inFlightGetOrdersPromise;
+  }
 
-  try {
-    const res = await fetch('/api/orders-history');
-    if (res.ok) {
-      const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
-      if (deletedHeader) {
-        try {
-          const srvDeleted: string[] = JSON.parse(deletedHeader);
-          if (Array.isArray(srvDeleted)) {
-            for (const dId of srvDeleted) {
-              deletedIds.add(dId);
-              addDeletedId(dId);
-            }
+  inFlightGetOrdersPromise = (async () => {
+    try {
+      const deletedIds = getDeletedIds();
+      const localOrders = await readOrdersFromBrowserStorage();
+      let serverOrders: ArchivedOrder[] = [];
+
+      try {
+        const headers: Record<string, string> = {};
+        if (lastServerOrdersEtag && lastServerOrdersCache) {
+          headers['If-None-Match'] = lastServerOrdersEtag;
+        }
+        const res = await fetch('/api/orders-history', { headers });
+        if (res.status === 304 && lastServerOrdersCache) {
+          serverOrders = lastServerOrdersCache;
+        } else if (res.ok) {
+          const etag = res.headers.get('ETag');
+          if (etag) {
+            lastServerOrdersEtag = etag;
           }
-        } catch {}
+          const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
+          if (deletedHeader) {
+            try {
+              const srvDeleted: string[] = JSON.parse(deletedHeader);
+              if (Array.isArray(srvDeleted)) {
+                for (const dId of srvDeleted) {
+                  deletedIds.add(dId);
+                  addDeletedId(dId);
+                }
+              }
+            } catch {}
+          }
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            serverOrders = data;
+            lastServerOrdersCache = data;
+          }
+        }
+      } catch (err) {
+        if (lastServerOrdersCache) {
+          serverOrders = lastServerOrdersCache;
+        } else {
+          console.warn('Serwer API niedostępny, używam bazy lokalnej:', err);
+        }
       }
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        serverOrders = data;
-      }
-    }
-  } catch (err) {
-    console.warn('Serwer API niedostępny, używam bazy lokalnej:', err);
-  }
 
-  if (serverOrders.length > 0 || localOrders.length > 0) {
-    const merged = normalizeOrdersList(
-      mergeServerAndLocalOrders(serverOrders, localOrders, deletedIds)
-    );
-    await writeOrdersToBrowserStorage(merged);
-
-    // Jeśli w przeglądarce były nowsze dane / zdjęcia (np. po wybudzeniu darmowego serwera Render), zsynchronizuj serwer w tle
-    const serverMap = new Map(serverOrders.map((o) => [o.id, o]));
-    const needsServerSync =
-      merged.length !== serverOrders.length ||
-      merged.some((m) => {
-        const s = serverMap.get(m.id);
-        if (!s) return true;
-        const mPhotos = m.parcelPhotos?.length || 0;
-        const sPhotos = s.parcelPhotos?.length || 0;
-        const mPkgPhotos = m.packagingPhotos?.length || 0;
-        const sPkgPhotos = s.packagingPhotos?.length || 0;
-        if (mPhotos !== sPhotos || mPkgPhotos !== sPkgPhotos) return true;
-        return (
-          (m.updatedAt || '') !== (s.updatedAt || '') ||
-          m.shippingStatus !== s.shippingStatus ||
-          m.preparationStatus !== s.preparationStatus ||
-          m.warehouseTaskStatus !== s.warehouseTaskStatus ||
-          m.warehouseProductTaskStatus !== s.warehouseProductTaskStatus ||
-          m.warehouseParcelTaskStatus !== s.warehouseParcelTaskStatus
+      if (serverOrders.length > 0 || localOrders.length > 0) {
+        const merged = normalizeOrdersList(
+          mergeServerAndLocalOrders(serverOrders, localOrders, deletedIds)
         );
-      });
+        await writeOrdersToBrowserStorage(merged);
 
-    if (needsServerSync) {
-      fetch('/api/orders-history/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orders: merged }),
-      }).catch(() => {});
+        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarce
+        if (serverOrders.length > 0) {
+          const serverMap = new Map(serverOrders.map((o) => [o.id, o]));
+          const ordersToPush = merged.filter((m) => {
+            const s = serverMap.get(m.id);
+            if (!s) return true;
+            const mTime = m.updatedAt ? new Date(m.updatedAt).getTime() : 0;
+            const sTime = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+            if (mTime > sTime + 500) return true;
+            const mPhotos = m.parcelPhotos?.length || 0;
+            const sPhotos = s.parcelPhotos?.length || 0;
+            const mPkgPhotos = m.packagingPhotos?.length || 0;
+            const sPkgPhotos = s.packagingPhotos?.length || 0;
+            return mPhotos > sPhotos || mPkgPhotos > sPkgPhotos;
+          });
+
+          if (ordersToPush.length > 0) {
+            fetch('/api/orders-history/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orders: ordersToPush }),
+            }).catch(() => {});
+          }
+        }
+
+        return merged;
+      }
+
+      const defaultOrders = normalizeOrdersList(INITIAL_ARCHIVED_ORDERS);
+      await writeOrdersToBrowserStorage(defaultOrders);
+      return defaultOrders;
+    } finally {
+      inFlightGetOrdersPromise = null;
     }
+  })();
 
-    return merged;
-  }
-
-  // Domyślne dane początkowe
-  const defaultOrders = normalizeOrdersList(INITIAL_ARCHIVED_ORDERS);
-  await writeOrdersToBrowserStorage(defaultOrders);
-  return defaultOrders;
+  return inFlightGetOrdersPromise;
 }
 
 /**
- * Zapisuje nowe lub aktualizuje istniejące zamówienie w historii
+ * Zapisuje nowe lub aktualizuje istniejące zamówienie w historii (bez ponownego ściągania całej bazy)
  */
 export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedOrder> {
-  const normalizedOrder: ArchivedOrder = {
-    ...order,
-    chain: detectPharmacyChain(order.buyer, order.thirdParty, order.chain),
-    updatedAt: new Date().toISOString(),
-  };
+  const normalizedOrder: ArchivedOrder = normalizeOrdersList([
+    {
+      ...order,
+      chain: detectPharmacyChain(order.buyer, order.thirdParty, order.chain),
+      updatedAt: new Date().toISOString(),
+    },
+  ])[0];
 
-  // Próba zapisu na serwerze
+  // Zapis na serwerze (pojedynczy rekord)
   try {
     await fetch('/api/orders-history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalizedOrder),
     });
+    lastServerOrdersEtag = null;
   } catch (err) {
     console.warn('Nie udało się zapisać zamówienia na serwerze:', err);
   }
 
-  // Zapis w IndexedDB oraz localStorage
+  // Bezpośrednia aktualizacja w IndexedDB oraz localStorage (bez odpytywania GET /api/orders-history)
   try {
-    const existing = await getArchivedOrders();
+    const existing = await readOrdersFromBrowserStorage();
     const idx = existing.findIndex((o) => o.id === normalizedOrder.id);
-    let updated: ArchivedOrder[];
-    if (idx >= 0) {
-      updated = [...existing];
-      updated[idx] = normalizedOrder;
-    } else {
-      updated = [normalizedOrder, ...existing];
-    }
+    const updated =
+      idx >= 0
+        ? existing.map((o, i) => (i === idx ? normalizedOrder : o))
+        : [normalizedOrder, ...existing];
     await writeOrdersToBrowserStorage(updated);
+    if (lastServerOrdersCache) {
+      const sIdx = lastServerOrdersCache.findIndex((o) => o.id === normalizedOrder.id);
+      lastServerOrdersCache =
+        sIdx >= 0
+          ? lastServerOrdersCache.map((o, i) => (i === sIdx ? normalizedOrder : o))
+          : [normalizedOrder, ...lastServerOrdersCache];
+    }
   } catch (e) {
     console.warn('Błąd zapisu w pamięci przeglądarki:', e);
   }
@@ -383,30 +461,38 @@ export async function saveArchivedOrder(order: ArchivedOrder): Promise<ArchivedO
 }
 
 /**
- * Częściowa aktualizacja (status dostawy, notatka, zdjęcia przesyłki)
+ * Częściowa aktualizacja (status dostawy, notatka, zdjęcia przesyłki) bez ściągania całej bazy
  */
 export async function updateArchivedOrderFields(
   id: string,
   fields: Partial<ArchivedOrder>
 ): Promise<boolean> {
-  // Próba na serwerze
+  const nowIso = new Date().toISOString();
+
   try {
     await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),
     });
+    lastServerOrdersEtag = null;
   } catch (err) {
     console.warn('Błąd PATCH na serwerze:', err);
   }
 
-  // Aktualizacja w IndexedDB oraz localStorage
   try {
-    const existing = await getArchivedOrders();
-    const updated = existing.map((o) =>
-      o.id === id ? { ...o, ...fields, updatedAt: new Date().toISOString() } : o
+    const existing = await readOrdersFromBrowserStorage();
+    const updated = normalizeOrdersList(
+      existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: nowIso } : o))
     );
     await writeOrdersToBrowserStorage(updated);
+    if (lastServerOrdersCache) {
+      lastServerOrdersCache = normalizeOrdersList(
+        lastServerOrdersCache.map((o) =>
+          o.id === id ? { ...o, ...fields, updatedAt: nowIso } : o
+        )
+      );
+    }
     return true;
   } catch (e) {
     console.warn('Błąd aktualizacji w pamięci przeglądarki:', e);
@@ -419,6 +505,10 @@ export async function updateArchivedOrderFields(
  */
 export async function deleteArchivedOrder(id: string): Promise<boolean> {
   addDeletedId(id);
+  lastServerOrdersEtag = null;
+  if (lastServerOrdersCache) {
+    lastServerOrdersCache = lastServerOrdersCache.filter((o) => o.id !== id);
+  }
 
   try {
     await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
@@ -438,3 +528,4 @@ export async function deleteArchivedOrder(id: string): Promise<boolean> {
     return false;
   }
 }
+

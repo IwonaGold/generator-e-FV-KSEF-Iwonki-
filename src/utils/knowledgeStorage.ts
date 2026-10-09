@@ -87,52 +87,69 @@ function mergeServerAndLocalClients(
   return Array.from(map.values());
 }
 
+let inFlightKnowledgePromise: Promise<KeyClientProfile[]> | null = null;
+
 export async function getKeyClients(): Promise<KeyClientProfile[]> {
-  const localClients = readClientsFromLocalStorage();
-  let serverClients: KeyClientProfile[] = [];
+  if (inFlightKnowledgePromise) {
+    return inFlightKnowledgePromise;
+  }
 
-  try {
-    const res = await fetch('/api/knowledge-base');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        serverClients = data;
+  inFlightKnowledgePromise = (async () => {
+    try {
+      const localClients = readClientsFromLocalStorage();
+      let serverClients: KeyClientProfile[] = [];
+
+      try {
+        const res = await fetch('/api/knowledge-base');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            serverClients = data;
+          }
+        }
+      } catch (err) {
+        console.warn('Serwer API Centrum Wiedzy niedostępny, używam pamięci lokalnej:', err);
       }
+
+      if (serverClients.some((c) => c.id === 'client-nabea')) {
+        fetch('/api/knowledge-base/client-nabea', { method: 'DELETE' }).catch(() => {});
+      }
+
+      if (serverClients.length > 0 || localClients.length > 0) {
+        const merged = mergeServerAndLocalClients(serverClients, localClients);
+        writeClientsToLocalStorage(merged);
+
+        // Synchronizuj z serwerem wyłącznie wtedy, gdy w przeglądarce są nowsze wpisy lub brakuje ich na serwerze
+        if (serverClients.length > 0) {
+          const srvMap = new Map(serverClients.map((c) => [c.id, c]));
+          const clientsToSync = merged.filter((m) => {
+            const s = srvMap.get(m.id);
+            if (!s) return true;
+            const mTime = m.updatedAt ? new Date(m.updatedAt).getTime() : 0;
+            const sTime = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+            return mTime > sTime + 500 || (m.notes?.length || 0) > (s.notes?.length || 0);
+          });
+
+          if (clientsToSync.length > 0) {
+            fetch('/api/knowledge-base/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ clients: clientsToSync }),
+            }).catch(() => {});
+          }
+        }
+
+        return merged;
+      }
+
+      writeClientsToLocalStorage(INITIAL_KEY_CLIENTS);
+      return INITIAL_KEY_CLIENTS;
+    } finally {
+      inFlightKnowledgePromise = null;
     }
-  } catch (err) {
-    console.warn('Serwer API Centrum Wiedzy niedostępny, używam pamięci lokalnej:', err);
-  }
+  })();
 
-  if (serverClients.some((c) => c.id === 'client-nabea')) {
-    fetch('/api/knowledge-base/client-nabea', { method: 'DELETE' }).catch(() => {});
-  }
-
-  if (serverClients.length > 0 || localClients.length > 0) {
-    const merged = mergeServerAndLocalClients(serverClients, localClients);
-    writeClientsToLocalStorage(merged);
-
-    // Synchronizuj z serwerem / chmurą, jeśli w przeglądarce są nowsze wpisy
-    const srvMap = new Map(serverClients.map((c) => [c.id, c]));
-    const needsSync =
-      merged.length !== serverClients.length ||
-      merged.some((m) => {
-        const s = srvMap.get(m.id);
-        return !s || (m.updatedAt || '') !== (s.updatedAt || '') || (m.notes?.length || 0) !== (s.notes?.length || 0);
-      });
-
-    if (needsSync) {
-      fetch('/api/knowledge-base/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clients: merged }),
-      }).catch(() => {});
-    }
-
-    return merged;
-  }
-
-  writeClientsToLocalStorage(INITIAL_KEY_CLIENTS);
-  return INITIAL_KEY_CLIENTS;
+  return inFlightKnowledgePromise;
 }
 
 export async function saveKeyClient(client: KeyClientProfile): Promise<KeyClientProfile> {

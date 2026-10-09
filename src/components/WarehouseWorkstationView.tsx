@@ -234,7 +234,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const dataUrl = await compressImageToDataUrl(file, 1600, 0.85);
+        const dataUrl = await compressImageToDataUrl(file, 1080, 0.72);
         newPhotos.push({
           id: `pkg-${ord.id}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
           fileName: file.name,
@@ -302,7 +302,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
     try {
       const compressedUrls: string[] = [];
       for (const file of files) {
-        const dataUrl = await compressImageToDataUrl(file, 1400, 0.82);
+        const dataUrl = await compressImageToDataUrl(file, 1024, 0.70);
         compressedUrls.push(dataUrl);
       }
 
