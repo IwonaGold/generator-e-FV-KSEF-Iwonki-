@@ -204,11 +204,11 @@ app.post('/api/ocr-extract', async (req: Request, res: Response) => {
     const ai = new GoogleGenAI({ apiKey });
 
     const promptText =
-      'Przeanalizuj etykietę leku farmaceutycznego. Wyodrębnij:\n' +
-      '- batchNumber (Numer serii / LOT / Seria / Ch.-B. - sam numer, bez przedrostka)\n' +
-      '- expiryDate (Data ważności w formacie RRRR-MM-DD. UWAGA: jeśli na opakowaniu podano tylko miesiąc i rok, np. 11/2027 lub 08.26, oblicz i wpisz dokładnie ostatni dzień tego miesiąca: 2027-11-30 lub 2026-08-31)\n' +
+      'Przeanalizuj etykietę kartonu zbiorczego lub opakowania produktu farmaceutycznego. Wyodrębnij:\n' +
+      '- batchNumber (Numer serii po słowie Charge: / LOT: / Seria / Ch.-B. lub po znaczniku GS1 (10) - sam numer serii, np. 25E3475, FP00809, 2085, 25E1514, bez przedrostka)\n' +
+      '- expiryDate (Data ważności po słowie Verfall: lub MHD: lub EXP / BBE w formacie RRRR-MM-DD. UWAGA: zignoruj datę produkcji Prod.:! Jeśli podano tylko miesiąc i rok, np. 08-2028, 10/2027, 05/2027 lub 03-2028, oblicz i wpisz dokładnie ostatni dzień tego miesiąca: np. 2028-08-31, 2027-10-31, 2027-05-31, 2028-03-31)\n' +
       '- gtin (kod EAN/GTIN 13-14 cyfr, jeśli widoczny)\n' +
-      '- productName (Nazwa handlowa produktu/leku, jeśli widoczna)\n' +
+      '- productName (Nazwa handlowa produktu z etykiety kartonu, np. OMNi-BiOTiC PANDA 30er, OMNi-LOGiC FIBRE 250g, OMNi-BiOTiC FLORA plus 14x2g, OMNi-BiOTiC 10 AAD Kids 20er)\n' +
       (targetProductName ? `Dodatkowa wskazówka: Szukany produkt z faktury to "${targetProductName}".\n` : '') +
       'Zwróć wynik jako JSON.';
 

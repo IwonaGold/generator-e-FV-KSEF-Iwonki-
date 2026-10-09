@@ -21,10 +21,10 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
 }) => {
   // Procentowe położenie i rozmiar ramki: x (0..100), y (0..100), width (10..100), height (10..100)
   const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number }>({
-    x: 20,
-    y: 50,
-    width: 55,
-    height: 18,
+    x: 10,
+    y: 12,
+    width: 78,
+    height: 36,
   });
 
   const [previewDataUrl, setPreviewDataUrl] = useState<string>('');
@@ -58,12 +58,12 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
   if (!isOpen) return null;
 
   const presets = [
+    { label: 'Etykieta kartonu – góra (Nazwa / Charge / Verfall / MHD)', area: { x: 10, y: 12, width: 78, height: 36 } },
+    { label: 'Całe zdjęcie (automatyczna detekcja białej etykiety kartonu)', area: { x: 0, y: 0, width: 100, height: 100 } },
     { label: 'Środkowa ścianka / Klapa (czarny nadruk LOT / BBE)', area: { x: 20, y: 50, width: 55, height: 18 } },
-    { label: 'Całe zdjęcie (biała naklejka LOT / MHD / MDH)', area: { x: 0, y: 0, width: 100, height: 100 } },
     { label: 'Spód opakowania (tusz inkjet)', area: { x: 5, y: 60, width: 90, height: 35 } },
     { label: 'Okolice kodu kreskowego', area: { x: 45, y: 25, width: 50, height: 60 } },
     { label: 'Bok / Etykieta', area: { x: 5, y: 20, width: 90, height: 50 } },
-    { label: 'Góra opakowania', area: { x: 5, y: 5, width: 90, height: 40 } },
   ];
 
   return (
@@ -227,7 +227,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
               </div>
 
               <div className="text-[11px] text-slate-500 bg-emerald-50/60 border border-emerald-200/80 p-2 rounded-lg">
-                💡 <strong>Wskazówka:</strong> Filtr automatycznie rozpoznaje białe naklejki (LOT / MHD / MDH) oraz wyodrębnia czarny nadruk punktowy na ciemnych/kolorowych ściankach opakowań (LOT / BBE).
+                💡 <strong>Wskazówka:</strong> Filtr automatycznie rozpoznaje białe etykiety kartonów zbiorczych (<strong>Charge:</strong> / <strong>Verfall:</strong> / <strong>MHD:</strong>) oraz wyodrębnia nadruk na opakowaniach jednostkowych (LOT / BBE).
               </div>
             </div>
           </div>
@@ -250,7 +250,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Odczytaj LOT oraz MHD / BBE z tego fragmentu</span>
+            <span>Odczytaj Charge / LOT oraz Verfall / MHD z tego fragmentu</span>
           </button>
         </div>
       </div>

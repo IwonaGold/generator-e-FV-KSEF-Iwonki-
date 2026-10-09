@@ -140,7 +140,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           for (const sp of combinedPhotos) {
             if (!sp?.id || !sp?.dataUrl || existingIds.has(sp.id)) continue;
             existingIds.add(sp.id);
-            const reconstructedFile = dataUrlToFile(sp.dataUrl, sp.fileName || 'opakowanie.jpg');
+            const reconstructedFile = dataUrlToFile(sp.dataUrl, sp.fileName || 'karton.jpg');
             const isCoordinator = getWorkstationRole() === 'coordinator';
             const rec: PhotoVerificationItem = {
               id: sp.id,
@@ -153,11 +153,11 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
               matchedInvoiceItemId: defaultMatchedItem?.id,
               matchedInvoiceItemIndex: isSingleItem ? 1 : undefined,
               isConfidentProductMatch: isSingleItem,
-              isAnalyzingProduct: isCoordinator && !isSingleItem,
+              isAnalyzingProduct: isCoordinator,
               batches: [],
             };
             toAdd.push(rec);
-            if (isCoordinator && !isSingleItem) {
+            if (isCoordinator) {
               newlyAddedForStage1.push(rec);
             }
           }
@@ -166,7 +166,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           if (includeSharedBuffer) {
             setSyncNotice(
               `📥 Odebrano z Magazynu ${toAdd.length} ${
-                toAdd.length === 1 ? 'nowe zdjęcie opakowania' : 'nowe zdjęcia opakowań'
+                toAdd.length === 1 ? 'nowe zdjęcie etykiety' : 'nowe zdjęcia etykiet'
               } i przypisano do tego zamówienia!`
             );
             setTimeout(() => setSyncNotice(null), 5500);
@@ -174,30 +174,59 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           return [...prev, ...toAdd];
         });
 
-        // Jeśli jesteśmy na Stanowisku 1 (Koordynator), automatycznie uruchom Etap 1 (rozpoznanie produktu) dla nowych zdjęć
+        // Automatycznie uruchom odczyt etykiety całego kartonu (Produkt + Charge + Verfall/MHD) dla nowych zdjęć
         for (const rec of newlyAddedForStage1) {
           try {
             const stage1Res = await runStage1ProductRecognition(rec.file, items);
             setPhotoItems((prev) =>
               prev.map((item) => {
                 if (item.id !== rec.id) return item;
-                if (
-                  item.status === 'LOT_MHD_PENDING' ||
-                  item.status === 'LOT_MHD_READ' ||
-                  item.status === 'CONFIRMED' ||
-                  item.status === 'MANUAL_VERIFICATION_REQUIRED'
-                ) {
+                if (item.status === 'CONFIRMED') {
                   return { ...item, isAnalyzingProduct: false };
                 }
-                const isMatched = Boolean(stage1Res.matchedInvoiceItemId && stage1Res.isConfident);
+                const matchedId = stage1Res.matchedInvoiceItemId || item.matchedInvoiceItemId;
+                const matchedIdx = stage1Res.matchedInvoiceItemIndex || item.matchedInvoiceItemIndex;
+                const matchedObj = items.find((it) => it.id === matchedId);
+                const isMatched = Boolean(matchedId && (stage1Res.isConfident || item.isConfidentProductMatch));
+
+                const hasLot = Boolean(stage1Res.extractedLot);
+                const hasMhd = Boolean(stage1Res.extractedMhd);
+                const hasAnyBatchData = hasLot || hasMhd;
+
+                const autoBatches: BatchRecord[] = hasAnyBatchData
+                  ? [
+                      {
+                        id: item.batches[0]?.id || `batch-${Date.now()}-0`,
+                        lot: stage1Res.extractedLot || item.batches[0]?.lot || '',
+                        mhd: stage1Res.extractedMhd || item.batches[0]?.mhd || '',
+                        quantity: matchedObj?.quantity || item.batches[0]?.quantity || 1,
+                        lotConfidence: hasLot,
+                        mhdConfidence: hasMhd,
+                        status: hasLot && hasMhd ? 'PEWNY' : 'DO WERYFIKACJI',
+                      },
+                    ]
+                  : item.batches;
+
+                let nextStatus = item.status;
+                if (hasLot && hasMhd) {
+                  nextStatus = 'LOT_MHD_READ';
+                } else if (hasAnyBatchData) {
+                  nextStatus = 'MANUAL_VERIFICATION_REQUIRED';
+                } else {
+                  nextStatus = isMatched ? 'PRODUCT_MATCHED' : 'PRODUCT_PENDING';
+                }
+
                 return {
                   ...item,
-                  status: isMatched ? 'PRODUCT_MATCHED' : 'PRODUCT_PENDING',
-                  recognizedProductName: stage1Res.recognizedProductName,
-                  recognizedGtin: stage1Res.recognizedGtin,
-                  matchedInvoiceItemId: stage1Res.matchedInvoiceItemId,
-                  matchedInvoiceItemIndex: stage1Res.matchedInvoiceItemIndex,
-                  isConfidentProductMatch: stage1Res.isConfident,
+                  status: nextStatus,
+                  recognizedProductName:
+                    stage1Res.recognizedProductName || item.recognizedProductName,
+                  recognizedGtin: stage1Res.recognizedGtin || item.recognizedGtin,
+                  matchedInvoiceItemId: matchedId,
+                  matchedInvoiceItemIndex: matchedIdx,
+                  isConfidentProductMatch: isMatched,
+                  batches: autoBatches,
+                  rawOcrText: stage1Res.rawOcrText || item.rawOcrText,
                   isAnalyzingProduct: false,
                 };
               })
@@ -226,9 +255,9 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   }, [orderPackagingPhotos?.length, syncPackagingPhotosFromCloud]);
 
   /**
-   * Dodaje nowe zdjęcia i przypisuje je bezpośrednio do bieżącego zamówienia na karcie:
+   * Dodaje nowe zdjęcia (np. etykiety całego kartonu) i przypisuje je bezpośrednio do bieżącego zamówienia na karcie:
    * - Na Stanowisku 2 (Magazyn): kompresuje, przypisuje do zamówienia i wysyła do Chmury Live dla Koordynatora.
-   * - Na Stanowisku 1 (Koordynator): przypisuje trwale do bieżącego zamówienia i uruchamia Etap 1 (Rozpoznanie produktu).
+   * - Na Stanowisku 1 (Koordynator): przypisuje trwale do bieżącego zamówienia i automatycznie odczytuje Produkt + Charge + Verfall/MHD.
    */
   const handleAddNewPhotos = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'));
@@ -249,7 +278,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
       matchedInvoiceItemId: defaultMatchedItem?.id,
       matchedInvoiceItemIndex: isSingleItem ? 1 : undefined,
       isConfidentProductMatch: isSingleItem,
-      isAnalyzingProduct: currentRole === 'coordinator' && !isSingleItem,
+      isAnalyzingProduct: currentRole === 'coordinator',
       batches: [],
     }));
 
@@ -281,7 +310,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           await uploadSharedPackagingPhotos(compressedList, getWorkstationName());
           setSyncNotice(
             `☁️ Wysłano ${compressedList.length} ${
-              compressedList.length === 1 ? 'zdjęcie opakowania' : 'zdjęcia opakowań'
+              compressedList.length === 1 ? 'zdjęcie etykiety kartonu' : 'zdjęcia etykiet kartonów'
             } do Stanowiska 1 (Koordynator) i przypisano do zamówienia!`
           );
           setTimeout(() => setSyncNotice(null), 6000);
@@ -291,8 +320,8 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
       }
     })();
 
-    // Jeśli to Stanowisko 2 (Magazyn) lub faktura ma tylko 1 pozycję, nie uruchamiamy Etapu 1 po stronie Magazynu
-    if (currentRole === 'warehouse' || isSingleItem) {
+    // Jeśli to Stanowisko 2 (Magazyn), nie uruchamiamy OCR po stronie Magazynu
+    if (currentRole === 'warehouse') {
       return;
     }
 
@@ -304,29 +333,56 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           prev.map((item) => {
             if (item.id !== record.id) return item;
 
-            // Jeśli użytkownik już ręcznie przypisał pozycję lub przeszedł dalej, nie cofaj statusu!
-            if (
-              item.status === 'LOT_MHD_PENDING' ||
-              item.status === 'LOT_MHD_READ' ||
-              item.status === 'CONFIRMED' ||
-              item.status === 'MANUAL_VERIFICATION_REQUIRED'
-            ) {
+            if (item.status === 'CONFIRMED') {
               return {
                 ...item,
                 isAnalyzingProduct: false,
               };
             }
 
-            const isMatched = Boolean(stage1Res.matchedInvoiceItemId && stage1Res.isConfident);
+            const matchedId = stage1Res.matchedInvoiceItemId || item.matchedInvoiceItemId;
+            const matchedIdx = stage1Res.matchedInvoiceItemIndex || item.matchedInvoiceItemIndex;
+            const matchedObj = items.find((it) => it.id === matchedId);
+            const isMatched = Boolean(matchedId && (stage1Res.isConfident || item.isConfidentProductMatch));
+
+            const hasLot = Boolean(stage1Res.extractedLot);
+            const hasMhd = Boolean(stage1Res.extractedMhd);
+            const hasAnyBatchData = hasLot || hasMhd;
+
+            const autoBatches: BatchRecord[] = hasAnyBatchData
+              ? [
+                  {
+                    id: item.batches[0]?.id || `batch-${Date.now()}-0`,
+                    lot: stage1Res.extractedLot || item.batches[0]?.lot || '',
+                    mhd: stage1Res.extractedMhd || item.batches[0]?.mhd || '',
+                    quantity: matchedObj?.quantity || item.batches[0]?.quantity || 1,
+                    lotConfidence: hasLot,
+                    mhdConfidence: hasMhd,
+                    status: hasLot && hasMhd ? 'PEWNY' : 'DO WERYFIKACJI',
+                  },
+                ]
+              : item.batches;
+
+            let nextStatus = item.status;
+            if (hasLot && hasMhd) {
+              nextStatus = 'LOT_MHD_READ';
+            } else if (hasAnyBatchData) {
+              nextStatus = 'MANUAL_VERIFICATION_REQUIRED';
+            } else {
+              nextStatus = isMatched ? 'PRODUCT_MATCHED' : 'PRODUCT_PENDING';
+            }
 
             return {
               ...item,
-              status: isMatched ? 'PRODUCT_MATCHED' : 'PRODUCT_PENDING',
-              recognizedProductName: stage1Res.recognizedProductName,
-              recognizedGtin: stage1Res.recognizedGtin,
-              matchedInvoiceItemId: stage1Res.matchedInvoiceItemId,
-              matchedInvoiceItemIndex: stage1Res.matchedInvoiceItemIndex,
-              isConfidentProductMatch: stage1Res.isConfident,
+              status: nextStatus,
+              recognizedProductName:
+                stage1Res.recognizedProductName || item.recognizedProductName,
+              recognizedGtin: stage1Res.recognizedGtin || item.recognizedGtin,
+              matchedInvoiceItemId: matchedId,
+              matchedInvoiceItemIndex: matchedIdx,
+              isConfidentProductMatch: isMatched,
+              batches: autoBatches,
+              rawOcrText: stage1Res.rawOcrText || item.rawOcrText,
               isAnalyzingProduct: false,
             };
           })
@@ -351,9 +407,11 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
     setPhotoItems((prev) =>
       prev.map((item) => {
         if (item.id !== photoId) return item;
+        const hasExistingBatch =
+          item.batches.length > 0 && Boolean(item.batches[0].lot || item.batches[0].mhd);
         return {
           ...item,
-          status: 'LOT_MHD_PENDING',
+          status: hasExistingBatch ? 'LOT_MHD_READ' : 'LOT_MHD_PENDING',
         };
       })
     );
@@ -362,8 +420,8 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
 
   /**
    * RĘCZNA ZMIANA DOPASOWANIA PRODUKTU
-   * Wybranie pozycji z listy rozwijanej natychmiast zatwierdza przypisanie (LOT_MHD_PENDING)
-   * bez zmuszania użytkownika do ponownego, drugiego klikania przycisku zatwierdzenia.
+   * Wybranie pozycji z listy rozwijanej natychmiast przypisuje produkt,
+   * zachowując już odczytane z etykiety kartonu wartości Charge: (LOT) oraz Verfall: / MHD:.
    */
   const handleManualProductSelect = (photoId: string, invoiceItemId: string) => {
     if (!invoiceItemId) return;
@@ -373,13 +431,29 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
     setPhotoItems((prev) =>
       prev.map((item) => {
         if (item.id !== photoId) return item;
+        const hasExistingBatch =
+          item.batches.length > 0 && Boolean(item.batches[0].lot || item.batches[0].mhd);
+        const updatedBatches = hasExistingBatch
+          ? item.batches.map((b, idx) =>
+              idx === 0 && selectedItem?.quantity
+                ? { ...b, quantity: selectedItem.quantity }
+                : b
+            )
+          : item.batches;
+        const nextStatus = hasExistingBatch
+          ? item.batches[0].lot && item.batches[0].mhd
+            ? 'LOT_MHD_READ'
+            : 'MANUAL_VERIFICATION_REQUIRED'
+          : 'LOT_MHD_PENDING';
+
         return {
           ...item,
           matchedInvoiceItemId: invoiceItemId,
           matchedInvoiceItemIndex: itemIndex !== -1 ? itemIndex + 1 : undefined,
-          recognizedProductName: selectedItem?.name || item.recognizedProductName,
-          recognizedGtin: selectedItem?.gtin || item.recognizedGtin,
-          status: 'LOT_MHD_PENDING',
+          recognizedProductName: item.recognizedProductName || selectedItem?.name || '',
+          recognizedGtin: item.recognizedGtin || selectedItem?.gtin || '',
+          batches: updatedBatches,
+          status: nextStatus,
           isConfidentProductMatch: true,
           isAnalyzingProduct: false,
         };
@@ -621,10 +695,12 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Camera className="w-4 h-4 text-fuchsia-600" />
-                <span>Zdjęcia Opakowań – Weryfikacja Produktu i Odczyt LOT/MHD (OCR)</span>
+                <span>
+                  Zdjęcia Etykiet Kartonów / Opakowań – Dopasowanie Produktu i Odczyt Charge / Verfall / MHD (OCR)
+                </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Magazyn wgrywa zdjęcia opakowań ➔ Koordynator przypisuje je do pozycji faktury i weryfikuje serie LOT oraz daty MHD
+                Wgraj zdjęcie etykiety całego kartonu ➔ System automatycznie dopasuje produkt (z możliwością edycji) oraz odczyta serię (<code>Charge:</code> / <code>LOT:</code>) i datę ważności (<code>Verfall:</code> / <code>MHD:</code> — ostatni dzień miesiąca)
               </p>
             </div>
           </div>
@@ -643,8 +719,8 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
               <Camera className="w-4 h-4" />
               <span>
                 {workstationRole === 'warehouse'
-                  ? '📦 Dodaj zdjęcia z Magazynu'
-                  : '📷 Dodaj zdjęcie produktu'}
+                  ? '📦 Dodaj zdjęcia etykiet z Magazynu'
+                  : '📷 Dodaj zdjęcie etykiety kartonu'}
               </span>
             </button>
           )}
@@ -666,7 +742,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="Stanowisko 1: Przypisuje zdjęcia z Magazynu do pozycji na fakturze i weryfikuje LOT/MHD"
+              title="Stanowisko 1: Przypisuje zdjęcia z Magazynu do pozycji na fakturze i weryfikuje Charge/LOT oraz Verfall/MHD"
             >
               <span>👩‍💼 1. Koordynator (Przypisanie i weryfikacja)</span>
             </button>
@@ -678,9 +754,9 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                   ? 'bg-amber-600 text-white shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="Stanowisko 2: Tylko wgrywa zdjęcia opakowań do Chmury Live dla Koordynatora"
+              title="Stanowisko 2: Wgrywa zdjęcia etykiet kartonów do Chmury Live dla Koordynatora"
             >
-              <span>📦 2. Magazyn (Wgrywanie zdjęć opakowań)</span>
+              <span>📦 2. Magazyn (Wgrywanie zdjęć etykiet)</span>
             </button>
           </div>
         </div>
@@ -691,7 +767,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
             onClick={() => syncPackagingPhotosFromCloud(true)}
             disabled={isSyncingPhotos}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
-            title="Pobierz najnowsze zdjęcia opakowań wgrane przez Stanowisko 2 (Magazyn)"
+            title="Pobierz najnowsze zdjęcia etykiet kartonów wgrane przez Stanowisko 2 (Magazyn)"
           >
             <RefreshCw className={`w-3 h-3 ${isSyncingPhotos ? 'animate-spin' : ''}`} />
             <span>Odbierz zdjęcia z Magazynu</span>
@@ -722,10 +798,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           <span className="text-lg">📦</span>
           <div>
             <p className="font-bold text-amber-900">
-              Jesteś w trybie Stanowiska 2: Magazyn (Wgrywanie zdjęć opakowań)
+              Jesteś w trybie Stanowiska 2: Magazyn (Wgrywanie zdjęć etykiet kartonów)
             </p>
             <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-              Dodaj poniżej zdjęcia opakowań z widocznym numerem serii (<code>LOT</code>) i datą ważności (<code>MHD</code>). Zdjęcia zostaną <strong>automatycznie przesłane przez Chmurę Live do Stanowiska 1 (Koordynator)</strong>, który przypisze je do odpowiednich pozycji na fakturze i zweryfikuje dane.
+              Dodaj poniżej zdjęcia etykiety całego kartonu z widoczną nazwą produktu, numerem serii (<code>Charge:</code> / <code>LOT:</code>) i datą ważności (<code>Verfall:</code> / <code>MHD:</code>). Zdjęcia zostaną <strong>automatycznie przesłane przez Chmurę Live do Stanowiska 1 (Koordynator)</strong>, gdzie system automatycznie odczyta dane i dopasuje produkt.
             </p>
           </div>
         </div>
@@ -810,23 +886,23 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           </div>
           <p className="text-sm font-bold text-slate-800">
             {workstationRole === 'warehouse'
-              ? '📦 Kliknij lub upuść zdjęcia opakowań z Magazynu (trafią od razu do Koordynatora)'
-              : 'Kliknij „📷 Dodaj zdjęcie produktu” lub upuść zdjęcia opakowań'}
+              ? '📦 Kliknij lub upuść zdjęcia etykiet kartonów z Magazynu (trafią od razu do Koordynatora)'
+              : 'Kliknij „📷 Dodaj zdjęcie etykiety kartonu” lub upuść zdjęcia tutaj'}
           </p>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
             {workstationRole === 'warehouse'
-              ? 'Wystarczy zrobić zdjęcia opakowań z widocznym nadrukiem LOT i MHD. Przypisaniem do pozycji i weryfikacją zajmie się Stanowisko 1 (Koordynator).'
-              : 'W Etapie 1 przypisujesz produkt z faktury. Dopiero po zatwierdzeniu uruchomisz analizę wizualną nadruku LOT / MHD z możliwością powiększenia fragmentu (Zoom).'}
+              ? 'Zrób zdjęcie białej etykiety całego kartonu z widoczną nazwą, serią (Charge:) oraz datą ważności (Verfall: / MHD:).'
+              : 'System automatycznie wykryje białą etykietę kartonu, dopasuje produkt z zamówienia (z możliwością Twojej edycji) oraz odczyta serię Charge: i datę ważności Verfall: / MHD: (ostatni dzień miesiąca).'}
           </p>
         </div>
       )}
 
-      {/* LISTA ZDJĘĆ Z DWUETAPOWYM PROCESEM */}
+      {/* LISTA ZDJĘĆ Z AUTOMATYCZNYM ODCZYTEM ETYKIETY KARTONU */}
       {photoItems.length > 0 && (
         <div className="mt-4 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-900">
-              Przesłane zdjęcia w Chmurze Live ({photoItems.length}):
+              Przesłane zdjęcia etykiet w Chmurze Live ({photoItems.length}):
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -922,7 +998,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                             Plik: <strong>{photo.fileName}</strong>
                           </p>
                           <p className="text-[11px] text-slate-500">
-                            Stanowisko 1 (Koordynator) przypisze to opakowanie do pozycji zamówienia i zweryfikuje serię <code>LOT</code> oraz datę ważności <code>MHD</code>.
+                            Stanowisko 1 (Koordynator) przypisze tę etykietę kartonu do pozycji zamówienia i zweryfikuje serię <code>Charge:</code> oraz datę ważności <code>Verfall:</code> / <code>MHD:</code>.
                           </p>
                         </div>
                         <button
@@ -936,40 +1012,38 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                     ) : (
                     <div className="flex-1 w-full space-y-3">
                       {/* ========================================================
-                          ETAP 1: ROZPOZNANIE I ZATWIERDZENIE PRODUKTU
+                          SEKCJA PRODUKTU: AUTOMATYCZNE DOPASOWANIE Z MOŻLIWOŚCIĄ EDYCJI
                           ======================================================== */}
                       <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
                             <Layers className="w-3 h-3 text-emerald-600" />
-                            Etap 1 (Koordynator): Przypisanie zdjęcia opakowania do pozycji faktury
+                            Dopasowanie produktu z etykiety kartonu do pozycji zamówienia (możliwość edycji)
                           </span>
 
                           {photo.isAnalyzingProduct ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                               <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>Rozpoznawanie produktu...</span>
+                              <span>Odczytywanie etykiety kartonu (Produkt + Charge + Verfall/MHD)...</span>
                             </span>
-                          ) : photo.status === 'PRODUCT_PENDING' ? (
+                          ) : !photo.matchedInvoiceItemId ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
                               <AlertTriangle className="w-3 h-3" />
-                              Wybierz pozycję ręcznie
-                            </span>
-                          ) : photo.status === 'PRODUCT_MATCHED' ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full">
-                              Dopasowano produkt (wymaga zatwierdzenia)
+                              Wybierz pozycję z listy poniżej
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
                               <Check className="w-3 h-3" />
-                              Produkt zatwierdzony
+                              Produkt dopasowany (możesz zmienić poniżej)
                             </span>
                           )}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs mb-2.5">
                           <div>
-                            <span className="text-[10px] text-slate-500 block">Rozpoznany produkt:</span>
+                            <span className="text-[10px] text-slate-500 block">
+                              Rozpoznany produkt z etykiety kartonu:
+                            </span>
                             <span className="font-bold text-slate-900 truncate block">
                               {photo.recognizedProductName || 'W trakcie analizy...'}
                             </span>
@@ -978,93 +1052,55 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                           <div>
                             <span className="text-[10px] text-slate-500 block">GTIN / EAN:</span>
                             <span className="font-mono font-medium text-slate-800 block">
-                              {photo.recognizedGtin || 'Brak kodu kreskowego'}
-                            </span>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between text-[10px] text-slate-500 mb-0.5">
-                              <span>Dopasowana pozycja faktury:</span>
-                              {photo.matchedInvoiceItemId && changingMatchPhotoId !== photo.id && photo.status !== 'CONFIRMED' && (
-                                <button
-                                  type="button"
-                                  onClick={() => setChangingMatchPhotoId(photo.id)}
-                                  className="text-[10px] font-semibold text-rose-600 hover:text-rose-800 underline cursor-pointer"
-                                >
-                                  Zmień
-                                </button>
-                              )}
-                            </div>
-                            <span className="font-bold text-emerald-900 block truncate">
-                              {matchedProduct
-                                ? `${photo.matchedInvoiceItemIndex || 1}. ${matchedProduct.name}`
-                                : '— Wybierz pozycję —'}
+                              {photo.recognizedGtin || matchedProduct?.gtin || 'Brak kodu kreskowego'}
                             </span>
                           </div>
                         </div>
 
-                        {/* Potwierdzenie lub zmiana pozycji */}
-                        {(photo.status === 'PRODUCT_PENDING' || photo.status === 'PRODUCT_MATCHED' || changingMatchPhotoId === photo.id) && (
-                          <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-                            {changingMatchPhotoId === photo.id || !photo.matchedInvoiceItemId ? (
-                              <div className="w-full flex items-center gap-2">
-                                <select
-                                  value={photo.matchedInvoiceItemId || ''}
-                                  onChange={(e) => handleManualProductSelect(photo.id, e.target.value)}
-                                  className="w-full text-xs font-semibold text-slate-900 bg-white border border-slate-300 rounded-lg py-1.5 px-2.5 focus:border-emerald-600 focus:outline-none"
-                                >
-                                  <option value="">-- Wybierz pozycję z faktury --</option>
-                                  {items.map((it, idx) => (
-                                    <option key={it.id} value={it.id}>
-                                      Pozycja {idx + 1}: {it.name} (GTIN: {it.gtin || 'brak'}, {it.quantity} szt.)
-                                    </option>
-                                  ))}
-                                </select>
-                                {changingMatchPhotoId === photo.id && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setChangingMatchPhotoId(null)}
-                                    className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer shrink-0"
-                                  >
-                                    Anuluj
-                                  </button>
-                                )}
-                              </div>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => handleConfirmProductMatch(photo.id)}
-                                  disabled={!photo.matchedInvoiceItemId}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors cursor-pointer"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>✓ ZATWIERDŹ DOPASOWANIE</span>
-                                </button>
+                        {/* Zawsze widoczna i edytowalna lista wyboru dopasowanego produktu z zamówienia */}
+                        <div className="pt-2 border-t border-slate-200/90">
+                          <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                            Dopasowana pozycja z zamówienia (możesz w każdej chwili zmienić ręcznie):
+                          </label>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              value={photo.matchedInvoiceItemId || ''}
+                              onChange={(e) => handleManualProductSelect(photo.id, e.target.value)}
+                              className="flex-1 min-w-[240px] text-xs font-bold text-emerald-950 bg-white border-2 border-emerald-500/80 rounded-lg py-1.5 px-2.5 focus:border-emerald-700 focus:outline-none shadow-2xs cursor-pointer"
+                            >
+                              <option value="">-- Wybierz lub zmień pozycję z zamówienia --</option>
+                              {items.map((it, idx) => (
+                                <option key={it.id} value={it.id}>
+                                  Pozycja {idx + 1}: {it.name} (GTIN: {it.gtin || 'brak'}, {it.quantity} szt.)
+                                </option>
+                              ))}
+                            </select>
 
-                                <button
-                                  onClick={() => setChangingMatchPhotoId(photo.id)}
-                                  className="text-xs font-medium text-slate-600 hover:text-slate-900 underline cursor-pointer"
-                                >
-                                  ✕ ZMIEŃ DOPASOWANIE
-                                </button>
-                              </>
+                            {photo.status === 'PRODUCT_MATCHED' && photo.matchedInvoiceItemId && (
+                              <button
+                                onClick={() => handleConfirmProductMatch(photo.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>✓ Przejdź do Charge / MHD</span>
+                              </button>
                             )}
                           </div>
-                        )}
+                        </div>
                       </div>
 
                       {/* ========================================================
-                          ETAP 2: PRZYCISK ODCZYTU LOT I MHD
-                          (Odblokowywany WYŁĄCZNIE po zatwierdzeniu produktu)
+                          ETAP 2: PRZYCISK ODCZYTU CHARGE / LOT I VERFALL / MHD
+                          (Gdyby nie zostały odczytane automatycznie w Etapie 1)
                           ======================================================== */}
                       {photo.status === 'LOT_MHD_PENDING' && (
                         <div className="p-3.5 rounded-lg bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div>
                             <span className="text-xs font-bold text-emerald-950 block">
-                              Etap 2: Rzeczywisty odczyt numeru serii (LOT) oraz daty ważności (MHD / BBE)
+                              Odczyt numeru serii (Charge: / LOT:) oraz daty ważności (Verfall: / MHD:)
                             </span>
                             <span className="text-[11px] text-emerald-800">
-                              System przeszuka nadruki LOT: oraz daty MHD: / BBE: (zawsze ostatni dzień miesiąca).
+                              System przeszuka etykietę kartonu pod kątem <code>Charge:</code> oraz <code>Verfall:</code> / <code>MHD:</code> (zawsze ostatni dzień miesiąca).
                             </span>
                           </div>
 
@@ -1101,12 +1137,12 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                               {photo.isAnalyzingLotMhd ? (
                                 <>
                                   <Loader2 className="w-4 h-4 animate-spin" />
-                                  <span>Analiza wizualna zdjęcia...</span>
+                                  <span>Analiza wizualna etykiety...</span>
                                 </>
                               ) : (
                                 <>
                                   <Search className="w-4 h-4" />
-                                  <span>🔍 Odczytaj LOT i MHD / BBE</span>
+                                  <span>🔍 Odczytaj Charge i Verfall / MHD</span>
                                 </>
                               )}
                             </button>
@@ -1121,11 +1157,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                         <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs space-y-2">
                           <div className="flex items-center gap-2 text-amber-900 font-semibold">
                             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>Nie znaleziono oznaczenia LOT/MHD na przypisanym zdjęciu.</span>
+                            <span>Nie znaleziono oznaczenia Charge:/LOT: ani Verfall:/MHD: na zdjęciu.</span>
                           </div>
                           <p className="text-[11px] text-amber-800">
-                            Nadruk może być niewyraźny lub znajdować się w innym miejscu kartonika.
-                            Możesz powiększyć fragment zdjęcia z tuszem lub wpisać dane ręcznie.
+                            Etykieta może być niewyraźna lub pod kątem. Możesz zaznaczyć białą etykietę w oknie Zoom lub wpisać dane ręcznie.
                           </p>
                           <div className="flex items-center gap-2 pt-1">
                             <button
@@ -1164,7 +1199,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                       )}
 
                       {/* ========================================================
-                          WYNIK ODCZYTU (LOT / MHD / ILOŚĆ) LUB FORMULARZ RĘCZNY
+                          WYNIK ODCZYTU (CHARGE / VERFALL / MHD / ILOŚĆ) LUB FORMULARZ RĘCZNY
                           ======================================================== */}
                       {(photo.status === 'LOT_MHD_READ' ||
                         photo.status === 'MANUAL_VERIFICATION_REQUIRED' ||
@@ -1172,22 +1207,6 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                         photo.isManualEntry) &&
                         (!hasNoDataAtAll || photo.isManualEntry) && (
                           <div className="space-y-2.5">
-                            {/* Nagłówek statusu produktu i pozycji */}
-                            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <span className="text-[10px] text-slate-500 block">Produkt:</span>
-                                <span className="font-bold text-slate-900">
-                                  {matchedProduct?.name || photo.recognizedProductName}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-slate-500 block">Pozycja faktury:</span>
-                                <span className="font-bold text-emerald-800">
-                                  {photo.matchedInvoiceItemIndex || 1}
-                                </span>
-                              </div>
-                            </div>
-
                             {photo.batches.map((batch, bIndex) => {
                               const hasLotValue = Boolean(batch.lot && batch.lot.trim() !== '');
                               const hasMhdValue = Boolean(batch.mhd && batch.mhd.trim() !== '');
@@ -1204,7 +1223,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                   <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-2">
                                       <span className="text-xs font-bold text-slate-900">
-                                        Partia #{bIndex + 1}
+                                        Partia #{bIndex + 1} (Etykieta kartonu)
                                       </span>
                                       <span
                                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -1214,7 +1233,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                         }`}
                                       >
                                         {batch.status === 'PEWNY' ? (
-                                          '✓ PEWNY'
+                                          '✓ ODCZYTANO Z ETYKIETY'
                                         ) : (
                                           <>
                                             <AlertTriangle className="w-3 h-3" />
@@ -1235,10 +1254,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                   </div>
 
                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                    {/* LOT */}
+                                    {/* SERIA: Charge: / LOT: */}
                                     <div>
                                       <label className="block text-[10px] font-bold text-slate-600 mb-0.5 flex items-center justify-between">
-                                        <span>LOT:</span>
+                                        <span>Seria (Charge: / LOT:):</span>
                                         {hasLotValue ? (
                                           <span className="text-emerald-700 font-bold">
                                             {batch.lot} ✓
@@ -1255,15 +1274,15 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                         onChange={(e) =>
                                           handleUpdateBatchField(photo.id, batch.id, 'lot', e.target.value)
                                         }
-                                        placeholder="Wpisz LOT (np. 24G019A)"
+                                        placeholder="np. 25E3475, FP00809, 2085"
                                         className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded px-2.5 py-1.5 focus:border-emerald-600 focus:outline-none"
                                       />
                                     </div>
 
-                                    {/* MHD / BBE */}
+                                    {/* DATA WAŻNOŚCI: Verfall: / MHD: */}
                                     <div>
                                       <label className="block text-[10px] font-bold text-slate-600 mb-0.5 flex items-center justify-between">
-                                        <span>MHD / BBE (Data ważności):</span>
+                                        <span>Data ważności (Verfall: / MHD:):</span>
                                         {hasMhdValue ? (
                                           <span className="text-emerald-700 font-bold">
                                             {formatDateToDisplay(batch.mhd)} ✓
@@ -1287,7 +1306,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                               handleUpdateBatchField(photo.id, batch.id, 'mhd', (e.target as HTMLInputElement).value);
                                             }
                                           }}
-                                          placeholder="np. 11/2027, 06.27, 30.06.2027"
+                                          placeholder="np. 08-2028, 10/2027 (ostatni dzień m-ca)"
                                           className="w-full text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded px-2.5 py-1.5 focus:border-emerald-600 focus:outline-none"
                                         />
                                         <input
@@ -1303,7 +1322,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                       {hasMhdValue ? (
                                         <div className="mt-1 flex flex-wrap items-center gap-2">
                                           <span className="text-[10px] text-emerald-800 font-medium">
-                                            W fakturze KSeF: <strong>{batch.mhd}</strong>
+                                            W fakturze KSeF (ostatni dzień m-ca): <strong>{batch.mhd}</strong>
                                           </span>
                                           {(() => {
                                             const evalRes = evaluateShelfLife(batch.mhd, new Date(), shelfLifeRule.minMonths);
@@ -1333,7 +1352,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                                         </div>
                                       ) : (
                                         <span className="text-[10px] text-slate-500 mt-0.5 block">
-                                          Wpisz np. 11/2027 (przeliczy na ostatni dzień m-ca)
+                                          Wpisz np. 08-2028 lub 10/2027 (automatycznie przypisze ostatni dzień miesiąca)
                                         </span>
                                       )}
                                     </div>
