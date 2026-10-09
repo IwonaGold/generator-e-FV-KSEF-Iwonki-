@@ -21,10 +21,10 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
 }) => {
   // Procentowe położenie i rozmiar ramki: x (0..100), y (0..100), width (10..100), height (10..100)
   const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number }>({
-    x: 10,
-    y: 60,
-    width: 80,
-    height: 35,
+    x: 20,
+    y: 50,
+    width: 55,
+    height: 18,
   });
 
   const [previewDataUrl, setPreviewDataUrl] = useState<string>('');
@@ -58,11 +58,12 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
   if (!isOpen) return null;
 
   const presets = [
+    { label: 'Środkowa ścianka / Klapa (czarny nadruk LOT / BBE)', area: { x: 20, y: 50, width: 55, height: 18 } },
+    { label: 'Całe zdjęcie (biała naklejka LOT / MHD / MDH)', area: { x: 0, y: 0, width: 100, height: 100 } },
     { label: 'Spód opakowania (tusz inkjet)', area: { x: 5, y: 60, width: 90, height: 35 } },
     { label: 'Okolice kodu kreskowego', area: { x: 45, y: 25, width: 50, height: 60 } },
     { label: 'Bok / Etykieta', area: { x: 5, y: 20, width: 90, height: 50 } },
     { label: 'Góra opakowania', area: { x: 5, y: 5, width: 90, height: 40 } },
-    { label: 'Całe zdjęcie', area: { x: 0, y: 0, width: 100, height: 100 } },
   ];
 
   return (
@@ -98,7 +99,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Crosshair className="w-3.5 h-3.5 text-emerald-600" />
-              Szybkie strefy farmaceutyczne (kliknij strefę, w której znajduje się nadruk):
+              Szybkie strefy farmaceutyczne (kliknij strefę, w której znajduje się nadruk LOT / MHD / MDH / BBE):
             </label>
             <div className="flex flex-wrap gap-1.5">
               {presets.map((p, idx) => (
@@ -139,7 +140,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
                   }}
                 >
                   <span className="absolute -top-5 left-0 bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs">
-                    Obszar LOT/MHD
+                    Obszar LOT / MHD / BBE
                   </span>
                 </div>
               </div>
@@ -147,11 +148,37 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
               {/* Suwaki precyzyjnej regulacji */}
               <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                 <div>
-                  <label className="text-slate-500 block">Pozycja pionowa Y:</label>
+                  <label className="text-slate-500 block">Pozycja pozioma X ({cropArea.x}%):</label>
                   <input
                     type="range"
                     min="0"
                     max="80"
+                    value={cropArea.x}
+                    onChange={(e) =>
+                      setCropArea((prev) => ({ ...prev, x: parseInt(e.target.value, 10) }))
+                    }
+                    className="w-full accent-emerald-600 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block">Szerokość obszaru ({cropArea.width}%):</label>
+                  <input
+                    type="range"
+                    min="15"
+                    max="100"
+                    value={cropArea.width}
+                    onChange={(e) =>
+                      setCropArea((prev) => ({ ...prev, width: parseInt(e.target.value, 10) }))
+                    }
+                    className="w-full accent-emerald-600 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block">Pozycja pionowa Y ({cropArea.y}%):</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="85"
                     value={cropArea.y}
                     onChange={(e) =>
                       setCropArea((prev) => ({ ...prev, y: parseInt(e.target.value, 10) }))
@@ -160,10 +187,10 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-slate-500 block">Wysokość obszaru:</label>
+                  <label className="text-slate-500 block">Wysokość obszaru ({cropArea.height}%):</label>
                   <input
                     type="range"
-                    min="15"
+                    min="10"
                     max="100"
                     value={cropArea.height}
                     onChange={(e) =>
@@ -179,7 +206,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
             <div className="space-y-1.5">
               <span className="text-xs font-bold text-slate-700 block flex items-center gap-1">
                 <Contrast className="w-3.5 h-3.5 text-emerald-600" />
-                2. Powiększony fragment z podbitym kontrastem (wejście OCR):
+                2. Powiększony fragment z adaptacyjnym kontrastem (wejście OCR):
               </span>
 
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100 aspect-4/3 flex items-center justify-center relative shadow-inner">
@@ -200,7 +227,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
               </div>
 
               <div className="text-[11px] text-slate-500 bg-emerald-50/60 border border-emerald-200/80 p-2 rounded-lg">
-                💡 <strong>Wskazówka:</strong> Ustaw ramkę tak, aby drobny nadruk tuszowy (LOT, MHD, EXP) był dobrze widoczny i ostry na powiększeniu.
+                💡 <strong>Wskazówka:</strong> Filtr automatycznie rozpoznaje białe naklejki (LOT / MHD / MDH) oraz wyodrębnia czarny nadruk punktowy na ciemnych/kolorowych ściankach opakowań (LOT / BBE).
               </div>
             </div>
           </div>
@@ -223,7 +250,7 @@ export const PhotoZoomCropModal: React.FC<PhotoZoomCropModalProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Odczytaj LOT i MHD z tego fragmentu</span>
+            <span>Odczytaj LOT oraz MHD / BBE z tego fragmentu</span>
           </button>
         </div>
       </div>

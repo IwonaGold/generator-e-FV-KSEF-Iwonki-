@@ -275,6 +275,13 @@ export function validateForKSeF(input: KSeFGenerationInput): KSeFValidationIssue
         message: `Cena jednostkowa w pozycji ${rowNum} nie może być ujemna.`,
       });
     }
+    if (input.logisticsFormat !== 'none' && !item.expiryDate?.trim()) {
+      issues.push({
+        type: 'warning',
+        field: `Pozycja #${rowNum} (Data ważności)`,
+        message: `Brak daty ważności (MHD) w pozycji ${rowNum} (wymagana dla wybranego formatu logistycznego, np. Super-Pharm — osobne wiersze).`,
+      });
+    }
     if (input.logisticsFormat !== 'none' && !item.batchNumber?.trim()) {
       issues.push({
         type: 'warning',
@@ -390,18 +397,18 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
         </DodatkowyOpis>`);
           }
         } else if (input.logisticsFormat === 'separate_fields') {
-          if (item.batchNumber) {
-            dodatkowyOpisLines.push(`        <DodatkowyOpis>
-            <NrWiersza>${rowNum}</NrWiersza>
-            <Klucz>Seria</Klucz>
-            <Wartosc>${escapeXml(item.batchNumber)}</Wartosc>
-        </DodatkowyOpis>`);
-          }
           if (item.expiryDate) {
             dodatkowyOpisLines.push(`        <DodatkowyOpis>
             <NrWiersza>${rowNum}</NrWiersza>
             <Klucz>Data ważności</Klucz>
             <Wartosc>${escapeXml(item.expiryDate)}</Wartosc>
+        </DodatkowyOpis>`);
+          }
+          if (item.batchNumber) {
+            dodatkowyOpisLines.push(`        <DodatkowyOpis>
+            <NrWiersza>${rowNum}</NrWiersza>
+            <Klucz>Seria</Klucz>
+            <Wartosc>${escapeXml(item.batchNumber)}</Wartosc>
         </DodatkowyOpis>`);
           }
         }

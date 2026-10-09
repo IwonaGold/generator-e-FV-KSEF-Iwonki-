@@ -60,8 +60,9 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
     const effectiveOrderDate = ord.orderDate || ord.issueDate;
     const effectiveAvisoDate = ord.avisoDate || ord.deliveryDate || ord.issueDate;
 
-    // Normalizacja statusu doręczenia i logistyki
-    const isActuallyDelivered = Boolean(ord.isDelivered || ord.shippingStatus === 'delivered');
+    // Normalizacja statusu doręczenia i logistyki:
+    // Zamówienie przechodzi do ZAKOŃCZONE wyłącznie po zaznaczeniu "Towar dotarł do klienta" (isDelivered === true)
+    const isActuallyDelivered = Boolean(ord.isDelivered);
     let effectiveShippingStatus = ord.shippingStatus;
     if (isActuallyDelivered) {
       effectiveShippingStatus = 'delivered';
@@ -72,6 +73,11 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
         effectiveShippingStatus = 'registered';
       }
     }
+
+    const legacyStatus = ord.warehouseTaskStatus || 'none';
+    const effectiveProductTaskStatus =
+      ord.warehouseProductTaskStatus || (legacyStatus !== 'none' ? legacyStatus : 'none');
+    const effectiveParcelTaskStatus = ord.warehouseParcelTaskStatus || 'none';
 
     return {
       ...ord,
@@ -86,6 +92,10 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       paymentDueDate: effectiveDueDate,
       paymentStatus: effectivePaymentStatus,
       parcelPhotos: Array.isArray(ord.parcelPhotos) ? ord.parcelPhotos : [],
+      packagingPhotos: Array.isArray(ord.packagingPhotos) ? ord.packagingPhotos : [],
+      warehouseProductTaskStatus: effectiveProductTaskStatus,
+      warehouseParcelTaskStatus: effectiveParcelTaskStatus,
+      warehouseTaskStatus: legacyStatus,
       isDelivered: isActuallyDelivered,
       shippingStatus: effectiveShippingStatus,
     };
@@ -177,7 +187,7 @@ async function writeOrdersToBrowserStorage(orders: ArchivedOrder[]): Promise<voi
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(orders));
   } catch {
     try {
-      const lightOrders = orders.map((o) => ({ ...o, parcelPhotos: [] }));
+      const lightOrders = orders.map((o) => ({ ...o, parcelPhotos: [], packagingPhotos: [] }));
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lightOrders));
     } catch {
       // ignore quota error
@@ -230,15 +240,20 @@ function mergeServerAndLocalOrders(
       const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
       const newer = locTime >= srvTime ? loc : existing;
       const older = locTime >= srvTime ? existing : loc;
-      // Zachowaj zdjęcia przesyłki, jeśli w jednej z wersji są obecne
+      // Zachowaj zdjęcia przesyłki i opakowań, jeśli w jednej z wersji są obecne
       const mergedPhotos =
         newer.parcelPhotos && newer.parcelPhotos.length > 0
           ? newer.parcelPhotos
           : older.parcelPhotos || [];
+      const mergedPackagingPhotos =
+        newer.packagingPhotos && newer.packagingPhotos.length > 0
+          ? newer.packagingPhotos
+          : older.packagingPhotos || [];
       map.set(loc.id, {
         ...older,
         ...newer,
         parcelPhotos: mergedPhotos,
+        packagingPhotos: mergedPackagingPhotos,
       });
     }
   }
@@ -297,11 +312,16 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
         if (!s) return true;
         const mPhotos = m.parcelPhotos?.length || 0;
         const sPhotos = s.parcelPhotos?.length || 0;
-        if (mPhotos !== sPhotos) return true;
+        const mPkgPhotos = m.packagingPhotos?.length || 0;
+        const sPkgPhotos = s.packagingPhotos?.length || 0;
+        if (mPhotos !== sPhotos || mPkgPhotos !== sPkgPhotos) return true;
         return (
           (m.updatedAt || '') !== (s.updatedAt || '') ||
           m.shippingStatus !== s.shippingStatus ||
-          m.preparationStatus !== s.preparationStatus
+          m.preparationStatus !== s.preparationStatus ||
+          m.warehouseTaskStatus !== s.warehouseTaskStatus ||
+          m.warehouseProductTaskStatus !== s.warehouseProductTaskStatus ||
+          m.warehouseParcelTaskStatus !== s.warehouseParcelTaskStatus
         );
       });
 

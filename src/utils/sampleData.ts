@@ -80,7 +80,7 @@ export const PHARMACY_CHAINS: Record<string, ChainProfile> = {
     id: 'Super-Pharm',
     name: 'Super-Pharm (Super -Pharm Holding Sp. z o.o.)',
     standardPaymentDays: 45,
-    description: 'Nabywca z faktury 35/2026/KSEF · Format Osobne Pola (Data ważności + Seria) · Podmiot3 Magazyn Centralny',
+    description: 'Nabywca z faktury 35/2026/KSEF · Format Osobne Wiersze (Data ważności + Seria) · Podmiot3 Magazyn Centralny',
     defaultPriceMultiplier: 1.0,
     preferredLogisticsFormat: 'separate_fields',
     defaultOrderNumber: 'C008848894',

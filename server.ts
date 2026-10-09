@@ -452,7 +452,6 @@ Zwróć wynik jako czysty obiekt JSON.`;
  */
 import crypto from 'crypto';
 import zlib from 'zlib';
-import tls from 'tls';
 import { execSync } from 'child_process';
 
 const dataDir = path.join(process.cwd(), 'data');
@@ -462,8 +461,6 @@ const knowledgeFilePath = path.join(dataDir, 'knowledge_base.json');
 const sharedDraftsFilePath = path.join(dataDir, 'shared_drafts.json');
 const packagingPhotosFilePath = path.join(dataDir, 'packaging_photos.json');
 const cloudConfigFilePath = path.join(dataDir, 'cloud_config.json');
-const zenboxConfigFilePath = path.join(dataDir, 'zenbox_config.json');
-const zenboxThreadsFilePath = path.join(dataDir, 'zenbox_threads.json');
 
 function ensureDataDir() {
   if (!fs.existsSync(dataDir)) {
@@ -490,27 +487,29 @@ function resolveInitialGitHubToken(): string {
     }
   } catch {}
 
-  // 2. Automatyczne pobranie poświadczenia Git z systemu (jeśli git push działa lokalnie)
-  try {
-    const gitCandidates = [
-      'C:\\Users\\iklos\\.mingit\\cmd\\git.exe',
-      'git',
-    ];
-    for (const gitBin of gitCandidates) {
-      try {
-        const out = execSync(`"${gitBin}" credential fill`, {
-          input: 'protocol=https\nhost=github.com\n\n',
-          encoding: 'utf8',
-          timeout: 2500,
-          stdio: ['pipe', 'pipe', 'ignore'],
-        });
-        const m = out.match(/password=([^\r\n]+)/);
-        if (m && m[1] && m[1].trim().length > 10) {
-          return m[1].trim();
-        }
-      } catch {}
-    }
-  } catch {}
+  // 2. Automatyczne pobranie poświadczenia Git z systemu (tylko gdy jawnie włączono synchronizację lokalną lub w środowisku produkcyjnym, aby testy na localhost nie nadpisywały historii zamówień na Renderze)
+  if (isProduction || process.env.ENABLE_LOCAL_CLOUD_SYNC === 'true') {
+    try {
+      const gitCandidates = [
+        'C:\\Users\\iklos\\.mingit\\cmd\\git.exe',
+        'git',
+      ];
+      for (const gitBin of gitCandidates) {
+        try {
+          const out = execSync(`"${gitBin}" credential fill`, {
+            input: 'protocol=https\nhost=github.com\n\n',
+            encoding: 'utf8',
+            timeout: 2500,
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+          const m = out.match(/password=([^\r\n]+)/);
+          if (m && m[1] && m[1].trim().length > 10) {
+            return m[1].trim();
+          }
+        } catch {}
+      }
+    } catch {}
+  }
 
   return '';
 }
@@ -1080,7 +1079,11 @@ async function performFullCloudPullAndMerge(): Promise<{
           newer.parcelPhotos && newer.parcelPhotos.length > 0
             ? newer.parcelPhotos
             : older.parcelPhotos || [];
-        map.set(loc.id, { ...older, ...newer, parcelPhotos: photos });
+        const pkgPhotos =
+          newer.packagingPhotos && newer.packagingPhotos.length > 0
+            ? newer.packagingPhotos
+            : older.packagingPhotos || [];
+        map.set(loc.id, { ...older, ...newer, parcelPhotos: photos, packagingPhotos: pkgPhotos });
       }
     }
     const mergedOrders = Array.from(map.values());
@@ -1414,9 +1417,20 @@ app.post('/api/orders-history', async (req: Request, res: Response) => {
   }
 
   writeOrdersToDisk(orders);
+  const isProductTaskAssigned = newOrder.warehouseProductTaskStatus === 'assigned';
+  const isParcelTaskAssigned = newOrder.warehouseParcelTaskStatus === 'assigned';
+  const isWarehouseAssigned =
+    isProductTaskAssigned || isParcelTaskAssigned || newOrder.warehouseTaskStatus === 'assigned';
   broadcastSyncEvent(
-    'ORDER_SAVED',
-    `Zapisano w bazie: ${newOrder.invoiceNumber || newOrder.orderNumber || 'Zamówienie'} (${newOrder.buyer?.name || ''})`
+    isWarehouseAssigned ? 'WAREHOUSE_TASK_ASSIGNED' : 'ORDER_SAVED',
+    isProductTaskAssigned
+      ? `📸 Koordynator wysłał Zadanie 1 (Uzupełnij zdjęcia produktów) do Magazynu: zamówienie nr ${newOrder.orderNumber || newOrder.invoiceNumber || newOrder.id}`
+      : isParcelTaskAssigned
+      ? `📦 Koordynator wysłał Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki) do Magazynu: zamówienie nr ${newOrder.orderNumber || newOrder.invoiceNumber || newOrder.id}`
+      : isWarehouseAssigned
+      ? `📦 Koordynator wysłał zadanie do Magazynu: zamówienie nr ${newOrder.orderNumber || newOrder.invoiceNumber || newOrder.id} (${newOrder.chain || ''})`
+      : `Zapisano w bazie: ${newOrder.invoiceNumber || newOrder.orderNumber || 'Zamówienie'} (${newOrder.buyer?.name || ''})`,
+    isWarehouseAssigned ? '1. Koordynator' : 'Stanowisko Eubiosis'
   );
   return res.json({ success: true, order: newOrder });
 });
@@ -1439,10 +1453,42 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
   };
 
   writeOrdersToDisk(orders);
-  broadcastSyncEvent(
-    'ORDER_UPDATED',
-    `Zaktualizowano zamówienie: ${orders[idx].orderNumber || orders[idx].invoiceNumber || id}`
-  );
+  const ordLabel = orders[idx].orderNumber || orders[idx].invoiceNumber || id;
+  let eventType = 'ORDER_UPDATED';
+  let eventSummary = `Zaktualizowano zamówienie: ${ordLabel}`;
+  let eventWorkstation = 'Stanowisko Eubiosis';
+
+  if (updates.warehouseProductTaskStatus === 'assigned') {
+    eventType = 'WAREHOUSE_TASK_ASSIGNED';
+    eventSummary = `📸 Koordynator wysłał Zadanie 1 (Uzupełnij zdjęcia produktów) do Magazynu: zamówienie nr ${ordLabel}`;
+    eventWorkstation = '1. Koordynator';
+  } else if (updates.warehouseParcelTaskStatus === 'assigned') {
+    eventType = 'WAREHOUSE_TASK_ASSIGNED';
+    eventSummary = `📦 Koordynator wysłał Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki) do Magazynu: zamówienie nr ${ordLabel}`;
+    eventWorkstation = '1. Koordynator';
+  } else if (updates.warehouseTaskStatus === 'assigned') {
+    eventType = 'WAREHOUSE_TASK_ASSIGNED';
+    eventSummary = `📦 Koordynator wysłał zadanie do Magazynu: zamówienie nr ${ordLabel} (${orders[idx].chain || ''})`;
+    eventWorkstation = '1. Koordynator';
+  } else if (updates.warehouseProductTaskStatus === 'completed') {
+    eventType = 'WAREHOUSE_TASK_COMPLETED';
+    eventSummary = `✅ Magazyn wykonał Zadanie 1 (Uzupełnij zdjęcia produktów) dla zamówienia nr ${ordLabel}`;
+    eventWorkstation = '2. Magazyn';
+  } else if (updates.warehouseParcelTaskStatus === 'completed') {
+    eventType = 'WAREHOUSE_TASK_COMPLETED';
+    eventSummary = `✅ Magazyn wykonał Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki) dla zamówienia nr ${ordLabel}`;
+    eventWorkstation = '2. Magazyn';
+  } else if (updates.warehouseTaskStatus === 'completed') {
+    eventType = 'WAREHOUSE_TASK_COMPLETED';
+    eventSummary = `✅ Magazyn uzupełnił zdjęcia i zakończył zadanie dla zamówienia nr ${ordLabel}`;
+    eventWorkstation = '2. Magazyn';
+  } else if (updates.packagingPhotos || updates.parcelPhotos) {
+    eventType = 'WAREHOUSE_PHOTOS_UPDATED';
+    eventSummary = `📷 Zaktualizowano zdjęcia dla zamówienia nr ${ordLabel}`;
+    eventWorkstation = '2. Magazyn';
+  }
+
+  broadcastSyncEvent(eventType, eventSummary, eventWorkstation);
   return res.json({ success: true, order: orders[idx] });
 });
 
@@ -1492,7 +1538,11 @@ app.post('/api/orders-history/sync', async (req: Request, res: Response) => {
         newer.parcelPhotos && newer.parcelPhotos.length > 0
           ? newer.parcelPhotos
           : older.parcelPhotos || [];
-      map.set(inc.id, { ...older, ...newer, parcelPhotos: photos });
+      const pkgPhotos =
+        newer.packagingPhotos && newer.packagingPhotos.length > 0
+          ? newer.packagingPhotos
+          : older.packagingPhotos || [];
+      map.set(inc.id, { ...older, ...newer, parcelPhotos: photos, packagingPhotos: pkgPhotos });
     }
   }
 
@@ -1568,392 +1618,43 @@ app.post('/api/knowledge-base/sync', async (req: Request, res: Response) => {
   return res.json({ success: true, count: finalClients.length });
 });
 
-/**
- * 📬 SKRZYNKA ZAMÓWIEŃ I AWIZACJI ZENBOX (IMAP READ-ONLY + SMTP + HYBRYDOWY OBIEG WĄTKÓW)
- */
-const DEFAULT_ZENBOX_SIGNATURE = `Z poważaniem / Pozdrawiam serdecznie,
-Dział Obsługi Zamówień i Logistyki
-Eubiosis Sp. z o.o.
-ul. Karola Darwina 1G/11, 43-100 Tychy
-NIP: 5272722959 | BDO: 000010539
-E-mail: zamowienia@eubiosis.pl`;
-
-function readZenboxConfigFromDisk(): any {
-  ensureDataDir();
-  const defaultCfg = {
-    emailAddress: process.env.ZENBOX_EMAIL || 'zamowienia@eubiosis.pl',
-    password: process.env.ZENBOX_PASSWORD || '',
-    imapHost: process.env.ZENBOX_IMAP_HOST || 'imap.zenbox.pl',
-    imapPort: Number(process.env.ZENBOX_IMAP_PORT || 993),
-    smtpHost: process.env.ZENBOX_SMTP_HOST || 'smtp.zenbox.pl',
-    smtpPort: Number(process.env.ZENBOX_SMTP_PORT || 465),
-    signatureFooter: DEFAULT_ZENBOX_SIGNATURE,
-    autoBccSelf: true,
-    connected: Boolean(process.env.ZENBOX_PASSWORD),
-    lastCheckedAt: null,
-  };
-  if (!fs.existsSync(zenboxConfigFilePath)) {
-    return defaultCfg;
-  }
+function freePortIfBusy(targetPort: number): boolean {
   try {
-    const raw = fs.readFileSync(zenboxConfigFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return {
-      ...defaultCfg,
-      ...parsed,
-      connected: Boolean(parsed.password || process.env.ZENBOX_PASSWORD),
-    };
+    if (process.platform === 'win32') {
+      const out = execSync(`netstat -ano | findstr :${targetPort}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const pids = new Set<number>();
+      for (const line of out.split(/\r?\n/)) {
+        if (!line.includes('LISTENING')) continue;
+        const parts = line.trim().split(/\s+/);
+        const pid = Number(parts[parts.length - 1]);
+        if (pid && pid !== process.pid) {
+          pids.add(pid);
+        }
+      }
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
+        } catch {}
+      }
+      return pids.size > 0;
+    } else {
+      execSync(`fuser -k ${targetPort}/tcp`, { stdio: 'ignore' });
+      return true;
+    }
   } catch {
-    return defaultCfg;
+    return false;
   }
 }
-
-function writeZenboxConfigToDisk(cfg: any): void {
-  ensureDataDir();
-  try {
-    fs.writeFileSync(zenboxConfigFilePath, JSON.stringify(cfg, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Błąd zapisu konfiguracji Zenbox:', e);
-  }
-}
-
-function readZenboxThreadsFromDisk(): any[] {
-  ensureDataDir();
-  if (!fs.existsSync(zenboxThreadsFilePath)) {
-    return [];
-  }
-  try {
-    const raw = fs.readFileSync(zenboxThreadsFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeZenboxThreadsToDisk(threads: any[]): void {
-  ensureDataDir();
-  try {
-    fs.writeFileSync(zenboxThreadsFilePath, JSON.stringify(threads, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Błąd zapisu wątków Zenbox:', e);
-  }
-}
-
-app.get('/api/zenbox-config', (_req: Request, res: Response) => {
-  const cfg = readZenboxConfigFromDisk();
-  return res.json({
-    ...cfg,
-    // Nie zwracamy pełnego hasła w otwartym tekście, tylko informację czy jest zapisane
-    hasPassword: Boolean(cfg.password && cfg.password.length > 0),
-    password: cfg.password ? '••••••••••••' : '',
-  });
-});
-
-app.post('/api/zenbox-config', (req: Request, res: Response) => {
-  const current = readZenboxConfigFromDisk();
-  const inc = req.body || {};
-  const updated = {
-    ...current,
-    emailAddress: inc.emailAddress ?? current.emailAddress,
-    imapHost: inc.imapHost ?? current.imapHost,
-    imapPort: Number(inc.imapPort || current.imapPort || 993),
-    smtpHost: inc.smtpHost ?? current.smtpHost,
-    smtpPort: Number(inc.smtpPort || current.smtpPort || 465),
-    signatureFooter: inc.signatureFooter ?? current.signatureFooter,
-    autoBccSelf: inc.autoBccSelf !== undefined ? Boolean(inc.autoBccSelf) : current.autoBccSelf,
-    password:
-      inc.password && inc.password !== '••••••••••••'
-        ? String(inc.password)
-        : current.password,
-    lastCheckedAt: new Date().toISOString(),
-  };
-  updated.connected = Boolean(updated.password && updated.password.length > 0);
-  writeZenboxConfigToDisk(updated);
-  return res.json({
-    ...updated,
-    hasPassword: Boolean(updated.password && updated.password.length > 0),
-    password: updated.password ? '••••••••••••' : '',
-  });
-});
-
-app.get('/api/zenbox-threads', (_req: Request, res: Response) => {
-  return res.json(readZenboxThreadsFromDisk());
-});
-
-app.post('/api/zenbox-threads', (req: Request, res: Response) => {
-  const { threads } = req.body || {};
-  if (!Array.isArray(threads)) {
-    return res.status(400).json({ error: 'Nieprawidłowa lista wątków pocztowych Zenbox' });
-  }
-  writeZenboxThreadsToDisk(threads);
-  broadcastSyncEvent('ZENBOX_THREADS_UPDATED', '📬 Zaktualizowano wątki w Skrzynce Zamówień Zenbox');
-  return res.json({ success: true, count: threads.length });
-});
-
-// Bezpieczny odczyt nagłówków IMAP w trybie EXAMINE (Read-Only - nie kasuje i nie odznacza maili w zwykłej poczcie!)
-async function testOrFetchZenboxImap(config: {
-  imapHost: string;
-  imapPort: number;
-  emailAddress: string;
-  password?: string;
-}): Promise<{ ok: boolean; message: string; totalMessages?: number }> {
-  if (!config.password) {
-    return {
-      ok: false,
-      message:
-        'Tryb hybrydowy (bez podanego hasła IMAP): aktywne są gotowe wątki zamówień oraz wysyłka przez program pocztowy / szablony. Aby pobierać żywe maile bezpośrednio z serwera Zenbox, wpisz hasło skrzynki w Ustawieniach Zenbox.',
-    };
-  }
-
-  return new Promise((resolve) => {
-    let buffer = '';
-    let step = 0;
-    let totalMessages = 0;
-    const socket = tls.connect(
-      {
-        host: config.imapHost || 'imap.zenbox.pl',
-        port: Number(config.imapPort || 993),
-        rejectUnauthorized: false,
-      },
-      () => {
-        // Połączono z serwerem IMAP SSL
-      }
-    );
-
-    socket.setTimeout(8500);
-
-    const finish = (ok: boolean, message: string) => {
-      try {
-        socket.write('A99 LOGOUT\r\n');
-        socket.end();
-      } catch {}
-      resolve({ ok, message, totalMessages });
-    };
-
-    socket.on('data', (chunk) => {
-      buffer += chunk.toString('utf8');
-      if (step === 0 && buffer.includes('* OK')) {
-        step = 1;
-        buffer = '';
-        const safeUser = config.emailAddress.replace(/"/g, '\\"');
-        const safePass = (config.password || '').replace(/"/g, '\\"');
-        socket.write(`A1 LOGIN "${safeUser}" "${safePass}"\r\n`);
-      } else if (step === 1) {
-        if (buffer.includes('A1 OK')) {
-          step = 2;
-          buffer = '';
-          // EXAMINE zamiast SELECT gwarantuje tryb 100% Read-Only (brak modyfikacji flag \Seen na poczcie!)
-          socket.write('A2 EXAMINE INBOX\r\n');
-        } else if (buffer.includes('A1 NO') || buffer.includes('A1 BAD')) {
-          finish(false, 'Serwer Zenbox odrzucił logowanie IMAP (sprawdź adres e-mail i hasło).');
-        }
-      } else if (step === 2) {
-        const existsMatch = buffer.match(/\*\s+(\d+)\s+EXISTS/i);
-        if (existsMatch) {
-          totalMessages = Number(existsMatch[1]);
-        }
-        if (buffer.includes('A2 OK')) {
-          finish(
-            true,
-            `Połączono z ${config.imapHost} w bezpiecznym trybie Read-Only (EXAMINE INBOX). Liczba wiadomości na skrzynce: ${totalMessages}.`
-          );
-        } else if (buffer.includes('A2 NO') || buffer.includes('A2 BAD')) {
-          finish(false, 'Nie udało się otworzyć folderu INBOX w trybie EXAMINE.');
-        }
-      }
-    });
-
-    socket.on('timeout', () => {
-      finish(false, `Przekroczono czas oczekiwania na odpowiedź serwera ${config.imapHost}:${config.imapPort}.`);
-    });
-
-    socket.on('error', (err: any) => {
-      finish(false, `Błąd połączenia z serwerem IMAP (${config.imapHost}): ${err?.message || String(err)}`);
-    });
-  });
-}
-
-app.post('/api/zenbox-fetch-imap', async (_req: Request, res: Response) => {
-  const cfg = readZenboxConfigFromDisk();
-  const imapResult = await testOrFetchZenboxImap(cfg);
-  cfg.lastCheckedAt = new Date().toISOString();
-  writeZenboxConfigToDisk(cfg);
-  return res.json({
-    ...imapResult,
-    lastCheckedAt: cfg.lastCheckedAt,
-    threads: readZenboxThreadsFromDisk(),
-  });
-});
-
-// Wysyłka wiadomości e-mail przez SMTP SSL (smtp.zenbox.pl:465) z załącznikami MIME (.xlsx / .xml)
-async function sendMimeEmailViaZenboxSmtp(params: {
-  config: any;
-  to: string[];
-  cc?: string[];
-  subject: string;
-  body: string;
-  attachments?: Array<{ filename: string; mimeType: string; base64Content?: string }>;
-}): Promise<{ sentViaSmtp: boolean; statusMessage: string }> {
-  const { config, to, cc = [], subject, body, attachments = [] } = params;
-  if (!config.password) {
-    return {
-      sentViaSmtp: false,
-      statusMessage:
-        'Wiadomość wraz z załącznikami została zapisana w historii wątku w aplikacji. (Aby aplikacja wysyłała też fizycznie maile przez serwer SMTP Zenbox bez udziału programu pocztowego, wpisz hasło skrzynki w Ustawieniach Zenbox lub kliknij „Otwórz w programie pocztowym”).',
-    };
-  }
-
-  const allRecipients = Array.from(
-    new Set([
-      ...to.map((e) => e.trim()).filter(Boolean),
-      ...cc.map((e) => e.trim()).filter(Boolean),
-      ...(config.autoBccSelf && config.emailAddress ? [config.emailAddress.trim()] : []),
-    ])
-  );
-
-  if (allRecipients.length === 0) {
-    return { sentViaSmtp: false, statusMessage: 'Brak odbiorców wiadomości.' };
-  }
-
-  const boundary = `----=_NextPart_Eubiosis_${Date.now().toString(16)}`;
-  const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`;
-
-  const mimeLines: string[] = [
-    `From: "Eubiosis - Dzial Zamowien" <${config.emailAddress}>`,
-    `To: ${to.join(', ')}`,
-    ...(cc.length > 0 ? [`Cc: ${cc.join(', ')}`] : []),
-    `Subject: ${encodedSubject}`,
-    `Date: ${new Date().toUTCString()}`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    '',
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    Buffer.from(body, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n'),
-  ];
-
-  for (const att of attachments) {
-    if (!att.base64Content) continue;
-    const safeName = `=?UTF-8?B?${Buffer.from(att.filename, 'utf8').toString('base64')}?=`;
-    mimeLines.push(
-      `--${boundary}`,
-      `Content-Type: ${att.mimeType || 'application/octet-stream'}; name="${safeName}"`,
-      'Content-Transfer-Encoding: base64',
-      `Content-Disposition: attachment; filename="${safeName}"`,
-      '',
-      att.base64Content.replace(/\s+/g, '').replace(/(.{76})/g, '$1\r\n')
-    );
-  }
-
-  mimeLines.push(`--${boundary}--`, '');
-  const fullMimePayload = mimeLines.join('\r\n');
-
-  return new Promise((resolve) => {
-    let step = 0;
-    let rcptIdx = 0;
-    const socket = tls.connect({
-      host: config.smtpHost || 'smtp.zenbox.pl',
-      port: Number(config.smtpPort || 465),
-      rejectUnauthorized: false,
-    });
-
-    socket.setTimeout(10000);
-
-    const finish = (sentViaSmtp: boolean, statusMessage: string) => {
-      try {
-        socket.write('QUIT\r\n');
-        socket.end();
-      } catch {}
-      resolve({ sentViaSmtp, statusMessage });
-    };
-
-    socket.on('data', (chunk) => {
-      const text = chunk.toString('utf8');
-      if (step === 0 && text.startsWith('220')) {
-        step = 1;
-        socket.write('EHLO eubiosis.pl\r\n');
-      } else if (step === 1 && text.includes('250')) {
-        step = 2;
-        socket.write('AUTH LOGIN\r\n');
-      } else if (step === 2 && text.startsWith('334')) {
-        step = 3;
-        socket.write(`${Buffer.from(config.emailAddress, 'utf8').toString('base64')}\r\n`);
-      } else if (step === 3 && text.startsWith('334')) {
-        step = 4;
-        socket.write(`${Buffer.from(config.password || '', 'utf8').toString('base64')}\r\n`);
-      } else if (step === 4) {
-        if (text.startsWith('235')) {
-          step = 5;
-          socket.write(`MAIL FROM:<${config.emailAddress}>\r\n`);
-        } else {
-          finish(false, `Błąd autoryzacji SMTP Zenbox: ${text.trim()}`);
-        }
-      } else if (step === 5 && text.startsWith('250')) {
-        if (rcptIdx < allRecipients.length) {
-          const rcpt = allRecipients[rcptIdx++];
-          socket.write(`RCPT TO:<${rcpt}>\r\n`);
-        } else {
-          step = 6;
-          socket.write('DATA\r\n');
-        }
-      } else if (step === 6 && text.startsWith('354')) {
-        step = 7;
-        socket.write(`${fullMimePayload}\r\n.\r\n`);
-      } else if (step === 7) {
-        if (text.startsWith('250')) {
-          finish(
-            true,
-            `Wiadomość została pomyślnie wysłana przez serwer ${config.smtpHost} do: ${to.join(', ')}${
-              config.autoBccSelf ? ` (z kopią BCC na ${config.emailAddress})` : ''
-            }.`
-          );
-        } else {
-          finish(false, `Serwer SMTP zwrócił błąd podczas wysyłki treści: ${text.trim()}`);
-        }
-      }
-    });
-
-    socket.on('timeout', () => {
-      finish(false, `Przekroczono czas połączenia z serwerem SMTP ${config.smtpHost}:${config.smtpPort}.`);
-    });
-
-    socket.on('error', (err: any) => {
-      finish(false, `Błąd połączenia SMTP (${config.smtpHost}): ${err?.message || String(err)}`);
-    });
-  });
-}
-
-app.post('/api/zenbox-send-email', async (req: Request, res: Response) => {
-  const { to, cc, subject, body, attachments, templateType } = req.body || {};
-  if (!Array.isArray(to) || to.length === 0 || !subject || !body) {
-    return res.status(400).json({ error: 'Wymagany jest adres odbiorcy (Do:), temat oraz treść wiadomości.' });
-  }
-  const cfg = readZenboxConfigFromDisk();
-  const result = await sendMimeEmailViaZenboxSmtp({
-    config: cfg,
-    to,
-    cc: Array.isArray(cc) ? cc : [],
-    subject,
-    body,
-    attachments: Array.isArray(attachments) ? attachments : [],
-  });
-
-  broadcastSyncEvent(
-    'ZENBOX_EMAIL_SENT',
-    `📤 Wysłano odpowiedź w wątku zamówienia (${templateType === 'AVISO_TABLE' ? 'Awizacja dostawy + .xlsx' : templateType === 'SEND_INVOICE_FV' ? 'Faktura VAT KSeF' : 'Korespondencja'}): ${subject}`
-  );
-
-  return res.json({
-    success: true,
-    ...result,
-    sentAt: new Date().toISOString(),
-  });
-});
 
 async function startServer() {
+  if (freePortIfBusy(port)) {
+    console.log(`🔄 Zwolniono zajęty port ${port} (poprzednia instancja)...`);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
   if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1971,9 +1672,29 @@ async function startServer() {
     });
   }
 
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`🌸 Generator Iwonki KSeF działa na http://0.0.0.0:${port} [tryb: ${isProduction ? 'PRODUKCJA' : 'DEVELOPMENT'}]`);
-  });
+  const listenOnPort = (targetPort: number, retried = false) => {
+    const server = app.listen(targetPort, '0.0.0.0', () => {
+      console.log(`🌸 Generator Iwonki KSeF działa na http://localhost:${targetPort} (http://0.0.0.0:${targetPort}) [tryb: ${isProduction ? 'PRODUKCJA' : 'DEVELOPMENT'}]`);
+    });
+
+    server.on('error', (err: any) => {
+      if (err?.code === 'EADDRINUSE') {
+        if (!retried && freePortIfBusy(targetPort)) {
+          console.log(`🔄 Zwolniono zajęty port ${targetPort} (poprzednia instancja) — ponawiam uruchomienie...`);
+          setTimeout(() => listenOnPort(targetPort, true), 400);
+          return;
+        }
+        const fallbackPort = targetPort + 1;
+        console.warn(`⚠️ Port ${targetPort} jest zajęty. Uruchamiam serwer na porcie zapasowym ${fallbackPort}...`);
+        listenOnPort(fallbackPort, true);
+      } else {
+        console.error('❌ Błąd serwera HTTP:', err);
+      }
+    });
+  };
+
+  listenOnPort(port);
 }
 
 startServer();
+

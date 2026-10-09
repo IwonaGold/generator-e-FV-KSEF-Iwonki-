@@ -63,6 +63,8 @@ export interface SharedPackagingPhoto {
   uploadedBy: string;
   uploadedAt: string;
   orderHint?: string;
+  orderId?: string;
+  orderNumber?: string;
 }
 
 const WORKSTATION_KEY = 'iwonka_ksef_workstation_name_v1';

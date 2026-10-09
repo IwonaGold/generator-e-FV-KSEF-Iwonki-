@@ -11,12 +11,15 @@ import { WZDocumentModal } from './components/WZDocumentModal';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
 import { EdiDozPrototypeModal } from './components/EdiDozPrototypeModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
-import { ZenboxMailModal } from './components/ZenboxMailModal';
 import { DozEdiOrderSample } from './utils/ediGenerator';
 import {
   SharedInvoiceDraft,
   getSharedDrafts,
   subscribeToMultiUserSync,
+  WorkstationRole,
+  getWorkstationRole,
+  setWorkstationRole,
+  clearSharedPackagingPhotos,
 } from './utils/cloudSyncService';
 import {
   PharmacyChain,
@@ -52,10 +55,15 @@ import { AppModule } from './types/navigation';
 import { HomePortalView } from './components/HomePortalView';
 import { SubpageHeaderBar } from './components/SubpageHeaderBar';
 import { InvoiceCorrectionView } from './components/InvoiceCorrectionView';
-import { OrderHistoryView } from './components/OrderHistoryView';
+import { OrderHistoryView, OrderLifecycleTab } from './components/OrderHistoryView';
 import { KnowledgeCenterView } from './components/KnowledgeCenterView';
-import { ArchivedOrder } from './types/ordersHistory';
-import { getArchivedOrders, saveArchivedOrder } from './utils/ordersStorage';
+import { WarehouseWorkstationView } from './components/WarehouseWorkstationView';
+import { ArchivedOrder, OrderPackagingPhoto } from './types/ordersHistory';
+import {
+  getArchivedOrders,
+  saveArchivedOrder,
+  updateArchivedOrderFields,
+} from './utils/ordersStorage';
 import { extractInvoiceNumberFromXml } from './utils/ksefXmlParser';
 import {
   DOZ_SPECIAL_PRICE_LIST,
@@ -157,7 +165,6 @@ export default function App() {
   const [isAiGuideOpen, setIsAiGuideOpen] = useState(false);
   const [isEdiModalOpen, setIsEdiModalOpen] = useState(false);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
-  const [isZenboxModalOpen, setIsZenboxModalOpen] = useState(false);
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
   const [sharedDraftsCount, setSharedDraftsCount] = useState<number>(0);
   const [liveSyncToast, setLiveSyncToast] = useState<string | null>(null);
@@ -190,8 +197,25 @@ export default function App() {
   }, [activeModule]);
 
   const [archivedOrders, setArchivedOrders] = useState<ArchivedOrder[]>([]);
+  const [orderHistoryTab, setOrderHistoryTab] = useState<OrderLifecycleTab>('in_progress');
   const [preloadedOrderForCorrection, setPreloadedOrderForCorrection] = useState<ArchivedOrder | null>(null);
   const [pendingOrderSourceId, setPendingOrderSourceId] = useState<string | null>(null);
+  const [currentOrderPackagingPhotos, setCurrentOrderPackagingPhotos] = useState<OrderPackagingPhoto[]>([]);
+  const [photoSectionResetKey, setPhotoSectionResetKey] = useState<number>(0);
+  const [workstationRole, setWorkstationRoleState] = useState<WorkstationRole>(() =>
+    getWorkstationRole()
+  );
+
+  const handleSwitchWorkstationRole = (role: WorkstationRole) => {
+    setWorkstationRole(role);
+    setWorkstationRoleState(role);
+    setLiveSyncToast(
+      role === 'warehouse'
+        ? '📦 Przełączono na Stanowisko 2: Magazyn — widoczne są wyłącznie zadania przypisane przez Koordynatora'
+        : '👩‍💼 Przełączono na Stanowisko 1: Koordynator — pełny dostęp do zamówień i faktur KSeF'
+    );
+    setTimeout(() => setLiveSyncToast(null), 5000);
+  };
 
   const refreshAllCloudData = async () => {
     try {
@@ -221,6 +245,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeToMultiUserSync({
       onRemoteUpdate: (ev) => {
+        setWorkstationRoleState(getWorkstationRole());
         if (typeof ev.activeUsersCount === 'number' && ev.activeUsersCount > 0) {
           setActiveUsersCount(ev.activeUsersCount);
         }
@@ -247,7 +272,171 @@ export default function App() {
     setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
   };
 
+  // Dopasowanie bieżącego zamówienia na Karcie Zamówienia (wyłącznie dla jawnie aktywnego zamówienia przed wyczyszczeniem)
+  const activeMatchedArchivedOrder = useMemo(() => {
+    if (!pendingOrderSourceId) return null;
+    return archivedOrders.find((o) => o.id === pendingOrderSourceId) || null;
+  }, [archivedOrders, pendingOrderSourceId]);
+
+  // Synchronizuj zdjęcia opakowań z dopasowanego zamówienia (np. gdy Magazyn doda nowe zdjęcia do tego zamówienia)
+  useEffect(() => {
+    if (!activeMatchedArchivedOrder) return;
+    const orderPhotos = Array.isArray(activeMatchedArchivedOrder.packagingPhotos)
+      ? activeMatchedArchivedOrder.packagingPhotos
+      : [];
+    if (orderPhotos.length === 0) return;
+    setCurrentOrderPackagingPhotos((prev) => {
+      const existingIds = new Set(prev.map((p) => p.id));
+      const newOnes = orderPhotos.filter((p) => p?.id && !existingIds.has(p.id));
+      if (newOnes.length === 0) return prev;
+      return [...prev, ...newOnes];
+    });
+  }, [activeMatchedArchivedOrder]);
+
+  // Aktualizacja zdjęć opakowań przypisanych do bieżącego zamówienia na karcie
+  const handleUpdateCurrentOrderPackagingPhotos = async (nextPhotos: OrderPackagingPhoto[]) => {
+    setCurrentOrderPackagingPhotos(nextPhotos);
+    if (activeMatchedArchivedOrder) {
+      await updateArchivedOrderFields(activeMatchedArchivedOrder.id, {
+        packagingPhotos: nextPhotos,
+      });
+      setArchivedOrders((prev) =>
+        prev.map((o) =>
+          o.id === activeMatchedArchivedOrder.id ? { ...o, packagingPhotos: nextPhotos } : o
+        )
+      );
+    }
+  };
+
+  const activeWarehouseTasksCount = useMemo(() => {
+    let count = 0;
+    for (const o of archivedOrders) {
+      const prodStatus =
+        o.warehouseProductTaskStatus || (o.warehouseTaskStatus !== 'none' ? o.warehouseTaskStatus : 'none');
+      const parcelStatus = o.warehouseParcelTaskStatus || 'none';
+      if (prodStatus === 'assigned' || prodStatus === 'in_progress') count++;
+      if (parcelStatus === 'assigned' || parcelStatus === 'in_progress') count++;
+    }
+    return count;
+  }, [archivedOrders]);
+
+  /**
+   * 1. Wysłanie z Karty Zamówienia zadania nr 1 do Magazynu: "Uzupełnij zdjęcia produktów" (LOT / MHD)
+   */
+  const handleSendCurrentOrderToWarehouse = async (customTaskNote?: string) => {
+    let net23 = 0, vat23 = 0, net8 = 0, vat8 = 0, net5 = 0, vat5 = 0;
+    items.forEach((item) => {
+      const lineNet = Math.round(item.quantity * item.netPrice * 100) / 100;
+      if (item.vatRate === '23%') net23 += lineNet;
+      else if (item.vatRate === '8%') net8 += lineNet;
+      else if (item.vatRate === '5%') net5 += lineNet;
+    });
+    vat23 = Math.round(net23 * 0.23 * 100) / 100;
+    vat8 = Math.round(net8 * 0.08 * 100) / 100;
+    vat5 = Math.round(net5 * 0.05 * 100) / 100;
+    const totalNet = Math.round((net23 + net8 + net5) * 100) / 100;
+    const totalVat = Math.round((vat23 + vat8 + vat5) * 100) / 100;
+    const totalGross = Math.round((totalNet + totalVat) * 100) / 100;
+
+    const resolvedChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
+    const cleanOrdNo = (meta.orderNumber || '').trim();
+    const existing =
+      activeMatchedArchivedOrder ||
+      (cleanOrdNo
+        ? archivedOrders.find(
+            (o) =>
+              !o.isDelivered &&
+              (o.orderNumber || '').trim().toLowerCase() === cleanOrdNo.toLowerCase()
+          ) || null
+        : null);
+    const nowIso = new Date().toISOString();
+    const hasInvoiceNum = Boolean(meta.invoiceNumber?.trim() && meta.invoiceNumber.trim() !== 'FAKTURA');
+    const finalTaskNote =
+      typeof customTaskNote === 'string'
+        ? customTaskNote.trim()
+        : activeMatchedArchivedOrder?.warehouseProductTaskNote ||
+          activeMatchedArchivedOrder?.warehouseTaskNote ||
+          '';
+
+    const mergedPackagingPhotos =
+      currentOrderPackagingPhotos.length > 0
+        ? currentOrderPackagingPhotos
+        : activeMatchedArchivedOrder?.packagingPhotos || [];
+
+    const orderToAssign: ArchivedOrder = {
+      ...(existing || {}),
+      id: existing?.id || `ord-${Date.now()}`,
+      chain: resolvedChain,
+      documentType: existing?.documentType || (hasInvoiceNum ? 'FV' : 'ZAM'),
+      invoiceStatus: existing?.invoiceStatus || (hasInvoiceNum ? 'issued' : 'awaiting_invoice'),
+      invoiceNumber:
+        meta.invoiceNumber?.trim() ||
+        existing?.invoiceNumber ||
+        (meta.orderNumber ? `ZAM ${meta.orderNumber}` : 'NOWE ZAMÓWIENIE'),
+      orderNumber: meta.orderNumber || existing?.orderNumber || '',
+      orderDate: meta.orderDate || existing?.orderDate || meta.issueDate,
+      issueDate: meta.issueDate || existing?.issueDate || nowIso.slice(0, 10),
+      avisoDate: meta.deliveryDate || existing?.avisoDate || meta.issueDate,
+      deliveryDate: meta.deliveryDate || existing?.deliveryDate || meta.issueDate,
+      dueDate: meta.dueDate || existing?.dueDate,
+      seller,
+      buyer,
+      thirdParty,
+      items: [...items],
+      itemsCount: items.length,
+      totalNet,
+      totalVat,
+      totalGross,
+      currency: meta.currency || 'PLN',
+      xmlContent: existing?.xmlContent || '',
+      isDelivered: existing?.isDelivered || false,
+      deliveredAt: existing?.deliveredAt || null,
+      shippingStatus: existing?.shippingStatus || 'registered',
+      trackingNumber: existing?.trackingNumber,
+      courierName: existing?.courierName,
+      notes:
+        existing?.notes ||
+        (orderFile
+          ? `Zlecono Zadanie 1 (Uzupełnij zdjęcia produktów) z pliku: ${orderFile.name}`
+          : 'Zlecono Zadanie 1 (Uzupełnij zdjęcia produktów) przez Koordynatora'),
+      originalFileName: orderFile?.name || existing?.originalFileName,
+      createdAt: existing?.createdAt || nowIso,
+      updatedAt: nowIso,
+      parcelPhotos: existing?.parcelPhotos || [],
+      packagingPhotos: mergedPackagingPhotos,
+      // Zadanie 1 (Z karty zamówienia): Uzupełnij zdjęcia produktów
+      warehouseProductTaskStatus: 'assigned',
+      warehouseProductTaskAssignedAt: nowIso,
+      warehouseProductTaskNote: finalTaskNote,
+      // Zadanie 2 (Z poziomu W REALIZACJI): zachowaj dotychczasowy stan
+      warehouseParcelTaskStatus: existing?.warehouseParcelTaskStatus || 'none',
+      warehouseParcelTaskAssignedAt: existing?.warehouseParcelTaskAssignedAt || null,
+      warehouseParcelTaskCompletedAt: existing?.warehouseParcelTaskCompletedAt || null,
+      warehouseParcelTaskNote: existing?.warehouseParcelTaskNote || null,
+      // Zbiorczy status dla kompatybilności
+      warehouseTaskStatus: 'assigned',
+      warehouseTaskAssignedAt: nowIso,
+      warehouseTaskAssignedBy: '1. Koordynator',
+      warehouseTaskNote: finalTaskNote,
+    };
+
+    const saved = await saveArchivedOrder(orderToAssign);
+    setPendingOrderSourceId(saved.id);
+    setCurrentOrderPackagingPhotos(saved.packagingPhotos || []);
+    setArchivedOrders((prev) => [saved, ...prev.filter((o) => o.id !== saved.id)]);
+    setPriceNotice(
+      `📸 Wysłano do Magazynu Zadanie 1: „Uzupełnij zdjęcia produktów” dla zamówienia ${
+        saved.orderNumber ? `nr ${saved.orderNumber}` : saved.invoiceNumber
+      } (${saved.chain})! Zadanie 2 („Uzupełnij zdjęcia gotowej przesyłki”) wyślesz z folderu W REALIZACJI.`
+    );
+    setTimeout(() => setPriceNotice(null), 6500);
+  };
+
   const handleLoadSharedDraft = (draft: SharedInvoiceDraft) => {
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setSelectedChain(draft.selectedChain || 'Custom');
     setLogisticsFormat(draft.logisticsFormat || 'gs1_composite');
     if (draft.seller) setSeller(draft.seller);
@@ -270,37 +459,90 @@ export default function App() {
     setTimeout(() => setPriceNotice(null), 6500);
   };
 
+  const handleStartNewOrderOnCard = () => {
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
+    setItems([]);
+    setOrderFile(null);
+    setManualPriceList(null);
+    setManualPriceListFileName(null);
+    setPriceListSource('knowledge_auto');
+    setKnowledgePriceListOverride(null);
+    setThirdParty(null);
+    setBuyer(EMPTY_BUYER);
+    setSelectedChain('Custom');
+    setMeta(getFreshInvoiceMeta());
+    setActiveModule('history');
+    setOrderHistoryTab('new');
+    setPriceNotice(
+      '➕ Otwarto czystą kartę nowego zamówienia. Wgraj plik zamówienia lub uzupełnij pozycje, a na dole karty wybierz jedną z 3 opcji zapisu lub wygeneruj WZ.'
+    );
+    setTimeout(() => setPriceNotice(null), 6000);
+  };
+
   const handleLoadOrderForInvoiceCreation = (order: ArchivedOrder) => {
     setPendingOrderSourceId(order.id);
-    setSelectedChain(order.chain || 'Custom');
+    setCurrentOrderPackagingPhotos(Array.isArray(order.packagingPhotos) ? [...order.packagingPhotos] : []);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
+    const chain = order.chain || 'Custom';
+    setSelectedChain(chain);
+    if (chain === 'Super-Pharm' || chain === 'Gemini') {
+      setLogisticsFormat('separate_fields');
+    } else if (chain === 'DOZ') {
+      setLogisticsFormat('gs1_composite');
+    }
     if (order.seller) setSeller(order.seller);
     if (order.buyer) setBuyer(order.buyer);
     setThirdParty(order.thirdParty || null);
     if (order.items && order.items.length > 0) {
       setItems([...order.items]);
     }
+    const isPlaceholderInvoiceNo =
+      !order.invoiceNumber ||
+      order.invoiceNumber === 'FAKTURA' ||
+      order.invoiceNumber.startsWith('ZAM:') ||
+      order.invoiceNumber.startsWith('ZAM ') ||
+      order.invoiceNumber.startsWith('BEZ FV') ||
+      order.invoiceNumber === 'ZAMÓWIENIE' ||
+      order.invoiceNumber === 'ZAMÓWIENIE DO UZUPEŁNIENIA' ||
+      order.invoiceNumber === 'WPISZ NR DOKUMENTU';
+
     setMeta((prev) => ({
       ...prev,
-      orderNumber: order.orderNumber || prev.orderNumber,
-      orderDate: order.orderDate || prev.orderDate,
-      deliveryDate: order.avisoDate || order.deliveryDate || prev.deliveryDate,
-      invoiceNumber:
-        order.invoiceNumber && !order.invoiceNumber.startsWith('ZAM:')
-          ? order.invoiceNumber
-          : '',
+      issueDate: order.issueDate || prev.issueDate,
+      orderNumber: order.orderNumber || '',
+      orderDate: order.orderDate || '',
+      deliveryDate: order.avisoDate || order.deliveryDate || '',
+      dueDate: order.dueDate || '',
+      invoiceNumber: !isPlaceholderInvoiceNo
+        ? order.invoiceNumber
+        : order.externalInvoiceNumber || '',
     }));
+    if (order.originalFileName) {
+      setOrderFile({ name: order.originalFileName, size: 'w realizacji' });
+    } else if (order.orderNumber) {
+      setOrderFile({ name: `Zamówienie_${order.orderNumber}.pdf`, size: 'w realizacji' });
+    }
     setPriceListSource('knowledge_auto');
     setKnowledgePriceListOverride(null);
-    setActiveModule('invoice');
+    setActiveModule('history');
+    setOrderHistoryTab('new');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     setPriceNotice(
-      `⚡ Załadowano dane zamówienia ${order.orderNumber || order.id} do Generatora e-Faktur KSeF!`
+      `✏️ Wrócono do karty zamówienia ${order.orderNumber || order.invoiceNumber} z folderu „W REALIZACJI”! Wczytano przypisane pozycje oraz zdjęcia opakowań (${order.packagingPhotos?.length || 0} szt.).`
     );
-    setTimeout(() => setPriceNotice(null), 5000);
+    setTimeout(() => setPriceNotice(null), 6500);
   };
 
-  const handleSaveInvoiceToHistory = async () => {
+  const handleSaveOrderFromCard = async (
+    mode: 'with_fv_xml' | 'complete_later' | 'without_fv',
+    navigateToInProgress?: boolean
+  ) => {
     if (items.length === 0) {
-      alert('Brak pozycji towarowych na fakturze do zapisania w historii.');
+      alert('Dodaj lub wczytaj przynajmniej 1 pozycję towarową na karcie zamówienia przed zapisem.');
       return;
     }
 
@@ -320,20 +562,76 @@ export default function App() {
 
     const resolvedChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
     const xmlInvoiceNum = extractInvoiceNumberFromXml(xmlPayload);
-    const resolvedInvoiceNumber = meta.invoiceNumber?.trim() || xmlInvoiceNum || 'FAKTURA';
+    const existingOrder = activeMatchedArchivedOrder;
+    const preservedShippingStatus =
+      existingOrder &&
+      !existingOrder.isDelivered &&
+      existingOrder.shippingStatus &&
+      existingOrder.shippingStatus !== 'delivered'
+        ? existingOrder.shippingStatus
+        : existingOrder?.trackingNumber
+        ? 'in_transit'
+        : 'registered';
 
-    const existingOrder = pendingOrderSourceId
-      ? archivedOrders.find((o) => o.id === pendingOrderSourceId)
-      : null;
+    const cleanOrdNo = (meta.orderNumber || existingOrder?.orderNumber || '').trim();
+    const cleanMetaInv = (meta.invoiceNumber || '').trim();
+    const hasCustomMetaInv =
+      Boolean(cleanMetaInv) &&
+      cleanMetaInv !== 'FAKTURA' &&
+      !cleanMetaInv.startsWith('ZAM:') &&
+      !cleanMetaInv.startsWith('ZAM ');
 
+    let documentType: 'FV' | 'ZAM' = 'FV';
+    let invoiceStatus: 'issued' | 'awaiting_invoice' | 'external_billing' = 'issued';
+    let resolvedInvoiceNumber = cleanMetaInv || xmlInvoiceNum || 'FAKTURA';
+    let externalInvoiceNumber = existingOrder?.externalInvoiceNumber;
+    let finalXmlContent = xmlPayload;
+    let defaultNote = '';
+
+    if (mode === 'with_fv_xml') {
+      documentType = 'FV';
+      invoiceStatus = 'issued';
+      resolvedInvoiceNumber = cleanMetaInv || xmlInvoiceNum || 'FAKTURA';
+      finalXmlContent = xmlPayload;
+      defaultNote = orderFile
+        ? `Wystawiono fakturę KSeF XML z pliku: ${orderFile.name} (W REALIZACJI — oczekuje na list przewozowy i doręczenie)`
+        : 'Wystawiono fakturę KSeF XML (W REALIZACJI — oczekuje na list przewozowy i doręczenie)';
+    } else if (mode === 'complete_later') {
+      documentType = 'ZAM';
+      invoiceStatus = 'awaiting_invoice';
+      resolvedInvoiceNumber = cleanOrdNo ? `ZAM: ${cleanOrdNo}` : 'ZAMÓWIENIE DO UZUPEŁNIENIA';
+      finalXmlContent = '';
+      defaultNote =
+        'Zapisano do późniejszego uzupełnienia — pakowanie, zdjęcia opakowań (LOT/MHD), dane do FV i wystawienie FV odbędą się później (wróć do karty zamówienia z poziomu W REALIZACJI)';
+    } else {
+      // mode === 'without_fv'
+      documentType = 'ZAM';
+      invoiceStatus = 'external_billing';
+      externalInvoiceNumber =
+        existingOrder?.externalInvoiceNumber || (hasCustomMetaInv ? cleanMetaInv : '');
+      resolvedInvoiceNumber =
+        externalInvoiceNumber ||
+        (cleanOrdNo ? `BEZ FV (ZAM ${cleanOrdNo})` : 'WPISZ NR DOKUMENTU');
+      finalXmlContent = '';
+      defaultNote =
+        'Zapisano bez wystawiania FV XML — wpisz ręcznie numer dokumentu na karcie zamówienia w folderze W REALIZACJI';
+    }
+
+    const mergedPackagingPhotos =
+      currentOrderPackagingPhotos.length > 0
+        ? currentOrderPackagingPhotos
+        : existingOrder?.packagingPhotos || [];
+
+    const nowIso = new Date().toISOString();
     const savedOrder: ArchivedOrder = {
       ...(existingOrder || {}),
       id: existingOrder?.id || `ord-${Date.now()}`,
       chain: resolvedChain,
-      documentType: 'FV',
-      invoiceStatus: 'issued',
+      documentType,
+      invoiceStatus,
       invoiceNumber: resolvedInvoiceNumber,
-      orderNumber: meta.orderNumber || existingOrder?.orderNumber,
+      externalInvoiceNumber,
+      orderNumber: cleanOrdNo || existingOrder?.orderNumber,
       orderDate: meta.orderDate || existingOrder?.orderDate,
       issueDate: meta.issueDate,
       avisoDate: meta.deliveryDate || existingOrder?.avisoDate,
@@ -348,26 +646,72 @@ export default function App() {
       totalVat,
       totalGross,
       currency: meta.currency || 'PLN',
-      xmlContent: xmlPayload,
-      isDelivered: existingOrder?.isDelivered || false,
-      deliveredAt: existingOrder?.deliveredAt || null,
-      shippingStatus: existingOrder?.shippingStatus || 'registered',
+      xmlContent: finalXmlContent,
+      // Każde nowe zamówienie trafia do folderu W REALIZACJI
+      // (dopiero po zaznaczeniu "Towar dotarł do klienta" przechodzi do ZAKOŃCZONE)
+      isDelivered: false,
+      deliveredAt: null,
+      shippingStatus: preservedShippingStatus,
       trackingNumber: existingOrder?.trackingNumber,
       courierName: existingOrder?.courierName,
-      notes:
-        (existingOrder?.notes ? `${existingOrder.notes} | ` : '') +
-        (orderFile ? `Z pliku: ${orderFile.name}` : 'Wystawiono fakturę KSeF'),
+      notes: existingOrder?.notes || defaultNote,
       originalFileName: orderFile?.name || existingOrder?.originalFileName,
-      createdAt: existingOrder?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: existingOrder?.createdAt || nowIso,
+      updatedAt: nowIso,
       parcelPhotos: existingOrder?.parcelPhotos || [],
+      packagingPhotos: mergedPackagingPhotos,
+      warehouseProductTaskStatus: existingOrder?.warehouseProductTaskStatus || 'none',
+      warehouseProductTaskAssignedAt: existingOrder?.warehouseProductTaskAssignedAt || null,
+      warehouseProductTaskCompletedAt: existingOrder?.warehouseProductTaskCompletedAt || null,
+      warehouseProductTaskNote: existingOrder?.warehouseProductTaskNote || null,
+      warehouseParcelTaskStatus: existingOrder?.warehouseParcelTaskStatus || 'none',
+      warehouseParcelTaskAssignedAt: existingOrder?.warehouseParcelTaskAssignedAt || null,
+      warehouseParcelTaskCompletedAt: existingOrder?.warehouseParcelTaskCompletedAt || null,
+      warehouseParcelTaskNote: existingOrder?.warehouseParcelTaskNote || null,
+      warehouseTaskStatus: existingOrder?.warehouseTaskStatus || 'none',
+      warehouseTaskNote: existingOrder?.warehouseTaskNote,
     };
 
-    await saveArchivedOrder(savedOrder);
-    setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
-    setPendingOrderSourceId(null);
-    setPriceNotice(`💾 Pomyślnie zapisano fakturę ${savedOrder.invoiceNumber} (${savedOrder.chain}) w Historii Zamówień Sieciowych!`);
-    setTimeout(() => setPriceNotice(null), 6000);
+    const saved = await saveArchivedOrder(savedOrder);
+    setArchivedOrders((prev) => [saved, ...prev.filter((o) => o.id !== saved.id)]);
+    setPendingOrderSourceId(saved.id);
+    setCurrentOrderPackagingPhotos(saved.packagingPhotos || []);
+    clearSharedPackagingPhotos();
+
+    if (mode === 'with_fv_xml') {
+      setPriceNotice(
+        `🧾 Zapisano zamówienie z wystawioną fakturą XML (${saved.invoiceNumber}) w folderze „W REALIZACJI”! Pobierz plik XML lub przejdź do W REALIZACJI, aby uzupełnić list przewozowy.`
+      );
+      setTimeout(() => setPriceNotice(null), 7000);
+      if (navigateToInProgress === true) {
+        setIsXmlModalOpen(false);
+        setOrderHistoryTab('in_progress');
+        setActiveModule('history');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        setIsXmlModalOpen(true);
+      }
+    } else if (mode === 'complete_later') {
+      setPriceNotice(
+        `⏳ Zapisano zamówienie ${saved.orderNumber || saved.invoiceNumber} w folderze „W REALIZACJI” do późniejszego uzupełnienia (pakowanie, zdjęcia opakowań, dane do FV).`
+      );
+      setTimeout(() => setPriceNotice(null), 7000);
+      setOrderHistoryTab('in_progress');
+      setActiveModule('history');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      setPriceNotice(
+        `📝 Zapisano zamówienie ${saved.orderNumber || saved.invoiceNumber} bez wystawiania FV w folderze „W REALIZACJI” — możesz tam wpisać numer dokumentu ręcznie.`
+      );
+      setTimeout(() => setPriceNotice(null), 7000);
+      setOrderHistoryTab('in_progress');
+      setActiveModule('history');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleSaveInvoiceToHistory = async (navigateToInProgress?: boolean) => {
+    await handleSaveOrderFromCard('with_fv_xml', navigateToInProgress);
   };
 
   // --- AUTOMATYCZNY DOBÓR CENNIKA Z CENTRUM WIEDZY WG PRZYPISANEGO ODBIORCY ---
@@ -470,6 +814,45 @@ export default function App() {
 
   // --- Resetowanie Wszystkiego do Czystego Stanu (Od Zera) ---
   const handleResetEverything = () => {
+    const cleanOrdNo = (meta.orderNumber || '').trim().toLowerCase();
+    const orderToReset =
+      activeMatchedArchivedOrder ||
+      (cleanOrdNo
+        ? archivedOrders.find(
+            (o) => !o.isDelivered && (o.orderNumber || '').trim().toLowerCase() === cleanOrdNo
+          )
+        : null);
+
+    if (orderToReset) {
+      const nextParcelStatus = orderToReset.warehouseParcelTaskStatus || 'none';
+      const nextCombinedStatus = nextParcelStatus !== 'none' ? nextParcelStatus : 'none';
+      updateArchivedOrderFields(orderToReset.id, {
+        warehouseProductTaskStatus: 'none',
+        warehouseProductTaskAssignedAt: null,
+        warehouseProductTaskCompletedAt: null,
+        warehouseProductTaskNote: null,
+        warehouseTaskStatus: nextCombinedStatus,
+      }).catch(() => {});
+      setArchivedOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderToReset.id
+            ? {
+                ...o,
+                warehouseProductTaskStatus: 'none',
+                warehouseProductTaskAssignedAt: null,
+                warehouseProductTaskCompletedAt: null,
+                warehouseProductTaskNote: null,
+                warehouseTaskStatus: nextCombinedStatus,
+              }
+            : o
+        )
+      );
+    }
+
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setItems([]);
     setOrderFile(null);
     setManualPriceList(null);
@@ -480,8 +863,10 @@ export default function App() {
     setBuyer(EMPTY_BUYER);
     setSelectedChain('Custom');
     setMeta(getFreshInvoiceMeta());
-    setPriceNotice('Wyczyszczono formularz. Wszystkie dane nagłówka i pozycji zostały zresetowane.');
-    setTimeout(() => setPriceNotice(null), 4000);
+    setPriceNotice(
+      '🧹 Wyczyszczono kartę zamówienia i widoczne na niej zdjęcia oraz przywrócono możliwość wysłania zadania do Magazynu: „Uzupełnij zdjęcia produktów”.'
+    );
+    setTimeout(() => setPriceNotice(null), 5000);
   };
 
   // --- Handlery Cennika (Centrum Wiedzy & XLSX) ---
@@ -671,6 +1056,10 @@ export default function App() {
   };
 
   const handleLoadPresetSuperPharm = () => {
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setSelectedChain('Super-Pharm');
     setBuyer({ ...PHARMACY_CHAINS['Super-Pharm'].buyer });
     setThirdParty(
@@ -688,6 +1077,10 @@ export default function App() {
   };
 
   const handleLoadPresetDrMax = () => {
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setSelectedChain('Dr. Max');
     setBuyer({ ...PHARMACY_CHAINS['Dr. Max'].buyer });
     setThirdParty(null);
@@ -699,6 +1092,10 @@ export default function App() {
   };
 
   const handleLoadPresetDoz = () => {
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setSelectedChain('DOZ');
     setBuyer({ ...PHARMACY_CHAINS['DOZ'].buyer });
     setThirdParty(null);
@@ -716,6 +1113,10 @@ export default function App() {
     dueObj.setDate(dueObj.getDate() + 60);
     const dueDateStr = dueObj.toISOString().slice(0, 10);
 
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setSelectedChain('DOZ');
     setBuyer({ ...PHARMACY_CHAINS['DOZ'].buyer });
     setThirdParty(null);
@@ -743,67 +1144,6 @@ export default function App() {
       `📡 Wczytano zamówienie EDI ORDERS nr ${ediOrder.orderNumber} z bramki DOZ Direct (${ediOrder.items.length} pozycji · Cennik Kolumna O -12% · Termin 60 dni · Brak Podmiot3).`
     );
     setTimeout(() => setPriceNotice(null), 7000);
-  };
-
-  const handleLoadOrderFromEmail = (params: {
-    chain: 'DOZ' | 'DR_MAX';
-    orderNumber: string;
-    orderDate: string;
-    deliveryDate: string;
-    buyer: EntityDetails;
-    items: InvoiceItem[];
-  }) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const deliv = params.deliveryDate || today;
-    const dueObj = new Date(deliv);
-    dueObj.setDate(dueObj.getDate() + 60);
-    const dueDateStr = dueObj.toISOString().slice(0, 10);
-
-    const mappedChain: PharmacyChain = params.chain === 'DR_MAX' ? 'Dr. Max' : 'DOZ';
-    setSelectedChain(mappedChain);
-    setBuyer({ ...params.buyer });
-    setThirdParty(null);
-    setSeller({ ...DEFAULT_SELLER });
-    setMeta((prev) => ({
-      ...prev,
-      invoiceNumber: prev.invoiceNumber || `FV/2026/10/${params.orderNumber.slice(-4)}`,
-      issueDate: today,
-      deliveryDate: deliv,
-      orderNumber: params.orderNumber,
-      orderDate: params.orderDate || today,
-      paymentDays: 60,
-      dueDate: dueDateStr,
-    }));
-    setItems(params.items.map((it) => ({ ...it })));
-    setLogisticsFormat('gs1_composite');
-    setPriceListSource('knowledge_auto');
-    setKnowledgePriceListOverride(params.chain === 'DOZ' ? 'DOZ_SPECIAL' : 'Q3_STANDARD');
-    setOrderFile({
-      name: `Zamowienie_${params.orderNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,
-      size: 'Poczta Zenbox',
-    });
-    setActiveModule('invoice');
-    setPriceNotice(
-      `📬 Wczytano zamówienie nr ${params.orderNumber} ze Skrzynki Zamówień Zenbox (${params.buyer.name} · ${params.items.length} poz.).`
-    );
-    setTimeout(() => setPriceNotice(null), 7000);
-  };
-
-  const handleMarkOrderDeliveredFromZenbox = async (orderNumber: string, invoiceNumber?: string) => {
-    const norm = orderNumber.trim().toUpperCase();
-    const match = archivedOrders.find(
-      (o) =>
-        o.orderNumber?.trim().toUpperCase() === norm ||
-        (invoiceNumber && o.invoiceNumber?.trim().toUpperCase() === invoiceNumber.trim().toUpperCase())
-    );
-    if (match) {
-      await saveArchivedOrder({
-        ...match,
-        isDelivered: true,
-        shippingStatus: 'delivered',
-      });
-      await refreshArchivedOrders();
-    }
   };
 
   const handleUpdateItem = (id: string, updatedFields: Partial<InvoiceItem>) => {
@@ -848,6 +1188,10 @@ export default function App() {
   };
 
   const handleLoadPresetNoBatches = () => {
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setSelectedChain('Dr. Max');
     setBuyer({ ...PHARMACY_CHAINS['Dr. Max'].buyer });
     setThirdParty(null);
@@ -874,10 +1218,10 @@ export default function App() {
     setTimeout(() => setPriceNotice(null), 4000);
   };
 
-  // Krok 1: Parsowanie specyfikacji zamówienia
+  // Krok 1: Parsowanie specyfikacji zamówienia na karcie wprowadzania zamówienia
   const handleOrderTextParsed = (
     parsedItems: Partial<InvoiceItem>[],
-    rawText: string,
+    _rawText: string,
     parsedHeader?: ParsedOrderData,
     hasBatchesOrExpiry?: boolean
   ) => {
@@ -899,17 +1243,24 @@ export default function App() {
     setKnowledgePriceListOverride(null);
     setIsVerificationEnabled(true);
 
-    if (hasBatchesOrExpiry) {
-      setLogisticsFormat('gs1_composite');
-    } else {
-      setLogisticsFormat('none');
-    }
-
     if (parsedHeader) {
       const match = matchOrBuildBuyerFromOrder(parsedHeader, selectedChain);
+
       setSelectedChain(match.chain);
       setBuyer(match.buyer);
       setThirdParty(match.thirdParty);
+
+      // Automatycznie ustaw wymagany przez sieć format dat ważności i serii w KSeF
+      if (match.chain === 'Super-Pharm' || match.chain === 'Gemini') {
+        setLogisticsFormat('separate_fields');
+      } else if (match.chain === 'DOZ') {
+        setLogisticsFormat('gs1_composite');
+      } else if (PHARMACY_CHAINS[match.chain]?.preferredLogisticsFormat && match.chain !== 'Dr. Max') {
+        setLogisticsFormat(PHARMACY_CHAINS[match.chain].preferredLogisticsFormat);
+      } else {
+        setLogisticsFormat(hasBatchesOrExpiry ? 'gs1_composite' : 'none');
+      }
+
       setMeta((prev) => ({
         ...prev,
         orderNumber: match.metaUpdates.orderNumber || prev.orderNumber,
@@ -924,26 +1275,50 @@ export default function App() {
         ? `rozpoznano profil: ${match.chainProfileName}`
         : 'kontrahent bezpośrednio z zamówienia';
       setPriceNotice(
-        `📥 Pomyślnie zaczytano zamówienie: Nabywca ${match.buyer.name} (NIP: ${match.buyer.nip}) · ${chainLabel} · ${parsedItems.length} pozycji towarowych.`
+        `📥 Wczytano zamówienie na karcie: Nabywca ${match.buyer.name} (NIP: ${match.buyer.nip}) · ${chainLabel} · ${parsedItems.length} pozycji. Na dole karty wybierz jedną z 3 opcji zapisu (1. Z wystawieniem FV XML, 2. Uzupełnij później, 3. Bez wystawiania FV).`
+      );
+      setTimeout(() => setPriceNotice(null), 8000);
+    } else {
+      if (selectedChain === 'Super-Pharm' || selectedChain === 'Gemini') {
+        setLogisticsFormat('separate_fields');
+      } else if (selectedChain === 'DOZ') {
+        setLogisticsFormat('gs1_composite');
+      } else {
+        setLogisticsFormat(hasBatchesOrExpiry ? 'gs1_composite' : 'none');
+      }
+      setPriceNotice(
+        `📥 Zaczytano ${parsedItems.length} pozycji ${
+          hasBatchesOrExpiry ? 'z seriami i datami' : 'bez serii i dat ważności'
+        }. Na dole karty wybierz jedną z 3 opcji zapisu do folderu „W REALIZACJI”.`
       );
       setTimeout(() => setPriceNotice(null), 7000);
-    } else {
-      setPriceNotice(
-        `Zaczytano ${parsedItems.length} pozycji ${
-          hasBatchesOrExpiry ? 'z seriami i datami' : 'bez serii i dat ważności'
-        }.`
-      );
-      setTimeout(() => setPriceNotice(null), 6000);
     }
+
+    // Każde nowo wczytane z pliku zamówienie na karcie startuje z czystym statusem Zadania 1 (możliwość wysłania "Uzupełnij zdjęcia produktów")
+    setPendingOrderSourceId(null);
+    setCurrentOrderPackagingPhotos([]);
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
   };
 
   // Wczytanie zamówienia z Historii Zamówień Sieciowych bezpośrednio do formularza FV
   const handleLoadArchivedOrderToInvoice = (order: ArchivedOrder) => {
+    setPendingOrderSourceId(order.id);
+    setCurrentOrderPackagingPhotos(
+      Array.isArray(order.packagingPhotos) ? [...order.packagingPhotos] : []
+    );
+    setPhotoSectionResetKey((prev) => prev + 1);
+    clearSharedPackagingPhotos();
     setPriceListSource('knowledge_auto');
     setKnowledgePriceListOverride(null);
     setIsVerificationEnabled(true);
     if (order.chain) {
       setSelectedChain(order.chain);
+      if (order.chain === 'Super-Pharm' || order.chain === 'Gemini') {
+        setLogisticsFormat('separate_fields');
+      } else if (order.chain === 'DOZ') {
+        setLogisticsFormat('gs1_composite');
+      }
     }
     if (order.buyer) {
       setBuyer(order.buyer);
@@ -972,7 +1347,7 @@ export default function App() {
       setOrderFile({ name: `Zamówienie_${order.orderNumber || order.invoiceNumber}.pdf`, size: 'z historii' });
     }
     setPriceNotice(
-      `📥 Wczytano zamówienie/fakturę ${order.orderNumber || order.invoiceNumber} dla: ${order.buyer?.name || 'Nabywcy'} (${order.items?.length || 0} pozycji).`
+      `📥 Wczytano zamówienie/fakturę ${order.orderNumber || order.invoiceNumber} dla: ${order.buyer?.name || 'Nabywcy'} (${order.items?.length || 0} pozycji · ${order.packagingPhotos?.length || 0} zdjęć opakowań).`
     );
     setTimeout(() => setPriceNotice(null), 6000);
   };
@@ -1025,6 +1400,119 @@ export default function App() {
     schemaVersion,
   });
 
+  const renderOrderAndInvoiceSteps = (viewMode: 'new_order' | 'invoice_only') => (
+    <div className="space-y-6">
+      {/* Powiadomienie systemowe */}
+      {priceNotice && (
+        <div className="p-3.5 rounded-xl bg-fuchsia-50 border border-fuchsia-200 text-xs text-fuchsia-900 flex items-center gap-2.5 shadow-2xs animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-fuchsia-600 shrink-0" />
+          <span className="font-medium">{priceNotice}</span>
+        </div>
+      )}
+
+      {/* KROK 1 & 2: PANEL ZAMÓWIENIA & DANYCH FAKTURY KSEF */}
+      <CombinedOrderInvoiceStep
+        viewMode={viewMode}
+        onOrderTextParsed={handleOrderTextParsed}
+        orderFile={orderFile}
+        onOrderFileChange={setOrderFile}
+        itemsCount={items.length}
+        selectedChain={selectedChain}
+        onSelectChain={handleSelectChain}
+        seller={seller}
+        onUpdateSeller={setSeller}
+        buyer={buyer}
+        onUpdateBuyer={setBuyer}
+        thirdParty={thirdParty}
+        onUpdateThirdParty={setThirdParty}
+        meta={meta}
+        onUpdateMeta={setMeta}
+        logisticsFormat={logisticsFormat}
+        onToggleLogisticsFormat={setLogisticsFormat}
+        archivedOrders={archivedOrders}
+        onLoadArchivedOrder={handleLoadArchivedOrderToInvoice}
+        onResetEverything={handleResetEverything}
+        onLoadPresetDrMax={handleLoadPresetDrMax}
+        onLoadPresetDoz={handleLoadPresetDoz}
+        onLoadPresetSuperPharm={handleLoadPresetSuperPharm}
+        onLoadPresetNoBatches={handleLoadPresetNoBatches}
+        onSendTaskToWarehouse={handleSendCurrentOrderToWarehouse}
+        warehouseTaskStatus={
+          activeMatchedArchivedOrder?.warehouseProductTaskStatus ||
+          activeMatchedArchivedOrder?.warehouseTaskStatus ||
+          'none'
+        }
+        warehouseTaskNote={
+          activeMatchedArchivedOrder?.warehouseProductTaskNote ||
+          activeMatchedArchivedOrder?.warehouseTaskNote ||
+          ''
+        }
+      />
+
+      {/* KROK 3: Zdjęcia – Serie / Daty (OCR) */}
+      <Step3PhotosAndBatches
+        key={photoSectionResetKey}
+        logisticsFormat={logisticsFormat}
+        onToggleLogisticsFormat={setLogisticsFormat}
+        onOcrCompleted={handleOcrCompleted}
+        onOpenAiGuide={() => setIsAiGuideOpen(true)}
+        items={items}
+        selectedChain={selectedChain}
+        buyerName={buyer.name}
+        buyerNip={buyer.nip}
+        onUpdateItem={handleUpdateItem}
+        orderPackagingPhotos={currentOrderPackagingPhotos}
+        onOrderPackagingPhotosChange={handleUpdateCurrentOrderPackagingPhotos}
+      />
+
+      {/* KROK 4: Automatyczna Weryfikacja Ceny Netto i Kodu EAN wg Cennika z Centrum Wiedzy (lub XLSX) */}
+      <PriceListSection
+        priceList={effectivePriceList}
+        priceListFileName={effectivePriceListName}
+        onPriceListLoaded={handlePriceListLoaded}
+        onClearPriceList={handleClearPriceList}
+        auditSummary={auditSummary}
+        comparisons={comparisons}
+        isVerificationEnabled={isVerificationEnabled}
+        onToggleVerification={setIsVerificationEnabled}
+        onApplyPriceListDiscrepancies={handleApplyPriceListDiscrepancies}
+        onApplyPriceListGtins={handleApplyPriceListGtins}
+        onApplyAllFromPriceList={handleApplyAllFromPriceList}
+        onApplySinglePrice={handleApplySinglePrice}
+        onApplySingleGtin={handleApplySingleGtin}
+        onApplySingleBoth={handleApplySingleBoth}
+        priceListSource={priceListSource}
+        activeKnowledgePriceListType={activeKnowledgePriceListType}
+        matchedRecipientLabel={matchedRecipientLabel}
+        onSwitchKnowledgePriceList={handleSwitchKnowledgePriceList}
+      />
+
+      {/* KROK 5: Pozycje Towarowe i Podsumowanie */}
+      <ItemsPreviewTable
+        viewMode={viewMode}
+        items={items}
+        logisticsFormat={logisticsFormat}
+        selectedChain={selectedChain}
+        buyerName={buyer.name}
+        buyerNip={buyer.nip}
+        onToggleLogisticsFormat={setLogisticsFormat}
+        onUpdateItem={handleUpdateItem}
+        onDeleteItem={handleDeleteItem}
+        onAddItem={handleAddItem}
+        onQuickFillBatches={handleQuickFillBatches}
+        onClearBatches={handleClearBatches}
+        priceComparisons={comparisons}
+        isVerificationEnabled={isVerificationEnabled && !!effectivePriceList}
+        onApplySinglePrice={handleApplySinglePrice}
+        onApplySingleGtin={handleApplySingleGtin}
+        onOpenXmlModal={() => setIsXmlModalOpen(true)}
+        onOpenWzModal={() => setIsWzModalOpen(true)}
+        onSaveToHistory={handleSaveInvoiceToHistory}
+        onSaveOrderWithMode={handleSaveOrderFromCard}
+      />
+    </div>
+  );
+
   // Ekran logowania dla nieautoryzowanych użytkowników
   if (!isAuthenticated) {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
@@ -1038,172 +1526,97 @@ export default function App() {
         onOpenWzModal={() => setIsWzModalOpen(true)}
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
-        onOpenZenboxModal={() => setIsZenboxModalOpen(true)}
         activeUsersCount={activeUsersCount}
         sharedDraftsCount={sharedDraftsCount}
         onNavigateHome={() => setActiveModule('home')}
         itemCount={items.length}
         username="Eubiosis"
         onLogout={handleLogout}
+        workstationRole={workstationRole}
+        onSwitchWorkstationRole={handleSwitchWorkstationRole}
+        warehouseTasksCount={activeWarehouseTasksCount}
       />
 
       {/* Główny obszar roboczy */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* ==================================================================== */}
-        {/* STRONA 1: WYBÓR Z TYLKO DWÓCH KAFELKÓW (CENTRUM FAKTUR / ZAMÓWIEŃ)  */}
-        {/* ==================================================================== */}
-        {activeModule === 'home' ? (
-          <HomePortalView
-            onSelectModule={setActiveModule}
-            ordersCount={archivedOrders.length}
-            onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
-            onOpenZenboxModal={() => setIsZenboxModalOpen(true)}
-          />
-        ) : (
+        {workstationRole === 'warehouse' ? (
           /* ==================================================================== */
-          /* PODSTRONY: PASEK POWROTU ORAZ PRZEŁĄCZANIA PODMODUŁÓW               */
+          /* STANOWISKO 2: MAGAZYN — WYŁĄCZNIE PRZYPISANE ZADANIA OD KOORDYNATORA */
           /* ==================================================================== */
-          <SubpageHeaderBar
-            activeModule={activeModule}
-            onSelectModule={setActiveModule}
-            onNavigateHome={() => setActiveModule('home')}
-            ordersCount={archivedOrders.length}
-            onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
-            onOpenZenboxModal={() => setIsZenboxModalOpen(true)}
-          />
-        )}
-
-        {/* ==================================================================== */}
-        {/* MODUŁ 1: 1. WYGENERUJ FAKTURĘ XML                                    */}
-        {/* ==================================================================== */}
-        {activeModule === 'invoice' && (
-          <div className="space-y-6">
-            {/* Powiadomienie systemowe */}
-            {priceNotice && (
-              <div className="p-3.5 rounded-xl bg-fuchsia-50 border border-fuchsia-200 text-xs text-fuchsia-900 flex items-center gap-2.5 shadow-2xs animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4 text-fuchsia-600 shrink-0" />
-                <span className="font-medium">{priceNotice}</span>
-              </div>
-            )}
-
-            {/* KROK 1 & 2: PANEL ZAMÓWIENIA & DANYCH FAKTURY KSEF */}
-            <CombinedOrderInvoiceStep
-              onOrderTextParsed={handleOrderTextParsed}
-              orderFile={orderFile}
-              onOrderFileChange={setOrderFile}
-              itemsCount={items.length}
-              selectedChain={selectedChain}
-              onSelectChain={handleSelectChain}
-              seller={seller}
-              onUpdateSeller={setSeller}
-              buyer={buyer}
-              onUpdateBuyer={setBuyer}
-              thirdParty={thirdParty}
-              onUpdateThirdParty={setThirdParty}
-              meta={meta}
-              onUpdateMeta={setMeta}
-              logisticsFormat={logisticsFormat}
-              onToggleLogisticsFormat={setLogisticsFormat}
-              archivedOrders={archivedOrders}
-              onLoadArchivedOrder={handleLoadArchivedOrderToInvoice}
-              onResetEverything={handleResetEverything}
-              onLoadPresetDrMax={handleLoadPresetDrMax}
-              onLoadPresetDoz={handleLoadPresetDoz}
-              onLoadPresetSuperPharm={handleLoadPresetSuperPharm}
-              onLoadPresetNoBatches={handleLoadPresetNoBatches}
-            />
-
-            {/* KROK 3: Zdjęcia – Serie / Daty (OCR) */}
-            <Step3PhotosAndBatches
-              logisticsFormat={logisticsFormat}
-              onToggleLogisticsFormat={setLogisticsFormat}
-              onOcrCompleted={handleOcrCompleted}
-              onOpenAiGuide={() => setIsAiGuideOpen(true)}
-              items={items}
-              selectedChain={selectedChain}
-              buyerName={buyer.name}
-              buyerNip={buyer.nip}
-              onUpdateItem={handleUpdateItem}
-            />
-
-            {/* KROK 4: Automatyczna Weryfikacja Ceny Netto i Kodu EAN wg Cennika z Centrum Wiedzy (lub XLSX) */}
-            <PriceListSection
-              priceList={effectivePriceList}
-              priceListFileName={effectivePriceListName}
-              onPriceListLoaded={handlePriceListLoaded}
-              onClearPriceList={handleClearPriceList}
-              auditSummary={auditSummary}
-              comparisons={comparisons}
-              isVerificationEnabled={isVerificationEnabled}
-              onToggleVerification={setIsVerificationEnabled}
-              onApplyPriceListDiscrepancies={handleApplyPriceListDiscrepancies}
-              onApplyPriceListGtins={handleApplyPriceListGtins}
-              onApplyAllFromPriceList={handleApplyAllFromPriceList}
-              onApplySinglePrice={handleApplySinglePrice}
-              onApplySingleGtin={handleApplySingleGtin}
-              onApplySingleBoth={handleApplySingleBoth}
-              priceListSource={priceListSource}
-              activeKnowledgePriceListType={activeKnowledgePriceListType}
-              matchedRecipientLabel={matchedRecipientLabel}
-              onSwitchKnowledgePriceList={handleSwitchKnowledgePriceList}
-            />
-
-            {/* KROK 5: Pozycje Towarowe i Podsumowanie E-Faktury z podglądem XML */}
-            <ItemsPreviewTable
-              items={items}
-              logisticsFormat={logisticsFormat}
-              selectedChain={selectedChain}
-              buyerName={buyer.name}
-              buyerNip={buyer.nip}
-              onToggleLogisticsFormat={setLogisticsFormat}
-              onUpdateItem={handleUpdateItem}
-              onDeleteItem={handleDeleteItem}
-              onAddItem={handleAddItem}
-              onQuickFillBatches={handleQuickFillBatches}
-              onClearBatches={handleClearBatches}
-              priceComparisons={comparisons}
-              isVerificationEnabled={isVerificationEnabled && !!effectivePriceList}
-              onApplySinglePrice={handleApplySinglePrice}
-              onApplySingleGtin={handleApplySingleGtin}
-              onOpenXmlModal={() => setIsXmlModalOpen(true)}
-              onOpenWzModal={() => setIsWzModalOpen(true)}
-              onSaveToHistory={handleSaveInvoiceToHistory}
-            />
-          </div>
-        )}
-
-        {/* ==================================================================== */}
-        {/* MODUŁ 2: 2. WYGENERUJ KOREKTĘ FAKTURY XML                             */}
-        {/* ==================================================================== */}
-        {activeModule === 'correction' && (
-          <InvoiceCorrectionView
-            archivedOrders={archivedOrders}
-            preloadedOrder={preloadedOrderForCorrection}
-            onClearPreloadedOrder={() => setPreloadedOrderForCorrection(null)}
-            onSavedToHistory={handleOrderSaved}
-          />
-        )}
-
-        {/* ==================================================================== */}
-        {/* MODUŁ 3: 3. HISTORIA ZAMÓWIEŃ SIECIOWYCH                             */}
-        {/* ==================================================================== */}
-        {activeModule === 'history' && (
-          <OrderHistoryView
+          <WarehouseWorkstationView
             orders={archivedOrders}
             onRefreshOrders={refreshArchivedOrders}
-            onCreateCorrectionForOrder={(order) => {
-              setPreloadedOrderForCorrection(order);
-              setActiveModule('correction');
-            }}
-            onNavigateToInvoiceCreation={() => setActiveModule('invoice')}
-            onLoadOrderForInvoiceCreation={handleLoadOrderForInvoiceCreation}
+            onSwitchToCoordinator={() => handleSwitchWorkstationRole('coordinator')}
           />
-        )}
+        ) : (
+          <>
+            {/* ==================================================================== */}
+            {/* STRONA 1: WYBÓR Z TRZECH KAFELKÓW (CENTRUM FAKTUR / ZAMÓWIEŃ / CRM)  */}
+            {/* ==================================================================== */}
+            {activeModule === 'home' ? (
+              <HomePortalView
+                onSelectModule={setActiveModule}
+                ordersCount={archivedOrders.length}
+                onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
+                onSelectOrderTab={setOrderHistoryTab}
+              />
+            ) : (
+              /* ==================================================================== */
+              /* PODSTRONY: PASEK POWROTU ORAZ PRZEŁĄCZANIA PODMODUŁÓW               */
+              /* ==================================================================== */
+              <SubpageHeaderBar
+                activeModule={activeModule}
+                onSelectModule={setActiveModule}
+                onNavigateHome={() => setActiveModule('home')}
+                ordersCount={archivedOrders.length}
+                onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
+                orderHistoryTab={orderHistoryTab}
+              />
+            )}
 
-        {/* ==================================================================== */}
-        {/* MODUŁ 4: 4. CENTRUM WIEDZY (CRM KLIENTÓW KLUCZOWYCH)                 */}
-        {/* ==================================================================== */}
-        {activeModule === 'knowledge' && <KnowledgeCenterView />}
+            {/* ==================================================================== */}
+            {/* MODUŁ 1: 1. WYGENERUJ FAKTURĘ XML (SAMO WYSTAWIENIE FV XML)          */}
+            {/* ==================================================================== */}
+            {activeModule === 'invoice' && renderOrderAndInvoiceSteps('invoice_only')}
+
+            {/* ==================================================================== */}
+            {/* MODUŁ 2: 2. WYGENERUJ KOREKTĘ FAKTURY XML                             */}
+            {/* ==================================================================== */}
+            {activeModule === 'correction' && (
+              <InvoiceCorrectionView
+                archivedOrders={archivedOrders}
+                preloadedOrder={preloadedOrderForCorrection}
+                onClearPreloadedOrder={() => setPreloadedOrderForCorrection(null)}
+                onSavedToHistory={handleOrderSaved}
+              />
+            )}
+
+            {/* ==================================================================== */}
+            {/* MODUŁ 3: 3. CENTRUM ZAMÓWIEŃ (NOWE ZAMÓWIENIE / W REALIZACJI / ZAKOŃCZONE) */}
+            {/* ==================================================================== */}
+            {activeModule === 'history' && (
+              <OrderHistoryView
+                orders={archivedOrders}
+                onRefreshOrders={refreshArchivedOrders}
+                onCreateCorrectionForOrder={(order) => {
+                  setPreloadedOrderForCorrection(order);
+                  setActiveModule('correction');
+                }}
+                onNavigateToInvoiceCreation={() => setActiveModule('invoice')}
+                onStartNewOrder={handleStartNewOrderOnCard}
+                onLoadOrderForInvoiceCreation={handleLoadOrderForInvoiceCreation}
+                activeLifecycleTab={orderHistoryTab}
+                onChangeLifecycleTab={setOrderHistoryTab}
+                newOrderCardContent={renderOrderAndInvoiceSteps('new_order')}
+              />
+            )}
+
+            {/* ==================================================================== */}
+            {/* MODUŁ 4: 4. CENTRUM WIEDZY (CRM KLIENTÓW KLUCZOWYCH)                 */}
+            {/* ==================================================================== */}
+            {activeModule === 'knowledge' && <KnowledgeCenterView />}
+          </>
+        )}
       </main>
 
       {/* Modal weryfikacji i pobrania XML */}
@@ -1266,19 +1679,6 @@ export default function App() {
         knowledgeClients={knowledgeClients}
         onLoadSharedDraft={handleLoadSharedDraft}
         onManualSyncComplete={refreshAllCloudData}
-      />
-
-      {/* Modal Skrzynki Zamówień i Awizacji Zenbox */}
-      <ZenboxMailModal
-        isOpen={isZenboxModalOpen}
-        onClose={() => setIsZenboxModalOpen(false)}
-        archivedOrders={archivedOrders}
-        knowledgeClients={knowledgeClients}
-        currentMeta={meta}
-        currentBuyer={buyer}
-        currentItems={items}
-        onLoadOrderFromEmail={handleLoadOrderFromEmail}
-        onMarkOrderDeliveredInHistory={handleMarkOrderDeliveredFromZenbox}
       />
 
       {/* Pływające powiadomienie Real-Time Multi-User Sync */}

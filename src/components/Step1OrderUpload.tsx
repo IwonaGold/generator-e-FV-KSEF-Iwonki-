@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import { SAMPLE_ORDER_DOCUMENT_TEXT, SAMPLE_ORDER_SUPER_PHARM_TEXT } from '../utils/sampleData';
 import { InvoiceItem, InvoiceMeta, ParsedOrderData } from '../types/ksef';
-import { decodeTextFile, fixPolishMojibake } from '../utils/textEncoding';
+import { fixPolishMojibake } from '../utils/textEncoding';
+import { parseOrderFromFile, parseOrderText as parseOrderTextUtil } from '../utils/orderParser';
 
 interface Step1OrderUploadProps {
   onOrderTextParsed: (
@@ -53,6 +54,26 @@ export const Step1OrderUpload: React.FC<Step1OrderUploadProps> = ({
     }
   };
 
+  const applyParsedResult = (
+    items: Partial<InvoiceItem>[],
+    rawText: string,
+    headerData?: ParsedOrderData
+  ) => {
+    if (headerData) {
+      onUpdateMeta({
+        ...meta,
+        orderNumber: headerData.orderNumber || meta.orderNumber,
+        orderDate: headerData.orderDate || meta.orderDate,
+        dueDate: headerData.dueDate || meta.dueDate,
+        deliveryDate: headerData.deliveryDate || meta.deliveryDate,
+        paymentDays: headerData.paymentDays || meta.paymentDays,
+      });
+    }
+    if (items.length > 0) {
+      onOrderTextParsed(items, rawText, headerData);
+    }
+  };
+
   const processOrderFile = async (file: File) => {
     setIsParsing(true);
     const sizeKb = (file.size / 1024).toFixed(1) + ' KB';
@@ -60,9 +81,8 @@ export const Step1OrderUpload: React.FC<Step1OrderUploadProps> = ({
     onOrderFileChange(fileInfo);
 
     try {
-      // Bezpieczne dekodowanie UTF-8 / Windows-1250 (usuwa dziwne znaki / krzaki)
-      const text = await decodeTextFile(file);
-      parseOrderText(text);
+      const result = await parseOrderFromFile(file);
+      applyParsedResult(result.items, result.rawText || '', result.headerData);
     } catch (err) {
       console.error('Błąd odczytu pliku zamówienia:', err);
     } finally {
@@ -76,7 +96,8 @@ export const Step1OrderUpload: React.FC<Step1OrderUploadProps> = ({
       size: '2.1 KB',
     };
     onOrderFileChange(fileInfo);
-    parseOrderText(SAMPLE_ORDER_DOCUMENT_TEXT);
+    const res = parseOrderTextUtil(SAMPLE_ORDER_DOCUMENT_TEXT);
+    applyParsedResult(res.items, res.rawText || '', res.headerData);
   };
 
   const loadSampleOrderSuperPharm = () => {
@@ -85,7 +106,8 @@ export const Step1OrderUpload: React.FC<Step1OrderUploadProps> = ({
       size: '2.8 KB',
     };
     onOrderFileChange(fileInfo);
-    parseOrderText(SAMPLE_ORDER_SUPER_PHARM_TEXT);
+    const res = parseOrderTextUtil(SAMPLE_ORDER_SUPER_PHARM_TEXT);
+    applyParsedResult(res.items, res.rawText || '', res.headerData);
   };
 
   /**
@@ -350,7 +372,7 @@ export const Step1OrderUpload: React.FC<Step1OrderUploadProps> = ({
         <input
           ref={orderInputRef}
           type="file"
-          accept=".pdf,.txt,.csv,.xml"
+          accept=".xlsx,.xls,.pdf,.txt,.csv,.xml,.html,.htm"
           onChange={handleOrderChange}
           className="hidden"
         />
@@ -358,7 +380,7 @@ export const Step1OrderUpload: React.FC<Step1OrderUploadProps> = ({
           <Upload className="w-4 h-4" />
         </div>
         <p className="text-xs font-semibold text-slate-800">
-          Przeciągnij plik PDF / TXT / CSV lub kliknij, aby wybrać dokument zamówienia
+          Przeciągnij plik PDF / HTML / Excel / TXT / CSV lub kliknij, aby wybrać dokument zamówienia
         </p>
         <p className="text-[11px] text-slate-500 mt-1">
           Obsługa formatów Kamsoft, OSOZ, hurtowni Neuca, Farmacol, PGF z automatycznym wykrywaniem kodowania Windows-1250 i UTF-8

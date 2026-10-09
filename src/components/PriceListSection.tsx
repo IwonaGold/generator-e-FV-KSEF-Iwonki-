@@ -258,9 +258,9 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
     priceListSource === 'knowledge_auto' && activeKnowledgePriceListType === 'DOZ_SPECIAL';
 
   return (
-    <div className="bg-white/95 border border-fuchsia-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+    <div className="bg-white/95 border-2 border-slate-600 rounded-2xl p-5 mb-6 shadow-md">
       {/* NAGŁÓWEK KROKU 4 */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-fuchsia-100">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b-2 border-slate-300">
         <div className="flex items-start sm:items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-bold text-sm shadow-2xs shrink-0">
             4
@@ -561,7 +561,7 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
           {/* KARTY STATYSTYK WERYFIKACJI + SZYBKIE PRZYCISKI AUTOMATYCZNEGO UZUPEŁNIANIA */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Karta 1: Statystyki Cen Netto i Kodów EAN */}
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+            <div className="p-3.5 rounded-xl border-2 border-slate-400 bg-white flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -646,7 +646,7 @@ export const PriceListSection: React.FC<PriceListSectionProps> = ({
             </div>
 
             {/* Karta 2: Automatyczne uzupełnianie z cennika po wskazaniu rozbieżności */}
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+            <div className="p-3.5 rounded-xl border-2 border-slate-400 bg-white flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">

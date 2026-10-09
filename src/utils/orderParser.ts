@@ -41,8 +41,10 @@ export function normalizeDate(dateStr?: string): string | undefined {
   if (!dateStr) return undefined;
   const trimmed = dateStr.trim();
 
-  // YYYY-MM-DD, YYYY.MM.DD, YYYY/MM/DD
-  const ymd = trimmed.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+  // YYYY-MM-DD, YYYY.MM.DD, YYYY/MM/DD (opcjonalnie z godziną HH:MM[:SS])
+  const ymd = trimmed.match(
+    /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/
+  );
   if (ymd) {
     const y = ymd[1];
     const m = ymd[2].padStart(2, '0');
@@ -50,8 +52,10 @@ export function normalizeDate(dateStr?: string): string | undefined {
     return `${y}-${m}-${d}`;
   }
 
-  // DD-MM-YYYY, DD.MM.YYYY, DD/MM/YYYY
-  const dmy = trimmed.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{4})$/);
+  // DD-MM-YYYY, DD.MM.YYYY, DD/MM/YYYY (opcjonalnie z godziną HH:MM[:SS])
+  const dmy = trimmed.match(
+    /^(\d{1,2})[-./](\d{1,2})[-./](\d{4})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/
+  );
   if (dmy) {
     const d = dmy[1].padStart(2, '0');
     const m = dmy[2].padStart(2, '0');
@@ -123,6 +127,8 @@ const ORDER_NUMBER_STOPWORDS = new Set([
   'zamowienia',
   'zamówienia',
   'wystawienia',
+  'wyslania',
+  'wysłania',
   'realizacji',
   'dostawy',
   'platnosci',
@@ -131,6 +137,11 @@ const ORDER_NUMBER_STOPWORDS = new Set([
   'wartość',
   'ilość',
   'ilosc',
+  'suma',
+  'laczna',
+  'łączna',
+  'kupiec',
+  'logistyk',
   'netto',
   'brutto',
   'polska',
@@ -384,13 +395,13 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
     }
   }
 
-  // 2. Data złożenia / wystawienia zamówienia
+  // 2. Data złożenia / wystawienia / wysłania realizacji zamówienia
   const orderDateMatch =
     cleaned.match(
-      /(?:Data\s+złożenia(?:\s+zam[óo]wienia)?|Data\s+zam[óo]wienia|Data\s+zam\.?|Data\s+wystawienia(?:\s+zam[óo]wienia|\s+dokumentu)?|Data\s+dokumentu|Order\s+Date)[:\s]+(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4})/i
+      /(?:Data\s+złożenia(?:\s+zam[óo]wienia)?|Data\s+zam[óo]wienia|Data\s+zam\.?|Data\s+wystawienia(?:\s+zam[óo]wienia|\s+dokumentu)?|Data\s+wysłania(?:\s+realizacji)?|Data\s+wyslania(?:\s+realizacji)?|Data\s+dokumentu|Order\s+Date)[:\s]+(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4})/i
     ) ||
     cleaned.match(
-      /(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4})[\t\s]+(?:Data\s+wystawienia|Data\s+zam[óo]wienia|Data\s+złożenia|Data\s+dokumentu)/i
+      /(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4})[\t\s]+(?:Data\s+wystawienia|Data\s+wysłania(?:\s+realizacji)?|Data\s+zam[óo]wienia|Data\s+złożenia|Data\s+dokumentu)/i
     );
   if (orderDateMatch) {
     const nd = normalizeDate(orderDateMatch[1]);
@@ -525,10 +536,11 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
   // 8. Nazwa Nabywcy jednoliniowa
   if (!result.buyerName) {
     const buyerNameMatch = cleaned.match(
-      /(?:Nabywca|Kupujący|Kupujacy|Zamawiający|Zamawiajacy|Klient|Fakturować\s+na)[:\s]+([^\n\r\|\(\)]+)/i
+      /(?:Nabywca|Kupujący|Kupujacy|Zamawiający|Zamawiajacy|Klient|Fakturować\s+na|Firma)[:\s]+([^\n\r\|\(\)]+)/i
     );
     if (buyerNameMatch) {
       const rawName = buyerNameMatch[1]
+        .split(/\t+\s*(?:Firma|Dostawca|Sprzedawca|Adres|NIP)\b|\s{2,}(?:Firma|Dostawca|Sprzedawca)\b/i)[0]
         .replace(/NIP:?\s*[\d\-\s]+/i, '')
         .replace(/Adres:?.*$/i, '')
         .trim();
@@ -547,15 +559,22 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
       /(?:Adres|Adres\s+siedziby|Siedziba|Ulica|Ul\.)[:\s]+([^\n\r\|]+)/i
     );
     if (addressMatch) {
-      const rawAddr = addressMatch[1].trim();
+      // Odtnij ewentualną drugą kolumnę ze Sprzedawcą/Dostawcą w tej samej linii (np. układ 2-kolumnowy PDF Super-Pharm)
+      const rawAddr = addressMatch[1]
+        .split(/\t+\s*(?:Adres|Firma|Dostawca|Sprzedawca|NIP)\b|\s{2,}(?:Adres|Firma|Dostawca|Sprzedawca)\b/i)[0]
+        .trim();
       if (!/nowator[óo]w/i.test(rawAddr)) {
         const postalCityMatch = rawAddr.match(
-          /(\d{2}-\d{3})\s+([A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃa-zA-Z\s\.\-]+)/
+          /(\d{2}-\d{3})\s+([A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃa-zA-Z\.\-]+(?:\s+[A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃa-zA-Z\.\-]+)?)/
         );
         if (postalCityMatch) {
           if (!result.buyerPostalCode) result.buyerPostalCode = postalCityMatch[1].trim();
           if (!result.buyerCity)
-            result.buyerCity = postalCityMatch[2].trim().replace(/,.*$/, '');
+            result.buyerCity = postalCityMatch[2]
+              .trim()
+              .replace(/,.*$/, '')
+              .replace(/\s+(?:Adres|Firma|NIP|Dostawca|Sprzedawca|ul\.).*$/i, '')
+              .trim();
           const streetPart = rawAddr
             .replace(postalCityMatch[0], '')
             .replace(/^,\s*|,\s*$/g, '')
@@ -573,12 +592,17 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
   // Kod pocztowy i miasto jeśli nie było wyżej
   if (!result.buyerPostalCode || !result.buyerCity) {
     const postalMatch = cleaned.match(
-      /(?:Kod\s+i\s+miasto|Miejscowość|Miasto)?[:\s]*(\d{2}-\d{3})\s+([A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃa-zA-Z\s\.\-]+)/i
+      /(?:Kod\s+i\s+miasto|Miejscowość|Miasto)?[:\s]*(\d{2}-\d{3})\s+([^\t\n\r,|]+)/i
     );
     if (postalMatch && postalMatch[1] !== '80-298') {
       if (!result.buyerPostalCode) result.buyerPostalCode = postalMatch[1].trim();
-      if (!result.buyerCity)
-        result.buyerCity = postalMatch[2].trim().replace(/,.*$/, '').replace(/\s*NIP.*$/i, '');
+      if (!result.buyerCity) {
+        result.buyerCity = postalMatch[2]
+          .trim()
+          .replace(/,.*$/, '')
+          .replace(/\s+(?:Adres|Firma|NIP|Dostawca|Sprzedawca|ul\.).*$/i, '')
+          .trim();
+      }
     }
   }
 
@@ -685,8 +709,8 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
       /(?:Odbiorca|Miejsce\s+dostawy|Dostawa\s+do|Punkt\s+odbioru|Magazyn\s+odbiorczy)[:\s]+([^\n\r\|]+)/i
     );
     if (recipientMatch) {
-      const rawRecipient = recipientMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      const idWewInRecipient = rawRecipient.match(
+      const rawRecipientLine = recipientMatch[1].replace(/<[^>]+>/g, ' ').trim();
+      const idWewInRecipient = rawRecipientLine.match(
         /(?:ID-Wew|Identyfikator\s+wewnętrzny)[:\s]+([0-9\-]+)/i
       );
       if (idWewInRecipient) {
@@ -698,14 +722,22 @@ export function extractOrderHeaderFromText(text: string): ParsedOrderData {
         }
       }
 
-      const cleanRecipientLine = rawRecipient
+      const cleanRecipientLine = rawRecipientLine
         .replace(/\(?(?:ID-Wew|Identyfikator\s+wewnętrzny)[:\s]+[0-9\-]+\)?/i, '')
         .trim();
-      const parts = cleanRecipientLine.split(',').map((p) => p.trim());
+      const parts = cleanRecipientLine
+        .split(/,|\t+|\s+(?=(?:Aleja|Al\.|ul\.|Ulica|pl\.)\s)/i)
+        .map((p) => p.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
       if (parts.length > 0 && parts[0]) {
         result.recipientName = parts[0];
         if (parts.length > 1) {
           result.recipientAddress = parts.slice(1).join(', ').trim();
+          const recPostalMatch = result.recipientAddress.match(/(\d{2}-\d{3})\s+([A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃa-zA-Z\s\.\-]+)/);
+          if (recPostalMatch) {
+            if (!result.recipientPostalCode) result.recipientPostalCode = recPostalMatch[1].trim();
+            if (!result.recipientCity) result.recipientCity = recPostalMatch[2].trim();
+          }
         }
       }
     }
@@ -821,15 +853,19 @@ export function matchOrBuildBuyerFromOrder(
 
   if (matchedChainId && PHARMACY_CHAINS[matchedChainId]) {
     const profile = PHARMACY_CHAINS[matchedChainId];
+    const isGeminiWarehouseAddress =
+      matchedChainId === 'Gemini' && /azymutalna/i.test(headerData.buyerAddress || '');
     const mergedBuyer: EntityDetails = {
       ...profile.buyer,
       name:
         headerData.buyerName && headerData.buyerName.length > 5
           ? headerData.buyerName
           : profile.buyer.name,
-      addressLine1: headerData.buyerAddress || profile.buyer.addressLine1,
-      postalCode: headerData.buyerPostalCode || profile.buyer.postalCode,
-      city: headerData.buyerCity || profile.buyer.city,
+      addressLine1:
+        (!isGeminiWarehouseAddress && headerData.buyerAddress) || profile.buyer.addressLine1,
+      postalCode:
+        (!isGeminiWarehouseAddress && headerData.buyerPostalCode) || profile.buyer.postalCode,
+      city: (!isGeminiWarehouseAddress && headerData.buyerCity) || profile.buyer.city,
       email: headerData.buyerEmail || profile.buyer.email,
     };
 
@@ -842,11 +878,15 @@ export function matchOrBuildBuyerFromOrder(
 
     let thirdParty: ThirdPartyEntity | null = null;
     if (matchedChainId !== 'DOZ' && effectiveIdWew) {
+      const useProfileThirdParty = matchedChainId === 'Super-Pharm' && profile.thirdParty;
       thirdParty = {
-        name: headerData.recipientName || profile.thirdParty?.name || 'Odbiorca (Podmiot3)',
+        name:
+          (useProfileThirdParty ? profile.thirdParty!.name : headerData.recipientName) ||
+          profile.thirdParty?.name ||
+          'Odbiorca (Podmiot3)',
         countryCode: 'PL',
         addressLine1:
-          headerData.recipientAddress ||
+          (useProfileThirdParty ? profile.thirdParty!.addressLine1 : headerData.recipientAddress) ||
           profile.thirdParty?.addressLine1 ||
           'Aleja 20-lecia 23, 96-515 Teresin',
         postalCode: headerData.recipientPostalCode || profile.thirdParty?.postalCode || '96-515',
@@ -1127,11 +1167,11 @@ function evaluateGridHeaderRow(
       );
 
     const isExcludedFromQty =
-      /w\s*opak|opakowanie\s*zbiorcze|karton|palet|linii|referencji|suma\s*zamawianych|dost[ęe]p|stan\s*mag|potwierdz|zrealizow|dostarcz|gratis|minimaln|moq|cena|warto|kwota|rabat/i.test(
+      /w\s*opak|opakowanie\s*zbiorcze|op\.?\s*zbiorcz|zbiorcz|wielokrotno|pakiet|karton|palet|linii|referencji|suma\s*zamawianych|suma\s*zam[óo]wionych|dost[ęe]p|stan\s*mag|potwierdz|zrealizow|dostarcz|gratis|minimaln|moq|cena|warto|kwota|rabat|nav\s*id|kod\s*wewn|nr\s*ks|data\s*wa[żz]no/i.test(
         combinedVal
       );
 
-    if (isExplicitOrderedQty && !/suma\s*zamawianych|warto/i.test(combinedVal)) {
+    if (isExplicitOrderedQty && !/suma\s*zamawianych|suma\s*zam[óo]wionych|warto/i.test(combinedVal)) {
       if (qtyPriority < 3) {
         qtyColIdx = cIdx;
         qtyPriority = 3;
@@ -1140,16 +1180,23 @@ function evaluateGridHeaderRow(
       continue;
     }
 
+    // Specjalny nagłówek kolumny ilości dla magazynu Gemini, np. "000 Drogeria Internetowa (Azymutalna)"
+    const isGeminiWarehouseQtyCol =
+      !isExcludedFromQty &&
+      (/^\d{3}\s+[a-ząćęłńóśźż]/i.test(rawCell) ||
+        /drogeria\s*internetowa|\(azymutalna\)|magazyn\s*azymutalna/i.test(val));
+
     if (!isExcludedFromQty) {
       if (
         /^(?:ilo[śs\?]*[ćc\?]*|qty|quantity)(?:\s*[\/\(]?\s*(?:szt\.?|op\.?|opak\.?|j\.?m\.?)[\)\.]?)?$/i.test(
           val
-        )
+        ) ||
+        isGeminiWarehouseQtyCol
       ) {
         if (qtyPriority < 2) {
           qtyColIdx = cIdx;
           qtyPriority = 2;
-          score += 2;
+          score += isGeminiWarehouseQtyCol ? 3 : 2;
         }
         continue;
       } else if (
@@ -1181,9 +1228,9 @@ function evaluateGridHeaderRow(
       continue;
     }
 
-    // 4. KOLUMNA SKU / INDEKS / KOD PRODUKTU
+    // 4. KOLUMNA SKU / INDEKS / KOD PRODUKTU / NAV ID
     if (
-      /^(?:sku|indeks|kod\s*produktu(?:\s*wg\s*nabywcy)?|kod\s*towaru|id\s*produktu|nr\s*art\.?)$/i.test(
+      /^(?:sku|indeks|nav\s*id|kod\s*wewn[ęe]trzny(?:\s*producenta)?|kod\s*produktu(?:\s*wg\s*nabywcy)?|kod\s*towaru|id\s*produktu|nr\s*art\.?)$/i.test(
         val
       )
     ) {
@@ -1209,7 +1256,7 @@ function evaluateGridHeaderRow(
 
     // 6. KOLUMNA NAZWY PRODUKTU / TOWARU
     const isExcludedFromName =
-      /kod\s*produktu|indeks|kategoria|rejestracja|grupa|typ|obj[ęe]to|dostawca|nabywca|producent|zamawiana|ilo[śs\?]*[ćc\?]*|cena|warto/i.test(
+      /kod\s*produktu|kod\s*wewn|indeks|kategoria|rejestracja|grupa|typ|obj[ęe]to|dostawca|nabywca|producent|zamawiana|ilo[śs\?]*[ćc\?]*|cena|warto/i.test(
         val
       );
     if (!isExcludedFromName) {
@@ -1237,7 +1284,7 @@ function evaluateGridHeaderRow(
 
     // 7. KOLUMNA CENY JEDNOSTKOWEJ NETTO
     const isExcludedFromPrice =
-      /warto[śs\?]*[ćc\?]*|suma|razem|kwota|sugerowana|detaliczna|brutto|zmiana\s*ceny|rabat\s*na\s*fakturze|rabat\s*hurtowy/i.test(
+      /warto[śs\?]*[ćc\?]*|suma|razem|kwota|sugerowana|detaliczna|brutto|zmiana\s*ceny|rabat\s*na\s*fakturze|rabat\s*hurtowy|gratis/i.test(
         val
       );
     if (!isExcludedFromPrice) {
@@ -1339,7 +1386,10 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
   const headerData: ParsedOrderData = extractOrderHeaderFromText(gridLinesText);
   const SELLER_NIP = '9571106742';
 
-  // 2. Precyzyjne skanowanie komórka po komórce dla "Numer zamówienia", dat oraz danych nabywcy
+  let expectedTotalQty = 0;
+  let expectedTotalNet = 0;
+
+  // 2. Precyzyjne skanowanie komórka po komórce dla "Numer zamówienia", dat, podsumowań oraz danych nabywcy
   // (obsługuje wartość w tej samej komórce, w sąsiedniej komórce po prawej po scaleniu, lub w komórce poniżej!)
   for (let r = 0; r < Math.min(rawGrid.length, 60); r++) {
     const row = rawGrid[r] || [];
@@ -1378,8 +1428,12 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
             for (let adjC = c + 1; adjC <= Math.min(row.length - 1, c + 6); adjC++) {
               const adjVal = fixPolishMojibake(String(row[adjC] ?? '')).trim();
               if (!adjVal) continue;
-              // Jeśli trafiliśmy na kolejną etykietę (np. "Data zamówienia"), przerwij szukanie w prawo
-              if (/^(?:data|termin|dostawca|nabywca|zamawiający|odbiorca|uwagi)/i.test(adjVal)) {
+              // Jeśli trafiliśmy na kolejną etykietę (np. "Data zamówienia" lub "Data wysłania realizacji"), przerwij szukanie w prawo
+              if (
+                /^(?:data|termin|dostawca|nabywca|zamawiający|odbiorca|uwagi|kupiec|logistyk|suma|łączna|laczna)/i.test(
+                  adjVal
+                )
+              ) {
                 break;
               }
               const cand = cleanOrderNumberCandidate(adjVal);
@@ -1421,8 +1475,13 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
         }
       }
 
-      // C) Data zamówienia w sąsiedniej komórce lub poniżej
-      if (!headerData.orderDate && /^(?:data\s*zam[óo\?]wienia|data\s*wystawienia|data\s*złożenia|data\s*dokumentu)\s*:?$/i.test(cellStr)) {
+      // C) Data zamówienia / wysłania realizacji w sąsiedniej komórce lub poniżej
+      if (
+        !headerData.orderDate &&
+        /^(?:data\s*zam[óo\?]wienia|data\s*wystawienia|data\s*złożenia|data\s*wysłania(?:\s*realizacji)?|data\s*wyslania(?:\s*realizacji)?|data\s*dokumentu)\s*:?$/i.test(
+          cellStr
+        )
+      ) {
         for (let adjC = c + 1; adjC <= Math.min(row.length - 1, c + 4); adjC++) {
           const nd = normalizeDate(String(row[adjC] ?? '').trim());
           if (nd) {
@@ -1437,7 +1496,12 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
       }
 
       // D) Data dostawy / realizacji w sąsiedniej komórce lub poniżej
-      if (!headerData.deliveryDate && /^(?:data\s*dostawy|termin\s*dostawy|data\s*realizacji|termin\s*realizacji|oczekiwany\s*termin\s*dostawy)\s*:?$/i.test(cellStr)) {
+      if (
+        !headerData.deliveryDate &&
+        /^(?:data\s*dostawy|termin\s*dostawy|data\s*realizacji|termin\s*realizacji|oczekiwany\s*termin\s*dostawy)\s*:?$/i.test(
+          cellStr
+        )
+      ) {
         for (let adjC = c + 1; adjC <= Math.min(row.length - 1, c + 4); adjC++) {
           const rawD = String(row[adjC] ?? '').trim().split(/\s+/)[0];
           const nd = normalizeDate(rawD);
@@ -1453,7 +1517,43 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
         }
       }
 
-      // E) Rozpoznanie Gemini bezpośrednio z komórki
+      // E) Suma zamówionych sztuk (np. w nagłówku Gemini: "Suma zamówionych sztuk Total" = 872)
+      if (
+        /suma\s*zam[óo\?]wionych\s*sztuk\s*total|suma\s*zam[óo\?]wionych\s*sztuk\s*drg\b|łączna\s*ilość\s*sztuk|suma\s*zamawianych\s*sztuk/i.test(
+          cellStr
+        )
+      ) {
+        const isTotal = /total|łączna/i.test(cellStr);
+        if (expectedTotalQty === 0 || isTotal) {
+          const belowQty = parseQuantityCellValue(rawGrid[r + 1]?.[c]);
+          const rightQty = parseQuantityCellValue(row[c + 1]);
+          if (belowQty !== null && belowQty > 0) {
+            expectedTotalQty = belowQty;
+          } else if (rightQty !== null && rightQty > 0) {
+            expectedTotalQty = rightQty;
+          }
+        }
+      }
+
+      // F) Łączna wartość zamówionych sztuk (np. w nagłówku Gemini: "Łączna wartość zamówionych sztuk Total" = 114058.88)
+      if (
+        /łączna\s*warto[śs\?]*[ćc\?]*\s*zam[óo\?]wionych\s*sztuk\s*total|łączna\s*warto[śs\?]*[ćc\?]*\s*zam[óo\?]wionych\s*sztuk\s*drg\b/i.test(
+          cellStr
+        )
+      ) {
+        const isTotal = /total/i.test(cellStr);
+        if (expectedTotalNet === 0 || isTotal) {
+          const belowNet = parsePriceCellValue(rawGrid[r + 1]?.[c]);
+          const rightNet = parsePriceCellValue(row[c + 1]);
+          if (belowNet !== null && belowNet > 0) {
+            expectedTotalNet = belowNet;
+          } else if (rightNet !== null && rightNet > 0) {
+            expectedTotalNet = rightNet;
+          }
+        }
+      }
+
+      // G) Rozpoznanie Gemini bezpośrednio z komórki
       if (
         !headerData.buyerNip &&
         /gemini\s*(?:apps|polska|sp\.?\s*z\s*o\.?\s*o\.?)|apteki\s+gemini|azymutalna\s+15|grunwaldzka\s+411|@gemini\.pl/i.test(
@@ -1468,7 +1568,7 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
     // Uzupełniające dopasowania na poziomie wiersza
     if (!headerData.orderDate) {
       const m = rowStr.match(
-        /(?:data\s*zam|data\s*złożenia|data\s*wystawienia|data\s*doc)[:\s]*(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4})/i
+        /(?:data\s*zam|data\s*złożenia|data\s*wystawienia|data\s*wysłania(?:\s*realizacji)?|data\s*doc)[:\s]*(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4})/i
       );
       if (m) {
         const nd = normalizeDate(m[1]);
@@ -1532,11 +1632,13 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
   let volumeColIdx = bestEval?.volumeColIdx ?? -1;
   let eanColIdx = bestEval?.eanColIdx ?? -1;
   let blozColIdx = bestEval?.blozColIdx ?? -1;
+  const skuColIdx = bestEval?.skuColIdx ?? -1;
   let qtyColIdx = bestEval?.qtyColIdx ?? -1;
   let priceColIdx = bestEval?.priceColIdx ?? -1;
   let vatColIdx = bestEval?.vatColIdx ?? -1;
-  let batchColIdx = bestEval?.batchColIdx ?? -1;
-  let expColIdx = bestEval?.expColIdx ?? -1;
+  const batchColIdx = bestEval?.batchColIdx ?? -1;
+  const expColIdx = bestEval?.expColIdx ?? -1;
+  let qtyColIndices: number[] = [];
 
   if (headerRowIdx === -1) {
     headerRowIdx = 0;
@@ -1545,6 +1647,7 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
     qtyColIdx = 2;
     priceColIdx = 3;
     vatColIdx = 4;
+    qtyColIndices = [2];
   } else {
     // Sprawdź, czy w wierszu bezpośrednio pod nagłówkiem (headerRowIdx + 1) nie znajduje się doprecyzowanie "Zamawiana ilość"
     if (qtyColIdx === -1 && headerRowIdx + 1 < rawGrid.length) {
@@ -1557,17 +1660,41 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
       });
     }
 
+    // Zbuduj listę kolumn wykluczonych z bycia kolumną zamawianej ilości (np. Op. zbiorcze, Rabat %, BLOZ, NAV ID, Cena, Data ważności)
+    const headerRowCells = rawGrid[headerRowIdx] || [];
+    const forbiddenQtyCols = new Set<number>(
+      [
+        nameColIdx,
+        volumeColIdx,
+        eanColIdx,
+        blozColIdx,
+        skuColIdx,
+        priceColIdx,
+        vatColIdx,
+        batchColIdx,
+        expColIdx,
+      ].filter((idx) => idx !== -1)
+    );
+    headerRowCells.forEach((cell: any, cIdx: number) => {
+      const hVal = fixPolishMojibake(String(cell ?? '')).toLowerCase().trim();
+      if (
+        /nav\s*id|kod\s*wewn|nazwa|produkt|towar|\bean\b|\bgtin\b|\bbloz\b|op\.?\s*zbiorcz|zbiorcz|rabat|wielokrotno|pakiet|gratis|cena|warto[śs\?]*[ćc\?]*|kwota|data\s*wa[żz]no|\bmhd\b|\bexp\b|\blot\b|\bseria\b|\bvat\b|^lp\.?$|^l\.p\.?$/i.test(
+          hVal
+        )
+      ) {
+        forbiddenQtyCols.add(cIdx);
+      }
+    });
+
+    if (qtyColIdx !== -1 && forbiddenQtyCols.has(qtyColIdx)) {
+      qtyColIdx = -1;
+    }
+
     // Zabezpieczenie na wypadek scalonych komórek nagłówka w Excelu:
     // Jeśli w wyznaczonej kolumnie qtyColIdx wszystkie wiersze danych są puste lub tekstowe (np. "szt."),
     // a w sąsiedniej kolumnie (qtyColIdx + 1 lub qtyColIdx - 1) znajdują się liczby całkowite (zamawiana ilość),
     // automatycznie przesuń qtyColIdx na właściwą kolumnę z liczbami!
     if (qtyColIdx !== -1) {
-      const usedCols = new Set(
-        [nameColIdx, volumeColIdx, eanColIdx, blozColIdx, priceColIdx, vatColIdx].filter(
-          (idx) => idx !== -1
-        )
-      );
-
       let validCountInCurrent = 0;
       for (let r = headerRowIdx + 1; r < rawGrid.length; r++) {
         const q = parseQuantityCellValue(rawGrid[r]?.[qtyColIdx]);
@@ -1576,7 +1703,7 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
 
       if (validCountInCurrent === 0) {
         for (const candidateCol of [qtyColIdx + 1, qtyColIdx - 1]) {
-          if (candidateCol < 0 || usedCols.has(candidateCol)) continue;
+          if (candidateCol < 0 || forbiddenQtyCols.has(candidateCol)) continue;
           let validCountInAdj = 0;
           for (let r = headerRowIdx + 1; r < rawGrid.length; r++) {
             const q = parseQuantityCellValue(rawGrid[r]?.[candidateCol]);
@@ -1588,6 +1715,101 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
           }
         }
       }
+    }
+
+    // Matematyczna i strukturalna weryfikacja kolumny ilości (szczególnie dla zamówień Gemini z kolumnami magazynów np. "000 Drogeria Internetowa (Azymutalna)")
+    const maxColCount = rawGrid
+      .slice(headerRowIdx)
+      .reduce((max, r) => Math.max(max, (r || []).length), 0);
+
+    interface CandidateQtyColStats {
+      colIdx: number;
+      positiveCount: number;
+      qtySum: number;
+      netSum: number;
+    }
+
+    const candidateColStats: CandidateQtyColStats[] = [];
+    for (let cIdx = 0; cIdx < maxColCount; cIdx++) {
+      if (forbiddenQtyCols.has(cIdx)) continue;
+      let positiveCount = 0;
+      let qtySum = 0;
+      let netSum = 0;
+
+      for (let r = headerRowIdx + 1; r < rawGrid.length; r++) {
+        const row = rawGrid[r];
+        if (!row || row.length === 0) continue;
+        const rEan =
+          eanColIdx !== -1 && row[eanColIdx] !== undefined
+            ? String(row[eanColIdx]).replace(/\D/g, '')
+            : '';
+        const rName =
+          nameColIdx !== -1 && row[nameColIdx] !== undefined
+            ? String(row[nameColIdx]).trim()
+            : '';
+        if (!rEan && (!rName || isHeaderOrSummaryLine(rName))) continue;
+
+        const q = parseQuantityCellValue(row[cIdx]);
+        if (q !== null && q > 0 && Number.isInteger(q)) {
+          positiveCount++;
+          qtySum += q;
+          const p = priceColIdx !== -1 ? parsePriceCellValue(row[priceColIdx]) : null;
+          if (p !== null && p > 0) {
+            netSum += q * p;
+          }
+        }
+      }
+
+      if (positiveCount > 0) {
+        candidateColStats.push({ colIdx: cIdx, positiveCount, qtySum, netSum });
+      }
+    }
+
+    // 1) Jeśli znamy oczekiwaną sumę wartości netto (expectedTotalNet) lub sumę sztuk (expectedTotalQty) z nagłówka (np. Gemini: 872 szt. / 114058.88 zł):
+    if (expectedTotalNet > 0 || expectedTotalQty > 0) {
+      const exactNetMatch =
+        expectedTotalNet > 0
+          ? candidateColStats.find((st) => Math.abs(st.netSum - expectedTotalNet) <= 1.0)
+          : undefined;
+      const exactQtyMatch =
+        expectedTotalQty > 0
+          ? candidateColStats.find((st) => st.qtySum === expectedTotalQty)
+          : undefined;
+
+      if (exactNetMatch) {
+        qtyColIdx = exactNetMatch.colIdx;
+        qtyColIndices = [exactNetMatch.colIdx];
+      } else if (exactQtyMatch) {
+        qtyColIdx = exactQtyMatch.colIdx;
+        qtyColIndices = [exactQtyMatch.colIdx];
+      } else if (expectedTotalQty > 0 && candidateColStats.length > 1) {
+        // Sprawdź, czy zamówienie posiada kilka kolumn magazynowych na końcu tabeli, których suma daje expectedTotalQty
+        const minRightCol = Math.max(priceColIdx, expColIdx, eanColIdx);
+        const rightCols = candidateColStats.filter((st) => st.colIdx > minRightCol);
+        const combinedRightQty = rightCols.reduce((acc, st) => acc + st.qtySum, 0);
+        if (rightCols.length > 1 && combinedRightQty === expectedTotalQty) {
+          qtyColIdx = rightCols[0].colIdx;
+          qtyColIndices = rightCols.map((st) => st.colIdx);
+        }
+      }
+    }
+
+    // 2) Jeśli nadal nie wyznaczono kolumny ilości (qtyColIdx === -1), wybierz niezakazaną kolumnę po prawej stronie Ceny netto / Data ważności z dodatnimi liczbami całkowitymi
+    if (qtyColIdx === -1 && candidateColStats.length > 0) {
+      const minRightCol = Math.max(priceColIdx, expColIdx, eanColIdx);
+      const rightCandidates = candidateColStats.filter((st) => st.colIdx > minRightCol);
+      const bestCandidate =
+        rightCandidates.length > 0
+          ? rightCandidates.sort((a, b) => b.positiveCount - a.positiveCount)[0]
+          : candidateColStats.sort((a, b) => b.positiveCount - a.positiveCount)[0];
+      if (bestCandidate) {
+        qtyColIdx = bestCandidate.colIdx;
+        qtyColIndices = [bestCandidate.colIdx];
+      }
+    }
+
+    if (qtyColIndices.length === 0 && qtyColIdx !== -1) {
+      qtyColIndices = [qtyColIdx];
     }
   }
 
@@ -1634,7 +1856,7 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
       .map((c) => fixPolishMojibake(String(c ?? '')).toLowerCase())
       .join(' ');
     if (
-      /\b(?:razem|podsumowanie|łączna\s+ilość\s+sztuk|wartość\s+zamówienia|suma\s+zamawianych)\b/i.test(
+      /\b(?:razem|podsumowanie|łączna\s+ilość\s+sztuk|wartość\s+zamówienia|suma\s+zamawianych|suma\s+zamówionych)\b/i.test(
         entireRowLower
       ) &&
       !rawEan
@@ -1646,7 +1868,21 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
       rawName = `${rawName} ${rawVolume}`.trim();
     }
 
-    const explicitQty = qtyColIdx !== -1 ? parseQuantityCellValue(row[qtyColIdx]) : null;
+    let explicitQty: number | null = null;
+    if (qtyColIndices.length > 1) {
+      let sumQ = 0;
+      let anyFound = false;
+      for (const cIdx of qtyColIndices) {
+        const q = parseQuantityCellValue(row[cIdx]);
+        if (q !== null && q > 0) {
+          sumQ += q;
+          anyFound = true;
+        }
+      }
+      explicitQty = anyFound ? sumQ : null;
+    } else if (qtyColIdx !== -1) {
+      explicitQty = parseQuantityCellValue(row[qtyColIdx]);
+    }
     const parsedPrice = priceColIdx !== -1 ? parsePriceCellValue(row[priceColIdx]) : null;
     const rawVat =
       vatColIdx !== -1 && row[vatColIdx] !== undefined ? String(row[vatColIdx]).trim() : '8%';
@@ -1717,18 +1953,21 @@ export function parseOrderHtml(htmlText: string, fileName?: string): ParsedOrder
   const plainText = cleanedHtml
     .replace(/&nbsp;?/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(?:td|th|tr|p|div|table)>/gi, '\n')
+    .replace(/<\/t[dh]>/gi, '   ')
+    .replace(/<t[dh]\b[^>]*>/gi, '   ')
+    .replace(/<\/(?:tr|p|div|table|h[1-6])>/gi, '\n')
+    .replace(/<(?:tr|p|div|table)\b[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/[ \t]+/g, ' ');
 
   const headerFromText = extractOrderHeaderFromText(plainText);
 
-  // Wyciągnij wiersze <tr>...</tr> i komórki <td>/<th> do siatki 2D
-  // Dopasowujemy najbardziej wewnętrzne wiersze <tr> (niezawierające zagnieżdżonych <tr ani <table),
-  // dzięki czemu niedomknięty zewnętrzny <TR> w eksporcie ERP nigdy nie połknie wiersza nagłówkowego tabeli!
+  // Wyciągnij wiersze <tr>...</tr> (również z niedomkniętymi znacznikami <TR>/<TD> z eksportów ERP) i komórki <td>/<th> do siatki 2D
   const rawGrid: string[][] = [];
   const trMatches =
-    cleanedHtml.match(/<tr\b[^>]*>(?:(?!<tr\b|<table\b)[\s\S])*?<\/tr>/gi) || [];
+    cleanedHtml.match(
+      /<tr\b[^>]*>(?:(?!<tr\b|<table\b)[\s\S])*?(?:<\/tr>|(?=<tr\b|<\/table\b|<\/tbody\b))/gi
+    ) || [];
 
   for (const trHtml of trMatches) {
     // Pomijaj zewnętrzne wiersze-kontenery zawierające zagnieżdżone tabele
@@ -1737,7 +1976,7 @@ export function parseOrderHtml(htmlText: string, fileName?: string): ParsedOrder
 
     const cellMatches =
       innerContent.match(
-        /<t[dh]\b[^>]*>(?:(?!<t[dh]\b|<tr\b|<table\b)[\s\S])*?<\/t[dh]>/gi
+        /<t[dh]\b[^>]*>(?:(?!<t[dh]\b|<tr\b|<table\b)[\s\S])*?(?:<\/t[dh]>|(?=<t[dh]\b|<\/tr\b|<tr\b|<\/table\b|$))/gi
       ) || [];
     if (cellMatches.length === 0) continue;
 
@@ -1763,7 +2002,10 @@ export function parseOrderHtml(htmlText: string, fileName?: string): ParsedOrder
       buyerNip: gridResult.headerData?.buyerNip || headerFromText.buyerNip,
       buyerName: gridResult.headerData?.buyerName || headerFromText.buyerName,
     };
-    if (gridResult.items.length > 0) {
+    const hasValidNames =
+      gridResult.items.length > 0 &&
+      gridResult.items.every((it) => it.name && !/^Produkt EAN \d+$/i.test(it.name));
+    if (hasValidNames) {
       return {
         items: gridResult.items,
         headerData: mergedHeader,
@@ -1773,7 +2015,47 @@ export function parseOrderHtml(htmlText: string, fileName?: string): ParsedOrder
     }
   }
 
-  return parseOrderText(plainText);
+  const fallbackTextResult = parseOrderText(plainText);
+  return {
+    ...fallbackTextResult,
+    headerData: {
+      ...headerFromText,
+      ...fallbackTextResult.headerData,
+      orderNumber: fallbackTextResult.headerData?.orderNumber || headerFromText.orderNumber,
+      buyerNip: fallbackTextResult.headerData?.buyerNip || headerFromText.buyerNip,
+      buyerName: fallbackTextResult.headerData?.buyerName || headerFromText.buyerName,
+    },
+  };
+}
+
+/**
+ * Dzieli wiersz tabeli rozdzielany separatorem (;, \t, |, ,) z obsługą cudzysłowów CSV (np. "Omnibiotic 10 AAD Kids 2,5g x 20sasz")
+ */
+function splitDelimitedLine(line: string, sep: string): string[] {
+  if (sep !== ',') {
+    return line.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, '$1').trim());
+  }
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
 }
 
 /**
@@ -1820,6 +2102,20 @@ function extractQtyAndPriceFromNumbers(
   }
 
   if (nums.length >= 5) {
+    // Układ Gemini: [BLOZ, opZbiorcze, rabat%, cenaNetto, zamawianaIlosc]
+    // (np. [5926094, 27, 5, 416.99, 15] -> cenaNetto ma część ułamkową lub priceBeforeQtyInHeader, a ostatni element to całkowita ilość)
+    const fourthHasDecimals = /[.,]\d+$/.test(rawTokens[3] || '');
+    const fifthIsPlainInt =
+      Number.isInteger(nums[4]) && !/[.,]\d+$/.test(rawTokens[4] || '') && nums[4] > 0;
+    if (
+      nums[0] >= 1000 &&
+      nums[3] > 0 &&
+      fifthIsPlainInt &&
+      (fourthHasDecimals || priceBeforeQtyInHeader)
+    ) {
+      return { qty: Math.max(1, Math.round(nums[4])), netPrice: nums[3] };
+    }
+
     // Układ DOZ: [kodNabywcy, zamawianaIlosc, cenaBezUpustu, rabat, cenaPoUpuscie]
     if (nums[0] >= 1000 && Number.isInteger(nums[1])) {
       qty = nums[1];
@@ -1920,34 +2216,86 @@ export function parseOrderText(text: string): ParsedOrderResult {
 
   const headerData = extractOrderHeaderFromText(cleanedText);
   const rawLines = cleanedText.split(/\r?\n/);
-  const lines = rawLines.map((l) => l.trim());
+  const unmergedLines = rawLines.map((l) => l.trim());
+
+  // Scal wiersze pozycji złamane na dwie linie w wąskiej tabeli PDF
+  // (np. "7. 9120117912766 230083 OMNI-BIOTIC STRESS REPAIR 9 56 SASZ. X 3" + "\nG 40 308.35")
+  const lines: string[] = [];
+  for (let i = 0; i < unmergedLines.length; i++) {
+    let curr = unmergedLines[i];
+    if (
+      /^\d{1,3}[.)]?\s+(?:590\d{10}|912\d{10}|\d{13}|\d{8})\s+/.test(curr) &&
+      !/\d+[.,]\d{2}(?:\s*(?:zł|pln|\d{1,2}%))?$/i.test(curr)
+    ) {
+      let merges = 0;
+      while (merges < 2 && i + 1 < unmergedLines.length) {
+        const next = unmergedLines[i + 1];
+        if (!next) {
+          i++;
+          continue;
+        }
+        if (
+          /^\d{1,3}[.)]?\s+(?:590\d{10}|912\d{10}|\d{13}|\d{8})\b/.test(next) ||
+          /^(?:590\d{10}|912\d{10}|\d{13}|\d{8})$/.test(next) ||
+          /^--\s*\d+\s*of\s*\d+\s*--$/i.test(next) ||
+          isHeaderOrSummaryLine(next)
+        ) {
+          break;
+        }
+        curr = `${curr} ${next}`;
+        i++;
+        merges++;
+        if (/\d+[.,]\d{2}(?:\s*(?:zł|pln|\d{1,2}%))?$/i.test(curr)) {
+          break;
+        }
+      }
+    }
+    lines.push(curr);
+  }
+
   const items: Partial<InvoiceItem>[] = [];
   let foundBatchesOrExpiry = false;
 
-  // Sprawdź, czy w nagłówku tabeli "Cena" występuje przed "Zamawiana ilość" / "Ilość"
+  // Sprawdź, czy w nagłówku tabeli "Cena" występuje przed "Zamawiana ilość" / "Ilość" / kolumną magazynu Gemini
   const priceBeforeQtyInHeader =
-    /cena\s*(?:jedn\.?\s*)?netto[^\r\n]*?(?:zamawiana\s*ilo[śs]ć|ilo[śs]ć\s*zamawiana|\bilo[śs]ć\b)/i.test(
+    /cena\s*(?:jedn\.?\s*)?netto[^\r\n]*?(?:zamawiana\s*ilo[śs]ć|ilo[śs]ć\s*zamawiana|\bilo[śs]ć\b|drogeria\s*internetowa|\(azymutalna\)|\d{3}\s+drogeria)/i.test(
       cleanedText
     );
 
-  // 0b. Jeśli tekst jest tabelą rozdzielaną średnikami (;), tabulatorami (\t) lub pionowymi kreskami (|) z wierszem nagłówkowym (np. CSV / TSV / tabela z PDF)
-  const delimitedLines = rawLines.filter(
-    (l) =>
-      (l.includes(';') && l.split(';').length >= 3) ||
-      (l.includes('\t') && l.split('\t').length >= 4) ||
-      (l.includes('|') && l.split('|').length >= 4 && !/GTIN:|Ilość:|Cena:/i.test(l))
+  // Policz ile wierszy ma klasyczny układ Lp. + EAN (1A)
+  const lineItemCandidatesCount = lines.filter((l) =>
+    /^\d{1,3}[.)]?\s+(?:590\d{10}|912\d{10}|\d{13}|\d{8})\s+/.test(l)
+  ).length;
+
+  // 0b. Jeśli tekst jest tabelą rozdzielaną średnikami (;), tabulatorami (\t), pionowymi kreskami (|) lub przecinkami CSV (,) z wierszem nagłówkowym
+  const semicolonLines = rawLines.filter((l) => l.includes(';') && l.split(';').length >= 3);
+  const tabLines = rawLines.filter((l) => l.includes('\t') && l.split('\t').length >= 4);
+  const pipeLines = rawLines.filter(
+    (l) => l.includes('|') && l.split('|').length >= 4 && !/GTIN:|Ilość:|Cena:/i.test(l)
   );
-  if (delimitedLines.length >= 2) {
-    const sep = delimitedLines[0].includes(';')
-      ? ';'
-      : delimitedLines[0].includes('\t')
-      ? '\t'
-      : '|';
+  const commaLines = rawLines.filter(
+    (l) => l.includes(',') && splitDelimitedLine(l, ',').length >= 5
+  );
+
+  let detectedSep: string | null = null;
+  if (semicolonLines.length >= 2) detectedSep = ';';
+  else if (tabLines.length >= 2) detectedSep = '\t';
+  else if (pipeLines.length >= 2) detectedSep = '|';
+  else if (commaLines.length >= 2) detectedSep = ',';
+
+  if (detectedSep) {
     const grid = rawLines
-      .map((l) => l.split(sep).map((c) => c.trim()))
+      .map((l) => splitDelimitedLine(l, detectedSep!))
       .filter((r) => r.some(Boolean));
     const gridEval = parseOrderGrid(grid);
-    if (gridEval.items.length > 0 && gridEval.items.some((it) => it.gtin !== '9120000000000' || (it.quantity && it.quantity > 1))) {
+    const allGridItemsHaveRealNames =
+      gridEval.items.length > 0 &&
+      gridEval.items.every((it) => it.name && !/^Produkt EAN \d+$/i.test(it.name));
+    if (
+      allGridItemsHaveRealNames &&
+      gridEval.items.length >= lineItemCandidatesCount &&
+      gridEval.items.some((it) => it.gtin !== '9120000000000' || (it.quantity && it.quantity > 1))
+    ) {
       return {
         items: gridEval.items,
         headerData: {
@@ -1962,7 +2310,7 @@ export function parseOrderText(text: string): ParsedOrderResult {
     }
   }
 
-  // 1A. Jednoliniowy układ tabelaryczny: Lp + EAN na początku wiersza + Nazwa + liczby (np. DOZ, Gemini, hurtownie)
+  // 1A. Jednoliniowy układ tabelaryczny: Lp + EAN na początku wiersza + Nazwa + liczby (np. DOZ, Gemini, Super-Pharm, hurtownie)
   // Wzór: 1 9120117911370 Omni Biotic 10 ADD Kids, prosz., 2,5 g, 20 sasz. 323473 63 78.7 12.0 69.26
   // Lub: 1. 9120117912711 230078 OMNI-BIOTIC 6 60 SASZ. X 3 G 6 416.99
   for (const line of lines) {
@@ -2010,6 +2358,7 @@ export function parseOrderText(text: string): ParsedOrderResult {
 
   // 1B. Jednoliniowy układ tabelaryczny, gdzie Nazwa produktu jest PRZED kodem EAN (lub EAN na końcu wiersza):
   // Wzór: 1 OMNi-BiOTiC 6 60 g słoik 9120117912681 12 166,30 1995,60
+  // Lub Gemini PDF/txt: 0114899 Omnibiotic 6 3g x 60sasz 9120117912711 5926094 27 5 416.99 2027-08-30 15
   if (items.length === 0) {
     for (const line of lines) {
       if (line.includes('|') || isHeaderOrSummaryLine(line)) continue;
@@ -2017,15 +2366,26 @@ export function parseOrderText(text: string): ParsedOrderResult {
         /^(?:(\d{1,3})[.)]?\s+)?(.+?)\s+(590\d{10}|912\d{10}|\d{13})\s+(.+)$/
       );
       if (match) {
-        const namePart = match[2].trim();
-        const gtin = match[3];
-        const tail = match[4]
-          .replace(/\b(?:szt\.?|op\.?|opak\.?|pln|zł)\b/gi, ' ')
-          .replace(/\b\d{1,2}%\b/g, ' ')
-          .replace(/\s+/g, ' ')
+        const namePart = match[2]
+          .trim()
+          .replace(/^\d{5,8}\s+(?=[A-Za-z])/, '')
           .trim();
+        const gtin = match[3];
+        let tail = match[4]
+          .replace(/\b(?:szt\.?|op\.?|opak\.?|pln|zł)\b/gi, ' ')
+          .replace(/\b\d{1,2}%\b/g, ' ');
 
-        const rawTokens = (tail.match(/\d+(?:[.,]\d+)?/g) || []);
+        // Wyciągnij i usuń datę ważności z ogona wiersza (np. 2027-08-30), aby nie została rozbita na 3 liczby (2027, 08, 30)
+        let expFromTail = '';
+        const tailDateMatch = tail.match(/\b(\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4})\b/);
+        if (tailDateMatch) {
+          expFromTail = normalizeDate(tailDateMatch[1]) || tailDateMatch[1];
+          tail = tail.replace(tailDateMatch[0], ' ');
+          foundBatchesOrExpiry = true;
+        }
+        tail = tail.replace(/\s+/g, ' ').trim();
+
+        const rawTokens = tail.match(/\d+(?:[.,]\d+)?/g) || [];
         if (namePart.length >= 3 && rawTokens.length >= 1 && !isHeaderOrSummaryLine(namePart)) {
           const nums = rawTokens.map((n) => parseFloat(n.replace(',', '.')));
           const { qty, netPrice } = extractQtyAndPriceFromNumbers(
@@ -2042,7 +2402,7 @@ export function parseOrderText(text: string): ParsedOrderResult {
             netPrice,
             vatRate: '8%',
             batchNumber: '',
-            expiryDate: '',
+            expiryDate: expFromTail,
           });
         }
       }
@@ -2361,10 +2721,19 @@ export async function parseOrderExcel(
     return parseOrderHtml(fullHtml, fileName);
   }
 
-  const workbook = XLSX.read(buffer, { type: 'array', codepage: 1250 });
+  const workbook = XLSX.read(buffer, { type: 'array', codepage: 1250, cellDates: true });
   if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
     throw new Error('Plik Excel nie zawiera żadnych arkuszy.');
   }
+
+  const normalizeExcelCell = (cell: any): any => {
+    if (cell instanceof Date && !isNaN(cell.getTime())) {
+      // Dodaj 12 godzin, aby uniknąć przesunięcia o 1 dzień wstecz przy strefach czasowych UTC
+      const adjusted = new Date(cell.getTime() + 12 * 3600 * 1000);
+      return adjusted.toISOString().slice(0, 10);
+    }
+    return cell;
+  };
 
   // Wybierz najlepszy arkusz (taki, który zawiera nagłówek tabeli z "Zamawiana ilość" / "EAN" / "Produkt")
   let bestSheetName = workbook.SheetNames[0];
@@ -2372,7 +2741,9 @@ export async function parseOrderExcel(
 
   for (const name of workbook.SheetNames) {
     const ws = workbook.Sheets[name];
-    const grid: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const grid: any[][] = XLSX.utils
+      .sheet_to_json(ws, { header: 1, defval: '' })
+      .map((row: any) => (Array.isArray(row) ? row.map(normalizeExcelCell) : []));
     if (grid.length === 0) continue;
 
     let maxRowScoreInSheet = 0;
@@ -2391,7 +2762,9 @@ export async function parseOrderExcel(
   }
 
   const worksheet = workbook.Sheets[bestSheetName];
-  const rawGrid: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+  const rawGrid: any[][] = XLSX.utils
+    .sheet_to_json(worksheet, { header: 1, defval: '' })
+    .map((row: any) => (Array.isArray(row) ? row.map(normalizeExcelCell) : []));
 
   if (rawGrid.length === 0) {
     throw new Error('Arkusz zamówienia jest pusty.');
