@@ -897,6 +897,10 @@ function scheduleCloudSync() {
   }, 1200);
 }
 
+function parseJsonWithoutBom(raw: string): any {
+  return JSON.parse(raw.replace(/^\uFEFF/, ''));
+}
+
 function readDeletedIdsFromDisk(): string[] {
   ensureDataDir();
   if (!fs.existsSync(deletedIdsFilePath)) {
@@ -904,7 +908,7 @@ function readDeletedIdsFromDisk(): string[] {
   }
   try {
     const raw = fs.readFileSync(deletedIdsFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonWithoutBom(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -928,10 +932,10 @@ function readOrdersFromDisk(): any[] {
   }
   try {
     const raw = fs.readFileSync(ordersFilePath, 'utf8');
-    return JSON.parse(raw);
+    return parseJsonWithoutBom(raw);
   } catch (e) {
     console.error('Błąd odczytu bazy zamówień:', e);
-    return [];
+    throw new Error('Nie można bezpiecznie odczytać danych; synchronizacja została wstrzymana, aby chronić dane.');
   }
 }
 
@@ -956,11 +960,11 @@ function readKnowledgeFromDisk(): any[] {
   }
   try {
     const raw = fs.readFileSync(knowledgeFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonWithoutBom(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     console.error('Błąd odczytu bazy Centrum Wiedzy:', e);
-    return [];
+    throw new Error('Nie można bezpiecznie odczytać danych; synchronizacja została wstrzymana, aby chronić dane.');
   }
 }
 
@@ -985,7 +989,7 @@ function readSharedDraftsFromDisk(): any[] {
   }
   try {
     const raw = fs.readFileSync(sharedDraftsFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonWithoutBom(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -1013,7 +1017,7 @@ function readPackagingPhotosFromDisk(): any[] {
   }
   try {
     const raw = fs.readFileSync(packagingPhotosFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonWithoutBom(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -1618,43 +1622,7 @@ app.post('/api/knowledge-base/sync', async (req: Request, res: Response) => {
   return res.json({ success: true, count: finalClients.length });
 });
 
-function freePortIfBusy(targetPort: number): boolean {
-  try {
-    if (process.platform === 'win32') {
-      const out = execSync(`netstat -ano | findstr :${targetPort}`, {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-      const pids = new Set<number>();
-      for (const line of out.split(/\r?\n/)) {
-        if (!line.includes('LISTENING')) continue;
-        const parts = line.trim().split(/\s+/);
-        const pid = Number(parts[parts.length - 1]);
-        if (pid && pid !== process.pid) {
-          pids.add(pid);
-        }
-      }
-      for (const pid of pids) {
-        try {
-          execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
-        } catch {}
-      }
-      return pids.size > 0;
-    } else {
-      execSync(`fuser -k ${targetPort}/tcp`, { stdio: 'ignore' });
-      return true;
-    }
-  } catch {
-    return false;
-  }
-}
-
 async function startServer() {
-  if (freePortIfBusy(port)) {
-    console.log(`🔄 Zwolniono zajęty port ${port} (poprzednia instancja)...`);
-    await new Promise((r) => setTimeout(r, 300));
-  }
-
   if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1672,28 +1640,13 @@ async function startServer() {
     });
   }
 
-  const listenOnPort = (targetPort: number, retried = false) => {
-    const server = app.listen(targetPort, '0.0.0.0', () => {
-      console.log(`🌸 Generator Iwonki KSeF działa na http://localhost:${targetPort} (http://0.0.0.0:${targetPort}) [tryb: ${isProduction ? 'PRODUKCJA' : 'DEVELOPMENT'}]`);
-    });
-
-    server.on('error', (err: any) => {
-      if (err?.code === 'EADDRINUSE') {
-        if (!retried && freePortIfBusy(targetPort)) {
-          console.log(`🔄 Zwolniono zajęty port ${targetPort} (poprzednia instancja) — ponawiam uruchomienie...`);
-          setTimeout(() => listenOnPort(targetPort, true), 400);
-          return;
-        }
-        const fallbackPort = targetPort + 1;
-        console.warn(`⚠️ Port ${targetPort} jest zajęty. Uruchamiam serwer na porcie zapasowym ${fallbackPort}...`);
-        listenOnPort(fallbackPort, true);
-      } else {
-        console.error('❌ Błąd serwera HTTP:', err);
-      }
-    });
-  };
-
-  listenOnPort(port);
+  const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`🌸 Generator Iwonki KSeF działa na http://0.0.0.0:${port} [tryb: ${isProduction ? 'PRODUKCJA' : 'DEVELOPMENT'}]`);
+  });
+  server.on('error', (err) => {
+    console.error('❌ Błąd serwera HTTP:', err);
+    process.exitCode = 1;
+  });
 }
 
 startServer();
