@@ -108,21 +108,32 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
 }
 
 const DELETED_IDS_KEY = 'iwonka_ksef_deleted_order_ids_v1';
+const PERMANENTLY_DELETED_IDS = [
+  'ord-1791370137779',
+  'ord-1791369888459',
+  'ord-1791369877206',
+  'ord-1791369875920',
+];
 const IDB_NAME = 'iwonka_ksef_db_v1';
 const IDB_STORE = 'orders_store';
 const IDB_KEY = 'archived_orders_list';
 
 function getDeletedIds(): Set<string> {
+  const set = new Set<string>(PERMANENTLY_DELETED_IDS);
   try {
     const raw = localStorage.getItem(DELETED_IDS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return new Set(parsed);
+      if (Array.isArray(parsed)) {
+        for (const id of parsed) {
+          if (typeof id === 'string' && id) set.add(id);
+        }
+      }
     }
   } catch {
     // ignore
   }
-  return new Set();
+  return set;
 }
 
 function addDeletedId(id: string): void {
