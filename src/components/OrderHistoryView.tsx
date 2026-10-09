@@ -44,6 +44,8 @@ import {
   ShippingStatus,
 } from '../types/ordersHistory';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
+import { downloadOrderCSVFile } from '../utils/orderCsvGenerator';
+import { DEFAULT_SELLER } from '../utils/sampleData';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
 import { parseKSeFXMLString, extractInvoiceNumberFromXml } from '../utils/ksefXmlParser';
 import { detectPharmacyChain } from '../utils/orderParser';
@@ -3341,6 +3343,34 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           onChange={(e) => handleUploadXmlForOrder(ord, e)}
                         />
                       </label>
+
+                      {/* POBIERZ CSV ZAMÓWIENIA */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadOrderCSVFile({
+                            seller: ord.seller || DEFAULT_SELLER,
+                            buyer: ord.buyer,
+                            thirdParty: ord.thirdParty,
+                            meta: {
+                              invoiceNumber: effectiveInvoiceNumber,
+                              orderNumber: ord.orderNumber,
+                              issueDate: ord.issueDate,
+                              orderDate: ord.orderDate,
+                              deliveryDate: ord.avisoDate || ord.deliveryDate,
+                              dueDate: ord.dueDate,
+                              currency: ord.currency || 'PLN',
+                            },
+                            items: ord.items || [],
+                            selectedChain: ord.chain,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-colors cursor-pointer"
+                        title="Pobierz plik CSV z zamówieniem (pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy)"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Pobierz CSV</span>
+                      </button>
 
                       {/* PODGLĄD XML I POBIERZ XML (jeśli plik XML istnieje) */}
                       {ord.xmlContent ? (

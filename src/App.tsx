@@ -8,6 +8,7 @@ import { PriceListSection } from './components/PriceListSection';
 import { ItemsPreviewTable } from './components/ItemsPreviewTable';
 import { KSeFXMLModal } from './components/KSeFXMLModal';
 import { WZDocumentModal } from './components/WZDocumentModal';
+import { downloadOrderCSVFile } from './utils/orderCsvGenerator';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
 import { EdiDozPrototypeModal } from './components/EdiDozPrototypeModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
@@ -1558,6 +1559,16 @@ export default function App() {
         onApplySingleGtin={handleApplySingleGtin}
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
+        onDownloadOrderCsv={() =>
+          downloadOrderCSVFile({
+            seller,
+            buyer,
+            thirdParty,
+            meta,
+            items,
+            selectedChain,
+          })
+        }
         onSaveToHistory={handleSaveInvoiceToHistory}
         onSaveOrderWithMode={handleSaveOrderFromCard}
       />
@@ -1575,6 +1586,16 @@ export default function App() {
       <Header
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
+        onDownloadOrderCsv={() =>
+          downloadOrderCSVFile({
+            seller,
+            buyer,
+            thirdParty,
+            meta,
+            items,
+            selectedChain,
+          })
+        }
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
         activeUsersCount={activeUsersCount}
@@ -1682,6 +1703,16 @@ export default function App() {
         onSchemaVersionChange={setSchemaVersion}
         onSaveToHistory={handleSaveInvoiceToHistory}
         onOpenWzModal={() => setIsWzModalOpen(true)}
+        onDownloadOrderCsv={() =>
+          downloadOrderCSVFile({
+            seller,
+            buyer,
+            thirdParty,
+            meta,
+            items,
+            selectedChain,
+          })
+        }
         onOpenEdiModal={() => setIsEdiModalOpen(true)}
       />
 

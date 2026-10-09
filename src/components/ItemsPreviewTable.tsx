@@ -3,7 +3,7 @@ import { InvoiceItem, LogisticsFormat, VatRate } from '../types/ksef';
 import { formatGS1CompositeString } from '../utils/ksefGenerator';
 import { PriceComparisonItem } from '../types/priceList';
 import { evaluateShelfLife, getRequiredShelfLifeRule } from '../utils/expiryDateValidator';
-import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus, Clock, FileText } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Sparkles, Check, Hash, Calendar, Barcode, ArrowRightLeft, FileCode, BookmarkPlus, Clock, FileText, FileSpreadsheet } from 'lucide-react';
 
 interface ItemsPreviewTableProps {
   items: InvoiceItem[];
@@ -23,6 +23,7 @@ interface ItemsPreviewTableProps {
   onApplySingleGtin?: (itemId: string, newGtin: string) => void;
   onOpenXmlModal?: () => void;
   onOpenWzModal?: () => void;
+  onDownloadOrderCsv?: () => void;
   onSaveToHistory?: (navigateToInProgress?: boolean) => void;
   onSaveOrderWithMode?: (
     mode: 'with_fv_xml' | 'complete_later' | 'without_fv',
@@ -49,6 +50,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
   onApplySingleGtin,
   onOpenXmlModal,
   onOpenWzModal,
+  onDownloadOrderCsv,
   onSaveToHistory,
   onSaveOrderWithMode,
   viewMode = 'invoice_only',
@@ -726,7 +728,7 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
             {/* OPCJA 1: Zapisz z wystawieniem FV XML */}
             <button
               type="button"
@@ -834,11 +836,58 @@ export const ItemsPreviewTable: React.FC<ItemsPreviewTableProps> = ({
                 </div>
               </button>
             )}
+
+            {/* PRZYCISK 5: Wygeneruj plik CSV z zamówieniem */}
+            {onDownloadOrderCsv && (
+              <button
+                type="button"
+                onClick={onDownloadOrderCsv}
+                className="text-left p-3.5 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/60 to-white hover:from-emerald-100/80 hover:to-teal-50 border-2 border-emerald-500 hover:border-emerald-700 text-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-emerald-950 tracking-tight">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>📊 Wygeneruj plik CSV</span>
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Pobiera plik <strong>CSV z zamówieniem</strong>: pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy.
+                  </p>
+                </div>
+                <div className="mt-2.5 pt-2 border-t border-emerald-200/80 flex items-center justify-between text-[10px] font-bold text-emerald-900">
+                  <span>📥 Pobierz plik .CSV (Excel)</span>
+                  <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       ) : (
         /* Pasek akcji głównych w trybie "1. Wygeneruj Fakturę XML" — te same opcje co w "2. Wygeneruj Korektę Faktury XML" */
         <div className="p-4 sm:p-5 bg-white border-t-2 border-slate-500 flex flex-wrap items-center justify-end gap-3">
+          {onOpenWzModal && (
+            <button
+              type="button"
+              onClick={onOpenWzModal}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.01]"
+            >
+              <FileText className="w-4 h-4 text-indigo-600" />
+              <span>📄 Wygeneruj WZ</span>
+            </button>
+          )}
+
+          {onDownloadOrderCsv && (
+            <button
+              type="button"
+              onClick={onDownloadOrderCsv}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.01]"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>📊 Pobierz CSV zamówienia</span>
+            </button>
+          )}
+
           {onSaveToHistory && (
             <button
               type="button"

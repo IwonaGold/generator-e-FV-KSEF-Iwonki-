@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { FileCode, Sparkles, BookOpen, LogOut, ChevronDown, ExternalLink, FileText } from 'lucide-react';
+import { FileCode, Sparkles, BookOpen, LogOut, ChevronDown, ExternalLink, FileText, FileSpreadsheet } from 'lucide-react';
 import appLogo from '../assets/app-logo.png';
 import { WorkstationRole } from '../utils/cloudSyncService';
 
 interface HeaderProps {
   onOpenXmlModal: () => void;
   onOpenWzModal?: () => void;
+  onDownloadOrderCsv?: () => void;
   onOpenAiGuide: () => void;
   onOpenCloudModal?: () => void;
   activeUsersCount?: number;
@@ -22,6 +23,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onOpenXmlModal,
   onOpenWzModal,
+  onDownloadOrderCsv,
   onOpenAiGuide,
   onOpenCloudModal,
   activeUsersCount = 1,
@@ -250,6 +252,28 @@ export const Header: React.FC<HeaderProps> = ({
                       </>
                     )}
 
+                    {onDownloadOrderCsv && (
+                      <>
+                        <div className="my-1 border-t border-slate-100" />
+                        <button
+                          type="button"
+                          onClick={onDownloadOrderCsv}
+                          className="w-full text-left p-2.5 rounded-xl hover:bg-emerald-50 transition-colors flex items-start gap-2.5 cursor-pointer"
+                        >
+                          <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                            3
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-emerald-950 flex items-center gap-1">
+                              <span>3. Pobierz plik CSV zamówienia</span>
+                              <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+                            </div>
+                            <div className="text-[11px] text-slate-500 leading-tight">Pozycje EAN, dane do wysyłki i FV + kontakt awizacji z Centrum Wiedzy</div>
+                          </div>
+                        </button>
+                      </>
+                    )}
+
                     <div className="my-1 border-t border-slate-100" />
 
                     <a
@@ -259,11 +283,11 @@ export const Header: React.FC<HeaderProps> = ({
                       className="w-full text-left p-2.5 rounded-xl hover:bg-blue-50 transition-colors flex items-start gap-2.5 cursor-pointer"
                     >
                       <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
-                        3
+                        4
                       </div>
                       <div>
                         <div className="text-xs font-bold text-blue-950 flex items-center gap-1">
-                          <span>3. Przejdź do logowania KSeF</span>
+                          <span>4. Przejdź do logowania KSeF</span>
                           <ExternalLink className="w-3 h-3 text-blue-600" />
                         </div>
                         <div className="text-[11px] text-slate-500 leading-tight">Oficjalny portal MF do wgrania pobranego pliku XML</div>

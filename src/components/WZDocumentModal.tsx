@@ -12,8 +12,10 @@ import {
   Truck,
   Warehouse,
   ExternalLink,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { EntityDetails, ThirdPartyEntity, InvoiceMeta, InvoiceItem, PharmacyChain } from '../types/ksef';
+import { downloadOrderCSVFile } from '../utils/orderCsvGenerator';
 
 interface WZDocumentModalProps {
   isOpen: boolean;
@@ -187,7 +189,7 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handlePrint}
@@ -196,6 +198,25 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
             >
               <Printer className="w-4 h-4" />
               <span>Drukuj / Zapisz PDF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                downloadOrderCSVFile({
+                  seller,
+                  buyer,
+                  thirdParty,
+                  meta,
+                  items,
+                  selectedChain,
+                })
+              }
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
+              title="Pobierz plik CSV z zamówieniem (pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy)"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+              <span>Pobierz CSV zamówienia</span>
             </button>
 
             <button

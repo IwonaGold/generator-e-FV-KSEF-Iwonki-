@@ -154,12 +154,17 @@ export const KnowledgeCenterView: React.FC = () => {
   const [newClientFullName, setNewClientFullName] = useState<string>('');
   const [newClientNip, setNewClientNip] = useState<string>('');
 
-  // Stan dodawania kontaktu mailowego
+  // Stan dodawania / edycji kontaktu mailowego i telefonicznego
   const [isAddingContact, setIsAddingContact] = useState<boolean>(false);
   const [contactRole, setContactRole] = useState<string>('');
   const [contactName, setContactName] = useState<string>('');
   const [contactEmail, setContactEmail] = useState<string>('');
   const [contactPhone, setContactPhone] = useState<string>('');
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editContactRole, setEditContactRole] = useState<string>('');
+  const [editContactName, setEditContactName] = useState<string>('');
+  const [editContactEmail, setEditContactEmail] = useState<string>('');
+  const [editContactPhone, setEditContactPhone] = useState<string>('');
 
   // Stan dodawania nowej notatki / ustalenia
   const [newNoteContent, setNewNoteContent] = useState<string>('');
@@ -360,6 +365,36 @@ export const KnowledgeCenterView: React.FC = () => {
     setContactPhone('');
     setIsAddingContact(false);
     showNotice(`✉️ Dodano adres e-mail (${newContact.email}) dla sieci ${activeClient.shortName}.`);
+  };
+
+  const handleStartEditContact = (ct: ClientContactPerson) => {
+    setEditingContactId(ct.id);
+    setEditContactRole(ct.role || '');
+    setEditContactName(ct.name || '');
+    setEditContactEmail(ct.email || '');
+    setEditContactPhone(ct.phone || '');
+  };
+
+  const handleSaveEditedContact = async (contactId: string) => {
+    if (!activeClient || !editContactEmail.trim()) return;
+    const updated: KeyClientProfile = {
+      ...activeClient,
+      contacts: activeClient.contacts.map((c) =>
+        c.id === contactId
+          ? {
+              ...c,
+              role: editContactRole.trim() || c.role,
+              name: editContactName.trim(),
+              email: editContactEmail.trim(),
+              phone: editContactPhone.trim(),
+            }
+          : c
+      ),
+    };
+    const saved = await saveKeyClient(updated);
+    setClients((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
+    setEditingContactId(null);
+    showNotice(`✅ Zaktualizowano dane kontaktowe (${editContactEmail.trim()}) w Centrum Wiedzy.`);
   };
 
   const handleDeleteContact = async (contactId: string) => {
@@ -1676,55 +1711,143 @@ export const KnowledgeCenterView: React.FC = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {activeClient.contacts.map((ct) => (
-                      <div
-                        key={ct.id}
-                        className="bg-white p-3.5 rounded-xl border border-slate-200/90 flex items-start justify-between gap-2 shadow-2xs"
-                      >
-                        <div className="min-w-0">
-                          <span className="inline-block px-2 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200/70 text-[10px] font-bold uppercase tracking-wider">
-                            {ct.role}
-                          </span>
-                          {ct.name && (
-                            <div className="text-xs font-bold text-slate-800 mt-1 truncate">
-                              {ct.name}
+                    {activeClient.contacts.map((ct) => {
+                      const isEditingCt = editingContactId === ct.id;
+                      return (
+                        <div
+                          key={ct.id}
+                          className="bg-white p-3.5 rounded-xl border border-slate-200/90 flex flex-col justify-between gap-2 shadow-2xs"
+                        >
+                          {isEditingCt ? (
+                            <div className="space-y-2">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500">
+                                  Sekcja / Rola
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editContactRole}
+                                  onChange={(e) => setEditContactRole(e.target.value)}
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500">
+                                  Imię i nazwisko / Opis
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editContactName}
+                                  onChange={(e) => setEditContactName(e.target.value)}
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500">
+                                  Adres e-mail *
+                                </label>
+                                <input
+                                  type="email"
+                                  value={editContactEmail}
+                                  onChange={(e) => setEditContactEmail(e.target.value)}
+                                  className="w-full px-2 py-1 text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500">
+                                  Telefon (do pliku CSV / kontaktu)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editContactPhone}
+                                  onChange={(e) => setEditContactPhone(e.target.value)}
+                                  placeholder="np. +48 500 000 000"
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div className="flex justify-end gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingContactId(null)}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                                >
+                                  Anuluj
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditedContact(ct.id)}
+                                  className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                                >
+                                  Zapisz
+                                </button>
+                              </div>
                             </div>
-                          )}
-                          <a
-                            href={`mailto:${ct.email}`}
-                            className="text-xs font-mono font-bold text-indigo-700 hover:underline block truncate mt-0.5"
-                            title="Kliknij, aby otworzyć program pocztowy"
-                          >
-                            {ct.email}
-                          </a>
-                          {ct.phone && (
-                            <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-1">
-                              <Phone className="w-3 h-3 text-slate-400" />
-                              <span>{ct.phone}</span>
-                            </div>
-                          )}
-                        </div>
+                          ) : (
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="inline-block px-2 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200/70 text-[10px] font-bold uppercase tracking-wider">
+                                  {ct.role}
+                                </span>
+                                {ct.name && (
+                                  <div className="text-xs font-bold text-slate-800 mt-1 truncate">
+                                    {ct.name}
+                                  </div>
+                                )}
+                                <a
+                                  href={`mailto:${ct.email}`}
+                                  className="text-xs font-mono font-bold text-indigo-700 hover:underline block truncate mt-0.5"
+                                  title="Kliknij, aby otworzyć program pocztowy"
+                                >
+                                  {ct.email}
+                                </a>
+                                {ct.phone ? (
+                                  <div className="text-[11px] text-slate-600 font-semibold flex items-center gap-1 mt-1">
+                                    <Phone className="w-3 h-3 text-emerald-600" />
+                                    <span>{ct.phone}</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditContact(ct)}
+                                    className="text-[10px] text-slate-400 hover:text-indigo-600 flex items-center gap-1 mt-1 cursor-pointer"
+                                  >
+                                    <Phone className="w-2.5 h-2.5" />
+                                    <span>+ Dodaj nr telefonu</span>
+                                  </button>
+                                )}
+                              </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyText(ct.email, ct.role)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200/80 transition-colors cursor-pointer"
-                            title="Kopiuj adres e-mail"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteContact(ct.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                            title="Usuń ten kontakt"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(ct.email, ct.role)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200/80 transition-colors cursor-pointer"
+                                  title="Kopiuj adres e-mail"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditContact(ct)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                  title="Edytuj e-mail lub numer telefonu"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteContact(ct.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Usuń ten kontakt"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

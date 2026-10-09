@@ -15,6 +15,7 @@ interface KSeFXMLModalProps {
   onSchemaVersionChange: (ver: KSeFSchemaVersion) => void;
   onSaveToHistory?: (navigateToInProgress?: boolean) => void;
   onOpenWzModal?: () => void;
+  onDownloadOrderCsv?: () => void;
   onOpenEdiModal?: () => void;
 }
 
@@ -29,6 +30,7 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
   onSchemaVersionChange,
   onSaveToHistory,
   onOpenWzModal,
+  onDownloadOrderCsv,
   onOpenEdiModal,
 }) => {
   const [copied, setCopied] = useState(false);
@@ -432,6 +434,16 @@ export const KSeFXMLModal: React.FC<KSeFXMLModalProps> = ({
                 title="Przejdź do dokumentu WZ (Wydanie Zewnętrzne) dla tej faktury"
               >
                 📄 Generuj WZ
+              </button>
+            )}
+            {onDownloadOrderCsv && (
+              <button
+                type="button"
+                onClick={onDownloadOrderCsv}
+                className="px-3.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                title="Pobierz plik CSV z zamówieniem (pozycje z EAN, ilości, ceny jednostkowe, osobno dane do wysyłki i do faktury + e-mail i telefon awizacji z Centrum Wiedzy)"
+              >
+                📊 Pobierz CSV zamówienia
               </button>
             )}
             {onSaveToHistory && (
