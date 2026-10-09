@@ -84,6 +84,16 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
     const effectiveParcelTaskStatus =
       rawParcelStatus === 'completed' ? 'none' : rawParcelStatus;
 
+    const itemsList = Array.isArray(ord.items) ? ord.items : [];
+    const allItemsHaveLotAndExp =
+      itemsList.length > 0 &&
+      itemsList.every(
+        (it) =>
+          Boolean(String(it?.batchNumber || '').trim()) &&
+          Boolean(String(it?.expiryDate || '').trim())
+      );
+    const shouldPurgeProductPhotos = isActuallyDelivered || allItemsHaveLotAndExp;
+
     return {
       ...ord,
       documentType: ord.documentType || 'FV',
@@ -97,7 +107,11 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       paymentDueDate: effectiveDueDate,
       paymentStatus: effectivePaymentStatus,
       parcelPhotos: Array.isArray(ord.parcelPhotos) ? ord.parcelPhotos : [],
-      packagingPhotos: Array.isArray(ord.packagingPhotos) ? ord.packagingPhotos : [],
+      packagingPhotos: shouldPurgeProductPhotos
+        ? []
+        : Array.isArray(ord.packagingPhotos)
+        ? ord.packagingPhotos
+        : [],
       warehouseProductTaskStatus: effectiveProductTaskStatus,
       warehouseParcelTaskStatus: effectiveParcelTaskStatus,
       warehouseTaskStatus: legacyStatus,
@@ -343,14 +357,19 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
     try {
       const deletedIds = getDeletedIds();
       const localOrders = await readOrdersFromBrowserStorage();
+      const localMap = new Map(localOrders.map((o) => [o.id, o]));
       let serverOrders: ArchivedOrder[] = [];
 
       try {
+        const useLightEndpoint = localOrders.length > 0;
         const headers: Record<string, string> = {};
         if (lastServerOrdersEtag && lastServerOrdersCache) {
           headers['If-None-Match'] = lastServerOrdersEtag;
         }
-        const res = await fetch('/api/orders-history', { headers });
+        const res = await fetch(
+          useLightEndpoint ? '/api/orders-history?light=1' : '/api/orders-history',
+          { headers }
+        );
         if (res.status === 304 && lastServerOrdersCache) {
           serverOrders = lastServerOrdersCache;
         } else if (res.ok) {
@@ -372,8 +391,62 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
           }
           const data = await res.json();
           if (Array.isArray(data)) {
-            serverOrders = data;
-            lastServerOrdersCache = data;
+            if (useLightEndpoint) {
+              const idsNeedingPhotos: string[] = [];
+              for (const srv of data as any[]) {
+                if (!srv?.id || deletedIds.has(srv.id)) continue;
+                const loc = localMap.get(srv.id);
+                const srvParcelCount = Number(srv.parcelPhotosCount || 0);
+                const srvPkgCount = Number(srv.packagingPhotosCount || 0);
+                const locParcelCount = loc?.parcelPhotos?.length || 0;
+                const locPkgCount = loc?.packagingPhotos?.length || 0;
+                if (srvParcelCount > locParcelCount || srvPkgCount > locPkgCount) {
+                  idsNeedingPhotos.push(srv.id);
+                }
+              }
+
+              let fetchedPhotosMap: Record<
+                string,
+                { parcelPhotos?: string[]; packagingPhotos?: any[] }
+              > = {};
+              if (idsNeedingPhotos.length > 0) {
+                try {
+                  const pRes = await fetch('/api/orders-history/photos-by-ids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: idsNeedingPhotos }),
+                  });
+                  if (pRes.ok) {
+                    const pJson = await pRes.json();
+                    if (pJson?.photosByOrderId) {
+                      fetchedPhotosMap = pJson.photosByOrderId;
+                    }
+                  }
+                } catch {}
+              }
+
+              const hydratedOrders: ArchivedOrder[] = (data as any[]).map((srv) => {
+                const loc = localMap.get(srv.id);
+                const fetched = fetchedPhotosMap[srv.id];
+                const srvParcelCount = Number(srv.parcelPhotosCount || 0);
+                const srvPkgCount = Number(srv.packagingPhotosCount || 0);
+                return {
+                  ...srv,
+                  parcelPhotos:
+                    fetched?.parcelPhotos ??
+                    (srvParcelCount > 0 ? loc?.parcelPhotos || [] : []),
+                  packagingPhotos:
+                    fetched?.packagingPhotos ??
+                    (srvPkgCount > 0 ? loc?.packagingPhotos || [] : []),
+                };
+              });
+
+              serverOrders = hydratedOrders;
+              lastServerOrdersCache = hydratedOrders;
+            } else {
+              serverOrders = data;
+              lastServerOrdersCache = data;
+            }
           }
         }
       } catch (err) {

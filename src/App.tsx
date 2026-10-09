@@ -645,10 +645,24 @@ export default function App() {
         'Zapisano bez wystawiania FV XML — wpisz ręcznie numer dokumentu na karcie zamówienia w folderze W REALIZACJI';
     }
 
-    const mergedPackagingPhotos =
-      currentOrderPackagingPhotos.length > 0
-        ? currentOrderPackagingPhotos
-        : existingOrder?.packagingPhotos || [];
+    const allItemsHaveLotAndExp =
+      items.length > 0 &&
+      items.every(
+        (it) =>
+          Boolean(String(it.batchNumber || '').trim()) &&
+          Boolean(String(it.expiryDate || '').trim())
+      );
+
+    // Po zapisaniu informacji o dacie ważności (MHD/EXP) i serii (LOT) lub wystawieniu FV XML
+    // usuwamy zdjęcia opakowań produktów (w historii zostają wyłącznie zdjęcia gotowych przesyłek parcelPhotos)
+    const shouldPurgeProductPhotos = mode === 'with_fv_xml' || allItemsHaveLotAndExp;
+
+    const mergedPackagingPhotos = shouldPurgeProductPhotos
+      ? []
+      : currentOrderPackagingPhotos.length > 0
+      ? currentOrderPackagingPhotos
+      : existingOrder?.packagingPhotos || [];
+
 
     const nowIso = new Date().toISOString();
     const savedOrder: ArchivedOrder = {

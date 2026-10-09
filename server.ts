@@ -913,10 +913,13 @@ function parseJsonWithoutBom(raw: string): any {
   return JSON.parse(raw.replace(/^\uFEFF/, ''));
 }
 
-// --- Bufor w pamięci RAM (In-Memory Cache) oszczędzający pamięć i I/O na darmowym planie ---
+// --- Bufor w pamięci RAM (In-Memory Cache) oszczędzający pamięć, I/O i transfer (Bandwidth) na darmowym planie ---
 let deletedIdsMemoryCache: string[] | null = null;
 let ordersMemoryCache: any[] | null = null;
 let ordersSerializedCache: string | null = null;
+let ordersGzipCache: Buffer | null = null;
+let ordersLightSerializedCache: string | null = null;
+let ordersLightGzipCache: Buffer | null = null;
 let ordersEtagVersion = 1;
 let ordersDiskWriteTimer: NodeJS.Timeout | null = null;
 let knowledgeMemoryCache: any[] | null = null;
@@ -926,6 +929,38 @@ let packagingPhotosMemoryCache: any[] | null = null;
 function invalidateOrdersHttpCache() {
   ordersEtagVersion += 1;
   ordersSerializedCache = null;
+  ordersGzipCache = null;
+  ordersLightSerializedCache = null;
+  ordersLightGzipCache = null;
+}
+
+/**
+ * Automatycznie usuwa zdjęcia opakowań produktów (packagingPhotos), gdy zamówienie ma już
+ * zapisane serie (LOT) i daty ważności (MHD/EXP) na wszystkich pozycjach lub gdy zamówienie jest zakończone (isDelivered).
+ * Zdjęcia gotowych przesyłek (parcelPhotos) zostają zawsze zachowane w historii do ewentualnych reklamacji.
+ */
+function stripProductPhotosIfLotAndExpSaved(order: any): any {
+  if (!order || typeof order !== 'object') return order;
+  const items = Array.isArray(order.items) ? order.items : [];
+  const allItemsHaveLotAndExp =
+    items.length > 0 &&
+    items.every(
+      (it: any) =>
+        Boolean(String(it?.batchNumber || '').trim()) &&
+        Boolean(String(it?.expiryDate || '').trim())
+    );
+  const shouldPurgeProductPhotos = Boolean(order.isDelivered) || allItemsHaveLotAndExp;
+  if (
+    shouldPurgeProductPhotos &&
+    Array.isArray(order.packagingPhotos) &&
+    order.packagingPhotos.length > 0
+  ) {
+    return {
+      ...order,
+      packagingPhotos: [],
+    };
+  }
+  return order;
 }
 
 function readDeletedIdsFromDisk(): string[] {
@@ -970,7 +1005,8 @@ function readOrdersFromDisk(): any[] {
   try {
     const raw = fs.readFileSync(ordersFilePath, 'utf8');
     const parsed = parseJsonWithoutBom(raw);
-    ordersMemoryCache = Array.isArray(parsed) ? parsed : [];
+    const arr = Array.isArray(parsed) ? parsed : [];
+    ordersMemoryCache = arr.map(stripProductPhotosIfLotAndExpSaved);
     return ordersMemoryCache;
   } catch (e) {
     console.error('Błąd odczytu bazy zamówień:', e);
@@ -979,7 +1015,8 @@ function readOrdersFromDisk(): any[] {
 }
 
 function writeOrdersToDisk(orders: any[], triggerCloud = true): boolean {
-  ordersMemoryCache = orders;
+  const cleanedOrders = orders.map(stripProductPhotosIfLotAndExpSaved);
+  ordersMemoryCache = cleanedOrders;
   invalidateOrdersHttpCache();
   ensureDataDir();
 
@@ -1515,7 +1552,10 @@ app.delete('/api/packaging-photos/:id', async (req: Request, res: Response) => {
 
 app.get('/api/orders-history', async (req: Request, res: Response) => {
   await ensureCloudInitialized();
-  const currentEtag = `W/"orders-rev-${ordersEtagVersion}"`;
+  const isLightMode = req.query.light === '1';
+  const currentEtag = isLightMode
+    ? `W/"orders-light-rev-${ordersEtagVersion}"`
+    : `W/"orders-rev-${ordersEtagVersion}"`;
   res.setHeader('ETag', currentEtag);
 
   if (req.headers['if-none-match'] === currentEtag) {
@@ -1525,14 +1565,72 @@ app.get('/api/orders-history', async (req: Request, res: Response) => {
   const deletedIds = readDeletedIdsFromDisk();
   res.setHeader('X-Deleted-Order-Ids', JSON.stringify(deletedIds));
 
+  const acceptsGzip = String(req.headers['accept-encoding'] || '').includes('gzip');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Vary', 'Accept-Encoding');
+
+  if (isLightMode) {
+    if (!ordersLightSerializedCache) {
+      const deletedSet = new Set(deletedIds);
+      const lightOrders = readOrdersFromDisk()
+        .filter((o: any) => o && o.id && !deletedSet.has(o.id))
+        .map((o: any) => ({
+          ...o,
+          _lightMode: true,
+          parcelPhotosCount: Array.isArray(o.parcelPhotos) ? o.parcelPhotos.length : 0,
+          packagingPhotosCount: Array.isArray(o.packagingPhotos) ? o.packagingPhotos.length : 0,
+          parcelPhotos: [],
+          packagingPhotos: [],
+        }));
+      ordersLightSerializedCache = JSON.stringify(lightOrders);
+      ordersLightGzipCache = zlib.gzipSync(Buffer.from(ordersLightSerializedCache, 'utf8'));
+    }
+    if (acceptsGzip && ordersLightGzipCache) {
+      res.setHeader('Content-Encoding', 'gzip');
+      return res.send(ordersLightGzipCache);
+    }
+    return res.send(ordersLightSerializedCache);
+  }
+
   if (!ordersSerializedCache) {
     const deletedSet = new Set(deletedIds);
     const orders = readOrdersFromDisk().filter((o: any) => o && o.id && !deletedSet.has(o.id));
     ordersSerializedCache = JSON.stringify(orders);
+    ordersGzipCache = zlib.gzipSync(Buffer.from(ordersSerializedCache, 'utf8'));
   }
 
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (acceptsGzip && ordersGzipCache) {
+    res.setHeader('Content-Encoding', 'gzip');
+    return res.send(ordersGzipCache);
+  }
   return res.send(ordersSerializedCache);
+});
+
+app.post('/api/orders-history/photos-by-ids', async (req: Request, res: Response) => {
+  await ensureCloudInitialized();
+  const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (ids.length === 0) {
+    return res.json({ photosByOrderId: {} });
+  }
+  const idSet = new Set(ids);
+  const orders = readOrdersFromDisk();
+  const photosByOrderId: Record<string, { parcelPhotos: any[]; packagingPhotos: any[] }> = {};
+  for (const o of orders) {
+    if (o && o.id && idSet.has(o.id)) {
+      photosByOrderId[o.id] = {
+        parcelPhotos: Array.isArray(o.parcelPhotos) ? o.parcelPhotos : [],
+        packagingPhotos: Array.isArray(o.packagingPhotos) ? o.packagingPhotos : [],
+      };
+    }
+  }
+  const jsonStr = JSON.stringify({ photosByOrderId });
+  const acceptsGzip = String(req.headers['accept-encoding'] || '').includes('gzip');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (acceptsGzip) {
+    res.setHeader('Content-Encoding', 'gzip');
+    return res.send(zlib.gzipSync(Buffer.from(jsonStr, 'utf8')));
+  }
+  return res.send(jsonStr);
 });
 
 app.post('/api/orders-history', async (req: Request, res: Response) => {
