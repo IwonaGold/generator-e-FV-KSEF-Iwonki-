@@ -45,8 +45,8 @@ export const WZDocumentModal: React.FC<WZDocumentModalProps> = ({
   });
   const [issueDate, setIssueDate] = useState<string>(meta.issueDate || new Date().toISOString().slice(0, 10));
   const [releaseDate, setReleaseDate] = useState<string>(meta.deliveryDate || meta.issueDate || new Date().toISOString().slice(0, 10));
-  const [remarks, setRemarks] = useState<string>(
-    'Warunki przechowywania: 15°C – 25°C. Towar zabezpieczony, w nienaruszonych opakowaniach fabrycznych.'
+  const [remarks] = useState<string>(
+    'Towar zabezpieczony, w nienaruszonych opakowaniach fabrycznych.'
   );
 
   // Synchronizacja numeru WZ i dat przy otwarciu lub zmianie metadanych
