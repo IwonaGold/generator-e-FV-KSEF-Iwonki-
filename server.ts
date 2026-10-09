@@ -1610,6 +1610,8 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
     eventSummary = `📦 Koordynator wysłał zadanie do Magazynu: zamówienie nr ${ordLabel} (${orders[idx].chain || ''})`;
     eventWorkstation = '1. Koordynator';
   } else if (updates.warehouseProductTaskStatus === 'completed') {
+    const remainingQueue = readPackagingPhotosFromDisk().filter((p: any) => p?.orderId !== id);
+    writePackagingPhotosToDisk(remainingQueue, false);
     eventType = 'WAREHOUSE_TASK_COMPLETED';
     eventSummary = `✅ Magazyn wykonał Zadanie 1 (Uzupełnij zdjęcia produktów) dla zamówienia nr ${ordLabel}`;
     eventWorkstation = '2. Magazyn';
@@ -1618,6 +1620,8 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
     eventSummary = `✅ Magazyn wykonał Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki) dla zamówienia nr ${ordLabel}`;
     eventWorkstation = '2. Magazyn';
   } else if (updates.warehouseTaskStatus === 'completed') {
+    const remainingQueue = readPackagingPhotosFromDisk().filter((p: any) => p?.orderId !== id);
+    writePackagingPhotosToDisk(remainingQueue, false);
     eventType = 'WAREHOUSE_TASK_COMPLETED';
     eventSummary = `✅ Magazyn uzupełnił zdjęcia i zakończył zadanie dla zamówienia nr ${ordLabel}`;
     eventWorkstation = '2. Magazyn';

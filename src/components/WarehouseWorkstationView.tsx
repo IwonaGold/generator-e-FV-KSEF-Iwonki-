@@ -35,7 +35,7 @@ interface WarehouseWorkstationViewProps {
   onSwitchToCoordinator?: () => void;
 }
 
-type WarehouseFilterTab = 'active' | 'product_photos' | 'parcel_photos' | 'completed' | 'all';
+type WarehouseFilterTab = 'active' | 'product_photos' | 'parcel_photos';
 
 type WarehouseTaskType = 'product_photos' | 'parcel_photos';
 
@@ -69,13 +69,15 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
     currentIndex: number;
   } | null>(null);
 
-  // Budujemy dwa oddzielne typy zadań przypisanych przez Koordynatora:
+  // Budujemy dwa oddzielne typy AKTYWNYCH zadań przypisanych przez Koordynatora (zadania wykonane znikają ze stanowiska Magazyn):
   // 1. Z karty zamówienia: "Uzupełnij zdjęcia produktów" (product_photos)
   // 2. Z folderu W REALIZACJI: "Uzupełnij zdjęcia gotowej przesyłki" (parcel_photos)
   const splitTasks = useMemo<WarehouseSplitTaskItem[]>(() => {
     const list: WarehouseSplitTaskItem[] = [];
 
     for (const ord of orders) {
+      if (ord.isDelivered) continue;
+
       const productStatus: WarehouseTaskStatus =
         ord.warehouseProductTaskStatus ||
         (ord.warehouseTaskStatus &&
@@ -86,34 +88,26 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
 
       const parcelStatus: WarehouseTaskStatus = ord.warehouseParcelTaskStatus || 'none';
 
-      if (
-        productStatus === 'assigned' ||
-        productStatus === 'in_progress' ||
-        productStatus === 'completed'
-      ) {
+      if (productStatus === 'assigned' || productStatus === 'in_progress') {
         list.push({
           key: `${ord.id}-product`,
           taskType: 'product_photos',
           order: ord,
           status: productStatus,
           assignedAt: ord.warehouseProductTaskAssignedAt || ord.warehouseTaskAssignedAt || ord.updatedAt,
-          completedAt: ord.warehouseProductTaskCompletedAt || null,
+          completedAt: null,
           note: ord.warehouseProductTaskNote ?? ord.warehouseTaskNote ?? null,
         });
       }
 
-      if (
-        parcelStatus === 'assigned' ||
-        parcelStatus === 'in_progress' ||
-        parcelStatus === 'completed'
-      ) {
+      if (parcelStatus === 'assigned' || parcelStatus === 'in_progress') {
         list.push({
           key: `${ord.id}-parcel`,
           taskType: 'parcel_photos',
           order: ord,
           status: parcelStatus,
           assignedAt: ord.warehouseParcelTaskAssignedAt || ord.updatedAt,
-          completedAt: ord.warehouseParcelTaskCompletedAt || null,
+          completedAt: null,
           note: ord.warehouseParcelTaskNote ?? ord.warehouseTaskNote ?? null,
         });
       }
@@ -127,26 +121,12 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
   }, [orders]);
 
   const counts = useMemo(() => {
-    const active = splitTasks.filter(
-      (t) => t.status === 'assigned' || t.status === 'in_progress'
-    ).length;
-    const productActive = splitTasks.filter(
-      (t) =>
-        t.taskType === 'product_photos' &&
-        (t.status === 'assigned' || t.status === 'in_progress')
-    ).length;
-    const parcelActive = splitTasks.filter(
-      (t) =>
-        t.taskType === 'parcel_photos' &&
-        (t.status === 'assigned' || t.status === 'in_progress')
-    ).length;
-    const completed = splitTasks.filter((t) => t.status === 'completed').length;
+    const productActive = splitTasks.filter((t) => t.taskType === 'product_photos').length;
+    const parcelActive = splitTasks.filter((t) => t.taskType === 'parcel_photos').length;
     return {
-      active,
+      active: splitTasks.length,
       productActive,
       parcelActive,
-      completed,
-      all: splitTasks.length,
     };
   }, [splitTasks]);
 
@@ -154,28 +134,11 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
     return splitTasks.filter((task) => {
       const ord = task.order;
 
-      if (activeTab === 'active') {
-        if (task.status !== 'assigned' && task.status !== 'in_progress') {
-          return false;
-        }
-      } else if (activeTab === 'product_photos') {
-        if (
-          task.taskType !== 'product_photos' ||
-          (task.status !== 'assigned' && task.status !== 'in_progress')
-        ) {
-          return false;
-        }
-      } else if (activeTab === 'parcel_photos') {
-        if (
-          task.taskType !== 'parcel_photos' ||
-          (task.status !== 'assigned' && task.status !== 'in_progress')
-        ) {
-          return false;
-        }
-      } else if (activeTab === 'completed') {
-        if (task.status !== 'completed') {
-          return false;
-        }
+      if (activeTab === 'product_photos' && task.taskType !== 'product_photos') {
+        return false;
+      }
+      if (activeTab === 'parcel_photos' && task.taskType !== 'parcel_photos') {
+        return false;
       }
 
       if (searchQuery.trim()) {
@@ -344,28 +307,28 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
   };
 
   /**
-   * 3. Oznaczenie konkretnego zadania (Zadania 1 lub Zadania 2) jako wykonane / gotowe dla Koordynatora
+  /**
+   * 3. Oznaczenie konkretnego zadania (Zadania 1 lub Zadania 2) jako wykonane / przekazane Koordynatorowi
+   *    (zadania wykonane nie są przetrzymywane na stanowisku Magazyn)
    */
   const handleToggleTaskCompleted = async (task: WarehouseSplitTaskItem) => {
     setStatusUpdatingKey(task.key);
     try {
       const ord = task.order;
-      const isCurrentlyCompleted = task.status === 'completed';
-      const nextStatus: WarehouseTaskStatus = isCurrentlyCompleted ? 'in_progress' : 'completed';
-      const nowIso = isCurrentlyCompleted ? null : new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       if (task.taskType === 'product_photos') {
         await updateArchivedOrderFields(ord.id, {
-          warehouseProductTaskStatus: nextStatus,
+          warehouseProductTaskStatus: 'completed',
           warehouseProductTaskCompletedAt: nowIso,
-          warehouseTaskStatus: nextStatus,
+          warehouseTaskStatus: 'completed',
           warehouseTaskCompletedAt: nowIso,
         });
       } else {
         await updateArchivedOrderFields(ord.id, {
-          warehouseParcelTaskStatus: nextStatus,
+          warehouseParcelTaskStatus: 'completed',
           warehouseParcelTaskCompletedAt: nowIso,
-          warehouseTaskStatus: nextStatus,
+          warehouseTaskStatus: 'completed',
           warehouseTaskCompletedAt: nowIso,
         });
       }
@@ -376,9 +339,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
           ? 'Zadanie 1 (Uzupełnij zdjęcia produktów)'
           : 'Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki)';
       setNotice(
-        isCurrentlyCompleted
-          ? `🔄 Przywrócono ${taskLabel} dla zamówienia nr ${ord.orderNumber || ord.invoiceNumber} do realizacji.`
-          : `✅ ${taskLabel} dla zamówienia nr ${ord.orderNumber || ord.invoiceNumber} zostało oznaczone jako WYKONANE i przekazane Koordynatorowi!`
+        `✅ ${taskLabel} dla zamówienia nr ${ord.orderNumber || ord.invoiceNumber} zostało wykonane, przekazane Koordynatorowi i usunięte z listy zadań Magazynu!`
       );
       setTimeout(() => setNotice(null), 5000);
     } finally {
@@ -402,7 +363,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                 <span>2 Oddzielne Etapy Zadań od Koordynatora</span>
               </div>
               <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-                Moje Zadania Magazynowe — Podział na 2 Oddzielne Zadania
+                Moje Zadania Magazynowe — Do Wykonania
               </h1>
               <p className="text-xs sm:text-sm text-amber-50 mt-1 max-w-3xl leading-relaxed">
                 Zadania od Koordynatora trafiają tutaj w dwóch oddzielnych etapach:{' '}
@@ -413,7 +374,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                 <strong className="text-white underline">
                   2. Uzupełnij zdjęcia gotowej przesyłki (wysyłane gdy zamówienie jest w realizacji)
                 </strong>
-                .
+                . Po oznaczeniu jako wykonane zadanie automatycznie trafia do Koordynatora i znika z listy Magazynu.
               </p>
             </div>
           </div>
@@ -442,7 +403,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
           </div>
         </div>
 
-        {/* PASEK ZAKŁADEK ZADAŃ MAGAZYNU I WYSZUKIWARKA */}
+        {/* PASEK ZAKŁADEK AKTYWNYCH ZADAŃ MAGAZYNU I WYSZUKIWARKA */}
         <div className="mt-6 pt-4 border-t border-white/20 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           <div className="inline-flex flex-wrap items-center gap-1.5 bg-black/15 p-1 rounded-2xl border border-white/15">
             <button
@@ -483,31 +444,6 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
               <Package className="w-3.5 h-3.5" />
               <span>2. Zdjęcia gotowej przesyłki ({counts.parcelActive})</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('completed')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'completed'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-white/90 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Wykonane ({counts.completed})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('all')}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'all'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              Wszystkie ({counts.all})
-            </button>
           </div>
 
           <div className="relative w-full xl:w-72">
@@ -544,15 +480,13 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
       {filteredTasks.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-xs">
           <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 mx-auto flex items-center justify-center text-3xl mb-4 shadow-2xs">
-            {activeTab === 'completed' ? '✅' : activeTab === 'product_photos' ? '📸' : '📦'}
+            {activeTab === 'product_photos' ? '📸' : '📦'}
           </div>
           <h3 className="text-base sm:text-lg font-black text-slate-900">
             {activeTab === 'product_photos'
               ? 'Brak oczekujących zadań nr 1: „Uzupełnij zdjęcia produktów”'
               : activeTab === 'parcel_photos'
               ? 'Brak oczekujących zadań nr 2: „Uzupełnij zdjęcia gotowej przesyłki”'
-              : activeTab === 'completed'
-              ? 'Brak zakończonych zadań magazynowych'
               : 'Brak oczekujących zadań od Koordynatora'}
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-lg mx-auto leading-relaxed">
