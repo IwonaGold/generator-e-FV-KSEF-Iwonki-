@@ -292,9 +292,11 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
 
   // Płatność
   const formaPlatnosciCode = paymentMethod === 'gotowka' ? '1' : paymentMethod === 'karta' ? '2' : '6';
+  const bankNameVal = (seller.bankName || 'ERSTE BANK POLSKA S.A.').trim();
   const bankAccountXml = seller.bankAccount?.trim()
     ? `\n            <RachunekBankowy>
                 <NrRB>${cleanNumeric(seller.bankAccount)}</NrRB>
+                <NazwaBanku>${escapeXml(bankNameVal)}</NazwaBanku>
             </RachunekBankowy>`
     : '';
 
@@ -331,11 +333,7 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
         <Adres>
             <KodKraju>${seller.countryCode || 'PL'}</KodKraju>
             <AdresL1>${escapeXml(formatAdresL1(seller))}</AdresL1>
-        </Adres>${
-          seller.email
-            ? `\n        <DaneKontaktowe><Email>${escapeXml(seller.email)}</Email></DaneKontaktowe>`
-            : ''
-        }
+        </Adres>
     </Podmiot1>
     <Podmiot2>
         <DaneIdentyfikacyjne>
@@ -347,11 +345,7 @@ export function generateKSeFCorrectionXML(data: KSeFCorrectionData): string {
             <AdresL1>${escapeXml(formatAdresL1(buyer))}</AdresL1>${
               buyer.gln && /^\d{1,13}$/.test(buyer.gln.trim()) ? `\n            <GLN>${escapeXml(buyer.gln.trim())}</GLN>` : ''
             }
-        </Adres>${
-          buyer.email
-            ? `\n        <DaneKontaktowe><Email>${escapeXml(buyer.email)}</Email></DaneKontaktowe>`
-            : ''
-        }
+        </Adres>
         <JST>2</JST>
         <GV>2</GV>
     </Podmiot2>${podmiot3Xml}

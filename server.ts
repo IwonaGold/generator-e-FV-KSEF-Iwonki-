@@ -941,6 +941,7 @@ function invalidateOrdersHttpCache() {
  */
 function stripProductPhotosIfLotAndExpSaved(order: any): any {
   if (!order || typeof order !== 'object') return order;
+  let updated = order;
   const items = Array.isArray(order.items) ? order.items : [];
   const allItemsHaveLotAndExp =
     items.length > 0 &&
@@ -955,12 +956,27 @@ function stripProductPhotosIfLotAndExpSaved(order: any): any {
     Array.isArray(order.packagingPhotos) &&
     order.packagingPhotos.length > 0
   ) {
-    return {
-      ...order,
+    updated = {
+      ...updated,
       packagingPhotos: [],
     };
   }
-  return order;
+  if (typeof updated.xmlContent === 'string' && updated.xmlContent.trim()) {
+    const cleanedXml = updated.xmlContent
+      .replace(/\r?\n\s*<DaneKontaktowe>[\s\S]*?<\/DaneKontaktowe>/g, '')
+      .replace(
+        /(<RachunekBankowy>\s*<NrRB>\d+<\/NrRB>)(?!\s*<NazwaBanku>)(\s*<\/RachunekBankowy>)/g,
+        (_m: string, p1: string, p2: string) =>
+          `${p1}\n                <NazwaBanku>ERSTE BANK POLSKA S.A.</NazwaBanku>${p2}`
+      );
+    if (cleanedXml !== updated.xmlContent) {
+      updated = {
+        ...updated,
+        xmlContent: cleanedXml,
+      };
+    }
+  }
+  return updated;
 }
 
 function readDeletedIdsFromDisk(): string[] {

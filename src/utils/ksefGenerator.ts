@@ -479,9 +479,11 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
     }
 
     // 5. Płatność
+    const bankNameVal = (seller.bankName || 'ERSTE BANK POLSKA S.A.').trim();
     const bankAccountXml = seller.bankAccount?.trim()
       ? `\n            <RachunekBankowy>
                 <NrRB>${cleanNumeric(seller.bankAccount)}</NrRB>
+                <NazwaBanku>${escapeXml(bankNameVal)}</NazwaBanku>
             </RachunekBankowy>`
       : '';
 
@@ -518,11 +520,7 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
         <Adres>
             <KodKraju>${seller.countryCode || 'PL'}</KodKraju>
             <AdresL1>${escapeXml(formatAdresL1(seller))}</AdresL1>
-        </Adres>${
-          seller.email
-            ? `\n        <DaneKontaktowe><Email>${escapeXml(seller.email)}</Email></DaneKontaktowe>`
-            : ''
-        }
+        </Adres>
     </Podmiot1>
     <Podmiot2>
         <DaneIdentyfikacyjne>
@@ -534,11 +532,7 @@ export function generateKSeFXML(input: KSeFGenerationInput): string {
             <AdresL1>${escapeXml(formatAdresL1(buyer))}</AdresL1>${
               buyer.gln && /^\d{1,13}$/.test(buyer.gln.trim()) ? `\n            <GLN>${escapeXml(buyer.gln.trim())}</GLN>` : ''
             }
-        </Adres>${
-          buyer.email
-            ? `\n        <DaneKontaktowe><Email>${escapeXml(buyer.email)}</Email></DaneKontaktowe>`
-            : ''
-        }
+        </Adres>
         <JST>2</JST>
         <GV>2</GV>
     </Podmiot2>${podmiot3Xml}
@@ -681,7 +675,6 @@ ${platnoscXml}${warunkiTransakcjiXml}
       <KodKraju>${seller.countryCode || 'PL'}</KodKraju>
       <AdresL1>${escapeXml(sellerAdresL1)}</AdresL1>
     </Adres>
-    ${seller.email ? `<DaneKontaktowe><Email>${escapeXml(seller.email)}</Email></DaneKontaktowe>` : ''}
   </Podmiot1>
   <Podmiot2>
     <DaneIdentyfikacyjne>
@@ -692,7 +685,6 @@ ${platnoscXml}${warunkiTransakcjiXml}
       <KodKraju>${buyer.countryCode || 'PL'}</KodKraju>
       <AdresL1>${escapeXml(buyerAdresL1)}</AdresL1>
     </Adres>
-    ${buyer.email ? `<DaneKontaktowe><Email>${escapeXml(buyer.email)}</Email></DaneKontaktowe>` : ''}
   </Podmiot2>${podmiot3XmlFa2}
   <Fa>
     <KodWaluty>${meta.currency || 'PLN'}</KodWaluty>
@@ -728,6 +720,7 @@ ${rowsXml}
         seller.bankAccount
           ? `<RachunekBankowy>
         <NrRB>${cleanNumeric(seller.bankAccount)}</NrRB>
+        <NazwaBanku>${escapeXml((seller.bankName || 'ERSTE BANK POLSKA S.A.').trim())}</NazwaBanku>
       </RachunekBankowy>`
           : ''
       }
