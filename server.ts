@@ -1152,7 +1152,7 @@ function writePackagingPhotosToDisk(photos: any[], triggerCloud = true): boolean
 function mergeParcelPhotosLightweightServer(newerPhotos?: any[], olderPhotos?: any[]): any[] {
   const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
   const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
-  if (nArr.length === 0) return oArr;
+  if (nArr.length === 0) return [];
   if (oArr.length === 0) return nArr;
   if (nArr.length === oArr.length) {
     return nArr.map((np, idx) => {
@@ -1169,7 +1169,7 @@ function mergeParcelPhotosLightweightServer(newerPhotos?: any[], olderPhotos?: a
 function mergePackagingPhotosLightweightServer(newerPhotos?: any[], olderPhotos?: any[]): any[] {
   const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
   const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
-  if (nArr.length === 0) return oArr;
+  if (nArr.length === 0) return [];
   if (oArr.length === 0) return nArr;
 
   const olderById = new Map<string, any>();
@@ -1563,7 +1563,26 @@ app.delete('/api/packaging-photos/:id', async (req: Request, res: Response) => {
   }
   const filtered = readPackagingPhotosFromDisk().filter((p: any) => p.id !== id);
   writePackagingPhotosToDisk(filtered);
-  broadcastSyncEvent('PACKAGING_PHOTO_DELETED', 'Usunięto zdjęcie opakowania z kolejki');
+
+  const orders = [...readOrdersFromDisk()];
+  let ordersModified = false;
+  const nowIso = new Date().toISOString();
+  for (let i = 0; i < orders.length; i++) {
+    const pkg = orders[i]?.packagingPhotos;
+    if (Array.isArray(pkg) && pkg.some((p: any) => p?.id === id)) {
+      orders[i] = {
+        ...orders[i],
+        packagingPhotos: pkg.filter((p: any) => p?.id !== id),
+        updatedAt: nowIso,
+      };
+      ordersModified = true;
+    }
+  }
+  if (ordersModified) {
+    writeOrdersToDisk(orders);
+  }
+
+  broadcastSyncEvent('PACKAGING_PHOTO_DELETED', 'Usunięto zdjęcie etykiety kartonu');
   return res.json({ success: true, deletedId: id });
 });
 
@@ -1700,11 +1719,34 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Nie znaleziono zamówienia o podanym id' });
   }
 
+  const previousPkgPhotos = Array.isArray(orders[idx].packagingPhotos)
+    ? orders[idx].packagingPhotos
+    : [];
+
   orders[idx] = {
     ...orders[idx],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
+
+  if (Array.isArray(updates.packagingPhotos)) {
+    const nextIds = new Set(updates.packagingPhotos.map((p: any) => p?.id).filter(Boolean));
+    const removedIds = new Set(
+      previousPkgPhotos
+        .map((p: any) => p?.id)
+        .filter((pid: any) => pid && !nextIds.has(pid))
+    );
+    const currentQueue = readPackagingPhotosFromDisk();
+    const filteredQueue = currentQueue.filter((p: any) => {
+      if (!p) return false;
+      if (p.id && removedIds.has(p.id)) return false;
+      if (p.orderId === id && p.id && !nextIds.has(p.id)) return false;
+      return true;
+    });
+    if (filteredQueue.length !== currentQueue.length) {
+      writePackagingPhotosToDisk(filteredQueue, false);
+    }
+  }
 
   writeOrdersToDisk(orders);
   const ordLabel = orders[idx].orderNumber || orders[idx].invoiceNumber || id;
@@ -1714,7 +1756,7 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
 
   if (updates.warehouseProductTaskStatus === 'assigned') {
     eventType = 'WAREHOUSE_TASK_ASSIGNED';
-    eventSummary = `📸 Koordynator wysłał Zadanie 1 (Uzupełnij zdjęcia produktów) do Magazynu: zamówienie nr ${ordLabel}`;
+    eventSummary = `📸 Koordynator wysłał Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu) do Magazynu: zamówienie nr ${ordLabel}`;
     eventWorkstation = '1. Koordynator';
   } else if (updates.warehouseParcelTaskStatus === 'assigned') {
     eventType = 'WAREHOUSE_TASK_ASSIGNED';
@@ -1728,7 +1770,7 @@ app.patch('/api/orders-history/:id', async (req: Request, res: Response) => {
     const remainingQueue = readPackagingPhotosFromDisk().filter((p: any) => p?.orderId !== id);
     writePackagingPhotosToDisk(remainingQueue, false);
     eventType = 'WAREHOUSE_TASK_COMPLETED';
-    eventSummary = `✅ Magazyn wykonał Zadanie 1 (Uzupełnij zdjęcia produktów) dla zamówienia nr ${ordLabel}`;
+    eventSummary = `✅ Magazyn wykonał Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu) dla zamówienia nr ${ordLabel}`;
     eventWorkstation = '2. Magazyn';
   } else if (updates.warehouseParcelTaskStatus === 'completed') {
     eventType = 'WAREHOUSE_TASK_COMPLETED';

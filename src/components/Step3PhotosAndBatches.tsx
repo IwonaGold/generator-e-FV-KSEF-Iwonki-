@@ -90,6 +90,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   } | null>(null);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const deletedPhotoIdsRef = useRef<Set<string>>(new Set());
 
   const handleSwitchRole = (newRole: WorkstationRole) => {
     setWorkstationRole(newRole);
@@ -109,19 +110,21 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
     async (includeSharedBuffer = false) => {
       setIsSyncingPhotos(true);
       try {
-        const orderAssigned = Array.isArray(orderPackagingPhotos) ? orderPackagingPhotos : [];
-        const shared = includeSharedBuffer ? await getSharedPackagingPhotos() : [];
-        const combinedPhotos = [
-          ...orderAssigned,
-          ...(Array.isArray(shared) ? shared : []),
-        ];
+        const orderAssigned = (Array.isArray(orderPackagingPhotos) ? orderPackagingPhotos : []).filter(
+          (p) => p?.id && !deletedPhotoIdsRef.current.has(p.id)
+        );
+        const rawShared = includeSharedBuffer ? await getSharedPackagingPhotos() : [];
+        const shared = (Array.isArray(rawShared) ? rawShared : []).filter(
+          (p) => p?.id && !deletedPhotoIdsRef.current.has(p.id)
+        );
+        const combinedPhotos = [...orderAssigned, ...shared];
         if (combinedPhotos.length === 0) {
           setIsSyncingPhotos(false);
           return;
         }
 
         // Jeśli odebrano nowe zdjęcia z bufora Magazynu, przypisz je trwale do bieżącego zamówienia i opróżnij bufor tymczasowy
-        if (includeSharedBuffer && Array.isArray(shared) && shared.length > 0) {
+        if (includeSharedBuffer && shared.length > 0) {
           const existingOrderIds = new Set(orderAssigned.map((p) => p.id));
           const newFromShared = shared.filter((p) => p?.id && !existingOrderIds.has(p.id));
           if (newFromShared.length > 0) {
@@ -133,13 +136,28 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
         const isSingleItem = items && items.length === 1;
         const defaultMatchedItem = isSingleItem ? items[0] : null;
         const newlyAddedForStage1: PhotoVerificationItem[] = [];
+        const allowedOrderIds = new Set(combinedPhotos.map((p) => p.id));
 
         setPhotoItems((prev) => {
-          const existingIds = new Set(prev.map((p) => p.id));
+          const filteredPrev = prev.filter((p) => {
+            if (!p?.id || deletedPhotoIdsRef.current.has(p.id)) return false;
+            if (!includeSharedBuffer && p.id.startsWith('pkg-') && !allowedOrderIds.has(p.id)) {
+              return false;
+            }
+            return true;
+          });
+          const existingIds = new Set(filteredPrev.map((p) => p.id));
           const toAdd: PhotoVerificationItem[] = [];
 
           for (const sp of combinedPhotos) {
-            if (!sp?.id || !sp?.dataUrl || existingIds.has(sp.id)) continue;
+            if (
+              !sp?.id ||
+              !sp?.dataUrl ||
+              deletedPhotoIdsRef.current.has(sp.id) ||
+              existingIds.has(sp.id)
+            ) {
+              continue;
+            }
             existingIds.add(sp.id);
             const reconstructedFile = dataUrlToFile(sp.dataUrl, sp.fileName || 'karton.jpg');
             const isCoordinator = getWorkstationRole() === 'coordinator';
@@ -163,8 +181,8 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
             }
           }
 
-          if (toAdd.length === 0) return prev;
-          if (includeSharedBuffer) {
+          if (toAdd.length === 0 && filteredPrev.length === prev.length) return prev;
+          if (includeSharedBuffer && toAdd.length > 0) {
             setSyncNotice(
               `📥 Odebrano z Magazynu ${toAdd.length} ${
                 toAdd.length === 1 ? 'nowe zdjęcie etykiety' : 'nowe zdjęcia etykiet'
@@ -172,7 +190,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
             );
             setTimeout(() => setSyncNotice(null), 5500);
           }
-          return [...prev, ...toAdd];
+          return [...filteredPrev, ...toAdd];
         });
 
         // Automatycznie uruchom odczyt etykiety całego kartonu (Produkt + Charge + Verfall/MHD) dla nowych zdjęć
@@ -252,6 +270,10 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   useEffect(() => {
     if (orderPackagingPhotos && orderPackagingPhotos.length > 0) {
       syncPackagingPhotosFromCloud(false);
+    } else {
+      setPhotoItems((prev) =>
+        prev.filter((p) => !p.id.startsWith('pkg-') && !deletedPhotoIdsRef.current.has(p.id))
+      );
     }
   }, [orderPackagingPhotos?.length, syncPackagingPhotosFromCloud]);
 
@@ -672,6 +694,7 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   };
 
   const removePhoto = (photoId: string) => {
+    deletedPhotoIdsRef.current.add(photoId);
     setPhotoItems((prev) => prev.filter((p) => p.id !== photoId));
     const currentOrderPhotos = Array.isArray(orderPackagingPhotos) ? orderPackagingPhotos : [];
     onOrderPackagingPhotosChange?.(currentOrderPhotos.filter((p) => p.id !== photoId));
@@ -679,6 +702,12 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
   };
 
   const handleClearAllPhotos = () => {
+    for (const p of photoItems) {
+      if (p?.id) deletedPhotoIdsRef.current.add(p.id);
+    }
+    for (const p of orderPackagingPhotos || []) {
+      if (p?.id) deletedPhotoIdsRef.current.add(p.id);
+    }
     setPhotoItems([]);
     onOrderPackagingPhotosChange?.([]);
     clearSharedPackagingPhotos();

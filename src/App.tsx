@@ -298,43 +298,106 @@ export default function App() {
     setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
   }, []);
 
-  // Dopasowanie bieżącego zamówienia na Karcie Zamówienia (wyłącznie dla jawnie aktywnego zamówienia przed wyczyszczeniem)
+  const deletedPackagingPhotoIdsRef = useRef<Set<string>>(new Set());
+
+  // Dopasowanie bieżącego zamówienia na Karcie Zamówienia (po pendingOrderSourceId lub po numerze zamówienia na karcie)
   const activeMatchedArchivedOrder = useMemo(() => {
-    if (!pendingOrderSourceId) return null;
-    return archivedOrders.find((o) => o.id === pendingOrderSourceId) || null;
-  }, [archivedOrders, pendingOrderSourceId]);
+    if (pendingOrderSourceId) {
+      const byId = archivedOrders.find((o) => o.id === pendingOrderSourceId);
+      if (byId) return byId;
+    }
+    const ordNum = (meta.orderNumber || '').trim();
+    if (ordNum) {
+      return archivedOrders.find((o) => (o.orderNumber || '').trim() === ordNum) || null;
+    }
+    return null;
+  }, [archivedOrders, pendingOrderSourceId, meta.orderNumber]);
 
   // Synchronizuj zdjęcia opakowań z dopasowanego zamówienia (np. gdy Magazyn doda nowe zdjęcia do tego zamówienia)
   useEffect(() => {
     if (!activeMatchedArchivedOrder) return;
-    const orderPhotos = Array.isArray(activeMatchedArchivedOrder.packagingPhotos)
+    const rawOrderPhotos = Array.isArray(activeMatchedArchivedOrder.packagingPhotos)
       ? activeMatchedArchivedOrder.packagingPhotos
       : [];
-    if (orderPhotos.length === 0) return;
+    const orderPhotos = rawOrderPhotos.filter(
+      (p) => p?.id && !deletedPackagingPhotoIdsRef.current.has(p.id)
+    );
+    const serverIds = new Set(orderPhotos.map((p) => p.id));
+
     setCurrentOrderPackagingPhotos((prev) => {
-      const existingIds = new Set(prev.map((p) => p.id));
+      const filteredPrev = prev.filter((p) => {
+        if (!p?.id || deletedPackagingPhotoIdsRef.current.has(p.id)) return false;
+        if (p.id.startsWith('pkg-') && !serverIds.has(p.id)) return false;
+        return true;
+      });
+      const existingIds = new Set(filteredPrev.map((p) => p.id));
       const newOnes = orderPhotos.filter((p) => p?.id && !existingIds.has(p.id));
-      if (newOnes.length === 0) return prev;
-      return [...prev, ...newOnes];
+      if (newOnes.length === 0 && filteredPrev.length === prev.length) return prev;
+      return [...filteredPrev, ...newOnes];
     });
   }, [activeMatchedArchivedOrder]);
 
   // Aktualizacja zdjęć opakowań przypisanych do bieżącego zamówienia na karcie
   const handleUpdateCurrentOrderPackagingPhotos = useCallback(
     async (nextPhotos: OrderPackagingPhoto[]) => {
+      const nextIds = new Set(nextPhotos.map((p) => p?.id).filter(Boolean));
+      const removedIds = new Set<string>();
+
+      for (const p of currentOrderPackagingPhotos) {
+        if (p?.id && !nextIds.has(p.id)) {
+          removedIds.add(p.id);
+          deletedPackagingPhotoIdsRef.current.add(p.id);
+        }
+      }
+      if (activeMatchedArchivedOrder?.packagingPhotos) {
+        for (const p of activeMatchedArchivedOrder.packagingPhotos) {
+          if (p?.id && !nextIds.has(p.id)) {
+            removedIds.add(p.id);
+            deletedPackagingPhotoIdsRef.current.add(p.id);
+          }
+        }
+      }
+
       setCurrentOrderPackagingPhotos(nextPhotos);
-      if (pendingOrderSourceId) {
-        await updateArchivedOrderFields(pendingOrderSourceId, {
-          packagingPhotos: nextPhotos,
-        });
+
+      const targetOrderId = pendingOrderSourceId || activeMatchedArchivedOrder?.id || null;
+      const orderIdsToUpdate = new Map<string, OrderPackagingPhoto[]>();
+
+      if (targetOrderId) {
+        orderIdsToUpdate.set(targetOrderId, nextPhotos);
+      }
+
+      if (removedIds.size > 0) {
+        for (const o of archivedOrders) {
+          if (!o?.id || orderIdsToUpdate.has(o.id)) continue;
+          if (Array.isArray(o.packagingPhotos) && o.packagingPhotos.some((p) => p?.id && removedIds.has(p.id))) {
+            orderIdsToUpdate.set(
+              o.id,
+              o.packagingPhotos.filter((p) => p?.id && !removedIds.has(p.id))
+            );
+          }
+        }
+      }
+
+      if (orderIdsToUpdate.size > 0) {
         setArchivedOrders((prev) =>
           prev.map((o) =>
-            o.id === pendingOrderSourceId ? { ...o, packagingPhotos: nextPhotos } : o
+            orderIdsToUpdate.has(o.id)
+              ? { ...o, packagingPhotos: orderIdsToUpdate.get(o.id)! }
+              : o
+          )
+        );
+
+        await Promise.all(
+          Array.from(orderIdsToUpdate.entries()).map(([ordId, photos]) =>
+            updateArchivedOrderFields(ordId, {
+              packagingPhotos: photos,
+            })
           )
         );
       }
     },
-    [pendingOrderSourceId]
+    [pendingOrderSourceId, activeMatchedArchivedOrder, currentOrderPackagingPhotos, archivedOrders]
   );
 
   const activeWarehouseTasksCount = useMemo(() => {

@@ -250,7 +250,7 @@ function mergeParcelPhotosLightweight(
 ): string[] {
   const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
   const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
-  if (nArr.length === 0) return oArr;
+  if (nArr.length === 0) return [];
   if (oArr.length === 0) return nArr;
   if (nArr.length === oArr.length) {
     return nArr.map((np, idx) => {
@@ -270,7 +270,7 @@ function mergePackagingPhotosLightweight(
 ): NonNullable<ArchivedOrder['packagingPhotos']> {
   const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
   const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
-  if (nArr.length === 0) return oArr;
+  if (nArr.length === 0) return [];
   if (oArr.length === 0) return nArr;
 
   const olderById = new Map<string, NonNullable<ArchivedOrder['packagingPhotos']>[number]>();
@@ -402,7 +402,10 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
                 const srvPkgCount = Number(srv.packagingPhotosCount || 0);
                 const locParcelCount = loc?.parcelPhotos?.length || 0;
                 const locPkgCount = loc?.packagingPhotos?.length || 0;
-                if (srvParcelCount > locParcelCount || srvPkgCount > locPkgCount) {
+                if (
+                  (srvParcelCount > 0 && srvParcelCount !== locParcelCount) ||
+                  (srvPkgCount > 0 && srvPkgCount !== locPkgCount)
+                ) {
                   idsNeedingPhotos.push(srv.id);
                 }
               }
@@ -468,7 +471,7 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
         );
         await writeOrdersToBrowserStorage(merged);
 
-        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarce,
+        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarkce,
         // oraz ewentualne usunięte ID (deletedIds), których serwer jeszcze nie znał
         if (serverOrders.length > 0) {
           const serverMap = new Map(serverOrders.map((o) => [o.id, o]));
@@ -477,12 +480,7 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
             if (!s) return true;
             const mTime = m.updatedAt ? new Date(m.updatedAt).getTime() : 0;
             const sTime = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
-            if (mTime > sTime + 500) return true;
-            const mPhotos = m.parcelPhotos?.length || 0;
-            const sPhotos = s.parcelPhotos?.length || 0;
-            const mPkgPhotos = m.packagingPhotos?.length || 0;
-            const sPkgPhotos = s.packagingPhotos?.length || 0;
-            return mPhotos > sPhotos || mPkgPhotos > sPkgPhotos;
+            return mTime > sTime + 500;
           });
 
           const missingDeletedOnServer = Array.from(deletedIds).filter(
@@ -569,37 +567,62 @@ export async function updateArchivedOrderFields(
   id: string,
   fields: Partial<ArchivedOrder>
 ): Promise<boolean> {
-  const nowIso = new Date().toISOString();
+  let serverUpdatedAt: string | null = null;
+  const fallbackIso = new Date().toISOString();
 
-  try {
-    await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fields),
-    });
-    lastServerOrdersEtag = null;
-  } catch (err) {
-    console.warn('Błąd PATCH na serwerze:', err);
-  }
-
+  // Najpierw natychmiast aktualizujemy pamięć podręczną i IndexedDB, aby równoległe zdarzenia SSE nie przywróciły starego stanu
   try {
     const existing = await readOrdersFromBrowserStorage();
     const updated = normalizeOrdersList(
-      existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: nowIso } : o))
+      existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: fallbackIso } : o))
     );
     await writeOrdersToBrowserStorage(updated);
     if (lastServerOrdersCache) {
       lastServerOrdersCache = normalizeOrdersList(
         lastServerOrdersCache.map((o) =>
-          o.id === id ? { ...o, ...fields, updatedAt: nowIso } : o
+          o.id === id ? { ...o, ...fields, updatedAt: fallbackIso } : o
         )
       );
     }
-    return true;
   } catch (e) {
-    console.warn('Błąd aktualizacji w pamięci przeglądarki:', e);
-    return false;
+    console.warn('Błąd wstępnej aktualizacji w pamięci przeglądarki:', e);
   }
+
+  try {
+    const res = await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.order?.updatedAt) {
+        serverUpdatedAt = json.order.updatedAt;
+      }
+    }
+    lastServerOrdersEtag = null;
+  } catch (err) {
+    console.warn('Błąd PATCH na serwerze:', err);
+  }
+
+  if (serverUpdatedAt) {
+    try {
+      const existing = await readOrdersFromBrowserStorage();
+      const updated = normalizeOrdersList(
+        existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: serverUpdatedAt! } : o))
+      );
+      await writeOrdersToBrowserStorage(updated);
+      if (lastServerOrdersCache) {
+        lastServerOrdersCache = normalizeOrdersList(
+          lastServerOrdersCache.map((o) =>
+            o.id === id ? { ...o, ...fields, updatedAt: serverUpdatedAt! } : o
+          )
+        );
+      }
+    } catch {}
+  }
+
+  return true;
 }
 
 /**

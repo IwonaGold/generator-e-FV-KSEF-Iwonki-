@@ -64,6 +64,7 @@ import {
   getOrderEffectiveShippingStatus,
 } from '../utils/shippingTracking';
 import { compressImageToDataUrl, downloadImageDataUrl } from '../utils/imageUtils';
+import { deleteSharedPackagingPhoto } from '../utils/cloudSyncService';
 import { ImportOrderModal } from './ImportOrderModal';
 
 interface OrderHistoryViewProps {
@@ -499,10 +500,13 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const handleDeleteOrderPackagingPhoto = async (order: ArchivedOrder, photoId: string) => {
     const existingPkg = Array.isArray(order.packagingPhotos) ? order.packagingPhotos : [];
     const updatedPkg = existingPkg.filter((p) => p.id !== photoId);
-    await updateArchivedOrderFields(order.id, { packagingPhotos: updatedPkg });
     order.packagingPhotos = updatedPkg;
+    await Promise.all([
+      updateArchivedOrderFields(order.id, { packagingPhotos: updatedPkg }),
+      photoId ? deleteSharedPackagingPhoto(photoId) : Promise.resolve(false),
+    ]);
     onRefreshOrders();
-    setInvoiceNotice('Usunięto zdjęcie opakowania.');
+    setInvoiceNotice('Usunięto zdjęcie etykiety kartonu.');
     setTimeout(() => setInvoiceNotice(null), 2500);
   };
 
