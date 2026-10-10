@@ -188,6 +188,61 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleImportBackupJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsSyncing(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const importedOrders = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.orders)
+        ? parsed.orders
+        : [];
+      const importedKnowledge = Array.isArray(parsed.knowledgeClients)
+        ? parsed.knowledgeClients
+        : [];
+
+      if (importedOrders.length > 0) {
+        try {
+          localStorage.setItem('eubiosis_ksef_orders_history_v1', JSON.stringify(importedOrders));
+        } catch {}
+        await fetch('/api/orders-history/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orders: importedOrders, replaceAll: true }),
+        });
+      }
+
+      if (importedKnowledge.length > 0) {
+        try {
+          localStorage.setItem(
+            'eubiosis_knowledge_base_clients_v1',
+            JSON.stringify(importedKnowledge)
+          );
+        } catch {}
+        await fetch('/api/knowledge-base/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clients: importedKnowledge }),
+        });
+      }
+
+      await onManualSyncComplete();
+      await loadData();
+      setBannerMsg(
+        `✅ Wczytano kopię bazy danych (${importedOrders.length} zamówień, ${importedKnowledge.length} kart CRM)!`
+      );
+    } catch (err) {
+      setBannerMsg('❌ Nie udało się wczytać pliku kopii zapasowej (.json).');
+    } finally {
+      setIsSyncing(false);
+      e.target.value = '';
+      setTimeout(() => setBannerMsg(null), 6000);
+    }
+  };
+
   const handleSaveCloudToken = async () => {
     if (!customToken.trim()) return;
     setIsSyncing(true);
@@ -602,24 +657,36 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </p>
               </div>
 
-              {/* Eksport pełnej kopii zapasowej na dysk */}
+              {/* Eksport i import pełnej kopii zapasowej na dysk (np. na czas zastępstwa w innej sieci) */}
               <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h4 className="text-xs font-black text-slate-900">
-                    📦 Pełna Kopia Zapasowa Bazy Danych (Plik JSON)
+                    📦 Przekazanie Bazy Danych między Komputerami (Plik JSON)
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Pobierz na dysk pojedynczy plik zawierający wszystkie zamówienia ({archivedOrders.length}), karty CRM ({knowledgeClients.length}) oraz szkice robocze ({sharedDrafts.length}).
+                    Pobierz lub wczytaj pojedynczy plik zawierający wszystkie zamówienia ({archivedOrders.length}), karty CRM ({knowledgeClients.length}) oraz szkice robocze ({sharedDrafts.length}) — idealne przy przekazaniu pracy na inne urządzenie w innej sieci.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleExportBackupJson}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-black text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl shadow-2xs cursor-pointer shrink-0"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Pobierz kopię bazy (.json)</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleExportBackupJson}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl shadow-2xs cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Pobierz bazę (.json)</span>
+                  </button>
+                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-2xs cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Wczytaj bazę (.json)</span>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleImportBackupJson}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* Opcjonalna aktualizacja tokena chmurowego */}

@@ -1,44 +1,44 @@
 ========================================================================
-  INSTRUKCJA URUCHOMIENIA APLIKACJI EUBIOSIS KSeF NA KOMPUTERZE W PRACY
+  INSTRUKCJA URUCHOMIENIA: "CENTRUM REALIZACJI ZAMÓWIEŃ"
+  (W PRACY, W DOMU ORAZ NA KOMPUTERZE OSOBY ZASTĘPUJĄCEJ)
 ========================================================================
 
-JAK PRZENIEŚĆ APLIKACJĘ Z KOMPUTERA DOMOWEGO NA KOMPUTER W PRACY?
-
-KROK 1: Skopiuj cały folder "APLIKACJA" na komputer w pracy
+KROK 1: Skopiuj folder aplikacji na docelowy komputer
 ------------------------------------------------------------------------
-Możesz skopiować cały folder "APLIKACJA" z Pulpitu (np. na pendrive,
-przez dysk Google Drive / OneDrive) i wkleić go np. na Pulpit lub dysk C:\
-komputera w pracy.
-(Wskazówka: aby kopiowanie na pendrive trwało 2 sekundy zamiast kilku minut,
-nie musisz kopiować podfolderu "node_modules" — instalator sam go utworzy).
+- Sposób A (bez pendrive'a - z GitHuba):
+  Wejdź na stronę: https://github.com/IwonaGold/generator-e-FV-KSEF-Iwonki-
+  Kliknij zielony przycisk "<> Code" -> "Download ZIP" i wypakuj folder na Pulpit.
+- Sposób B (pendrive / OneDrive / Google Drive):
+  Skopiuj folder "APLIKACJA" (możesz pominąć podfolder "node_modules", aby
+  kopiowanie trwało kilka sekund).
 
 KROK 2: Kliknij dwukrotnie plik "INSTALUJ_W_PRACY.bat" (tylko raz!)
 ------------------------------------------------------------------------
-Wejdź do skopiowanego folderu "APLIKACJA" na komputerze w pracy i kliknij
-dwukrotnie plik:
+Wejdź do folderu aplikacji i kliknij dwukrotnie:
   👉 INSTALUJ_W_PRACY.bat
 
-Co zrobi instalator?
-1. Sprawdzi czy na komputerze jest darmowy pakiet Node.js (jeśli nie ma,
-   zainstaluje go automatycznie lub otworzy oficjalny instalator https://nodejs.org).
-2. Zbuduje aplikację i automatycznie utworzy na Pulpicie skrót:
-   👉 "Eubiosis KSeF"
+Instalator automatycznie:
+1. Sprawdzi/zainstaluje środowisko Node.js.
+2. Zbuduje szybką wersję produkcyjną aplikacji.
+3. Utworzy na Pulpicie ikonę:
+   👉 "Centrum Realizacji Zamówień"
 
-KROK 3: Codzienna praca (na komputerze w pracy oraz na magazynie przez Wi-Fi)
+KROK 3: Codzienna praca (oraz współpraca z Magazynem przez Wi-Fi)
 ------------------------------------------------------------------------
-1. Rano klikasz dwukrotnie ikonę "Eubiosis KSeF" na Pulpicie komputera w pracy.
-2. Otworzy się czarne okienko serwera oraz przeglądarka z aplikacją pod adresem:
+1. Kliknij dwukrotnie ikonę "Centrum Realizacji Zamówień" na Pulpicie.
+2. Przeglądarka automatycznie otworzy aplikację pod adresem:
    👉 http://localhost:3000
-3. W czarnym okienku serwera zobaczysz również adres Wi-Fi dla innych urządzeń
-   w tej samej sieci w pracy, np.:
+3. W czarnym okienku serwera wyświetli się również adres Wi-Fi dla innych
+   urządzeń w tej samej sieci (np. telefonów/komputerów na magazynie):
    👉 http://192.168.1.XX:3000
-4. Pracownik na magazynie (lub na drugim komputerze podłączonym do tego samego Wi-Fi)
-   wpisuje ten adres (http://192.168.1.XX:3000) w przeglądarce na telefonie lub komputerze,
-   loguje się hasłem i pracuje "na żywo" na tej samej bazie zamówień (0 zł, bez limitów GB!).
+4. Osoby w tej samej sieci Wi-Fi wpisują ten adres w przeglądarce, logują się
+   hasłem i pracują na wspólnej bazie (0 zł, bez limitów transferu!).
 
-UWAGA DOTYCZĄCA ZAPORY WINDOWS (FIREWALL):
-Przy pierwszym uruchomieniu na komputerze w pracy system Windows może wyświetlić
-okienko "Zapora systemu Windows zablokowała niektóre funkcje aplikacji Node.js".
-Zaznacz wtedy "Sieci prywatne" i kliknij "Zezwól na dostęp", aby telefony/komputery
-w Waszym biurowym Wi-Fi mogły się połączyć.
+KROK 4: Przekazanie bazy osobie zastępującej w innej sieci
+------------------------------------------------------------------------
+1. W górnym pasku aplikacji kliknij ikonę Chmury ("Synchronizacja") ->
+   zakładka "3. Sejf AES-256 & Kopia" -> "Pobierz bazę (.json)".
+2. Wyślij pobrany plik .json osobie zastępującej (np. mailem / Teams).
+3. Osoba zastępująca klika u siebie "Wczytaj bazę (.json)" — i od razu widzi
+   wszystkie zamówienia w realizacji, zakończone oraz Centrum Wiedzy.
 ========================================================================
