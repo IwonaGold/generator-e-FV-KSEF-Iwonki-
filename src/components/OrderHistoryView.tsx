@@ -2209,15 +2209,15 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                                 ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                                 : 'bg-fuchsia-100 text-fuchsia-950 border-fuchsia-300'
                             }`}
-                            title="Status Zadania 1 (Zdjęcia produktów) zleconego na karcie zamówienia"
+                            title="Status Zadania 1 (Zdjęcia etykiet kartonu) zleconego na karcie zamówienia"
                           >
                             <Camera className="w-3 h-3" />
                             <span>
                               {ord.warehouseProductTaskStatus === 'completed'
-                                ? '✅ Zadanie 1: Zdjęcia produktów gotowe'
+                                ? '✅ Zadanie 1: Zdjęcia etykiet kartonu gotowe'
                                 : ord.warehouseProductTaskStatus === 'in_progress'
-                                ? '📸 Zadanie 1: Zdjęcia produktów w trakcie'
-                                : '📸 Zadanie 1: Zdjęcia produktów wysłane'}
+                                ? '📸 Zadanie 1: Zdjęcia etykiet kartonu w trakcie'
+                                : '📸 Zadanie 1: Zdjęcia etykiet kartonu wysłane'}
                             </span>
                           </span>
                         )}
@@ -3030,7 +3030,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         </span>
                         <div className="text-[11px] flex-1">
                           <div className="font-bold text-slate-800 flex flex-wrap items-center justify-between gap-1">
-                            <span>📸 Etap 1 (Karta zamówienia): Uzupełnij zdjęcia produktów</span>
+                            <span>📸 Etap 1 (Karta zamówienia): Uzupełnij zdjęcia etykiet kartonu</span>
                             <span
                               className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                                 ord.packagingPhotos && ord.packagingPhotos.length > 0
@@ -3038,11 +3038,11 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                                   : 'bg-slate-100 text-slate-500'
                               }`}
                             >
-                              {ord.packagingPhotos?.length || 0} zdjęć produktów
+                              {ord.packagingPhotos?.length || 0} zdjęć etykiet kartonu
                             </span>
                           </div>
                           <p className="text-slate-500 mt-0.5">
-                            Zadanie wysyłane z karty zamówienia (zdjęcia opakowań produktów z serią LOT i datą ważności MHD).
+                            Zadanie wysyłane z karty zamówienia (zdjęcia etykiet kartonu z serią LOT i datą ważności MHD).
                           </p>
                         </div>
                       </div>

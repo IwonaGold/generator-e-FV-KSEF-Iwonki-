@@ -426,14 +426,14 @@ export default function App() {
       notes:
         existing?.notes ||
         (orderFile
-          ? `Zlecono Zadanie 1 (Uzupełnij zdjęcia produktów) z pliku: ${orderFile.name}`
-          : 'Zlecono Zadanie 1 (Uzupełnij zdjęcia produktów) przez Koordynatora'),
+          ? `Zlecono Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu) z pliku: ${orderFile.name}`
+          : 'Zlecono Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu) przez Koordynatora'),
       originalFileName: orderFile?.name || existing?.originalFileName,
       createdAt: existing?.createdAt || nowIso,
       updatedAt: nowIso,
       parcelPhotos: existing?.parcelPhotos || [],
       packagingPhotos: mergedPackagingPhotos,
-      // Zadanie 1 (Z karty zamówienia): Uzupełnij zdjęcia produktów
+      // Zadanie 1 (Z karty zamówienia): Uzupełnij zdjęcia etykiet kartonu
       warehouseProductTaskStatus: 'assigned',
       warehouseProductTaskAssignedAt: nowIso,
       warehouseProductTaskNote: finalTaskNote,
@@ -454,9 +454,9 @@ export default function App() {
     setCurrentOrderPackagingPhotos(saved.packagingPhotos || []);
     setArchivedOrders((prev) => [saved, ...prev.filter((o) => o.id !== saved.id)]);
     setPriceNotice(
-      `📸 Wysłano do Magazynu Zadanie 1: „Uzupełnij zdjęcia produktów” dla zamówienia ${
+      `📸 Wysłano do Magazynu zadanie: „Uzupełnij zdjęcia etykiet kartonu” dla zamówienia ${
         saved.orderNumber ? `nr ${saved.orderNumber}` : saved.invoiceNumber
-      } (${saved.chain})! Zadanie 2 („Uzupełnij zdjęcia gotowej przesyłki”) wyślesz z folderu W REALIZACJI.`
+      } (${saved.chain})!`
     );
     setTimeout(() => setPriceNotice(null), 6500);
   };

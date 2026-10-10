@@ -343,7 +343,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
       await onRefreshOrders();
       const taskLabel =
         task.taskType === 'product_photos'
-          ? 'Zadanie 1 (Uzupełnij zdjęcia produktów)'
+          ? 'Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu)'
           : 'Zadanie 2 (Uzupełnij zdjęcia gotowej przesyłki)';
       setNotice(
         `✅ ${taskLabel} dla zamówienia nr ${ord.orderNumber || ord.invoiceNumber} zostało wykonane, przekazane Koordynatorowi i usunięte ze stanowiska Magazyn!`
@@ -375,7 +375,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
               <p className="text-xs sm:text-sm text-amber-50 mt-1 max-w-3xl leading-relaxed">
                 Zadania od Koordynatora trafiają tutaj w dwóch oddzielnych etapach:{' '}
                 <strong className="text-white underline">
-                  1. Uzupełnij zdjęcia produktów (wysyłane z karty zamówienia)
+                  1. Uzupełnij zdjęcia etykiet kartonu (wysyłane z karty zamówienia)
                 </strong>{' '}
                 oraz kolejno{' '}
                 <strong className="text-white underline">
@@ -436,7 +436,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
               }`}
             >
               <Camera className="w-3.5 h-3.5" />
-              <span>1. Zdjęcia produktów ({counts.productActive})</span>
+              <span>1. Zdjęcia etykiet kartonu ({counts.productActive})</span>
             </button>
 
             <button
@@ -491,14 +491,14 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
           </div>
           <h3 className="text-base sm:text-lg font-black text-slate-900">
             {activeTab === 'product_photos'
-              ? 'Brak oczekujących zadań nr 1: „Uzupełnij zdjęcia produktów”'
+              ? 'Brak oczekujących zadań nr 1: „Uzupełnij zdjęcia etykiet kartonu”'
               : activeTab === 'parcel_photos'
               ? 'Brak oczekujących zadań nr 2: „Uzupełnij zdjęcia gotowej przesyłki”'
               : 'Brak oczekujących zadań od Koordynatora'}
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-lg mx-auto leading-relaxed">
             1. Na <strong>karcie zamówienia</strong> Koordynator wysyła zadanie{' '}
-            <strong>„Uzupełnij zdjęcia produktów”</strong>.<br />
+            <strong>„Uzupełnij zdjęcia etykiet kartonu”</strong>.<br />
             2. Kolejno w folderze <strong>W REALIZACJI</strong> Koordynator wysyła drugie zadanie{' '}
             <strong>„Uzupełnij zdjęcia gotowej przesyłki”</strong>.
           </p>
@@ -548,7 +548,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                       {isProductTask ? (
                         <>
                           <Camera className="w-3.5 h-3.5" />
-                          <span>ZADANIE 1: Uzupełnij zdjęcia produktów</span>
+                          <span>ZADANIE 1: Uzupełnij zdjęcia etykiet kartonu</span>
                         </>
                       ) : (
                         <>
@@ -632,7 +632,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                         {isCompleted
                           ? 'Wznów zadanie'
                           : isProductTask
-                          ? 'Oznacz Zadanie 1 (Zdjęcia produktów) jako wykonane'
+                          ? 'Oznacz Zadanie 1 (Zdjęcia etykiet kartonu) jako wykonane'
                           : 'Oznacz Zadanie 2 (Zdjęcia przesyłki) jako wykonane'}
                       </span>
                     </button>
@@ -746,7 +746,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                   )}
 
                   {/* =============================================================== */}
-                  {/* WIDOK ZADANIA 1: UZUPEŁNIJ ZDJĘCIA PRODUKTÓW (SERIA LOT / MHD)  */}
+                  {/* WIDOK ZADANIA 1: UZUPEŁNIJ ZDJĘCIA ETYKIET KARTONU (LOT / MHD)  */}
                   {/* =============================================================== */}
                   {isProductTask ? (
                     <div className="rounded-2xl border-2 border-fuchsia-200 bg-fuchsia-50/20 p-4 flex flex-col justify-between">
@@ -760,11 +760,11 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                               <h3 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-1.5">
                                 <Camera className="w-4 h-4 text-fuchsia-600" />
                                 <span>
-                                  Zadanie 1: Uzupełnij zdjęcia produktów z zamówienia (seria LOT i data ważności MHD)
+                                  Zadanie 1: Uzupełnij zdjęcia etykiet kartonu (seria LOT i data ważności MHD)
                                 </span>
                               </h3>
                               <p className="text-[11px] text-slate-500">
-                                Zadanie wysłane z karty zamówienia — zrób wyraźne zdjęcia opakowań produktów z widocznym numerem serii (LOT) i datą ważności (MHD)
+                                Zadanie wysłane z karty zamówienia — zrób wyraźne zdjęcia etykiet kartonów z widocznym numerem serii (LOT) i datą ważności (MHD)
                               </p>
                             </div>
                           </div>
@@ -777,11 +777,11 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                             }`}
                           >
                             {packagingPhotos.length}{' '}
-                            {packagingPhotos.length === 1 ? 'zdjęcie produktu' : 'zdjęć produktów'}
+                            {packagingPhotos.length === 1 ? 'zdjęcie etykiety kartonu' : 'zdjęć etykiet kartonu'}
                           </span>
                         </div>
 
-                        {/* Galeria zdjęć produktów */}
+                        {/* Galeria zdjęć etykiet kartonu */}
                         {packagingPhotos.length > 0 ? (
                           <div className="mt-3 flex flex-wrap items-center gap-2.5">
                             {packagingPhotos.map((pkg, idx) => (
@@ -795,7 +795,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                                   className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform"
                                   onClick={() =>
                                     setLightbox({
-                                      title: `Zdjęcia produktów (LOT/MHD) — Zamówienie ${ord.orderNumber || ord.invoiceNumber}`,
+                                      title: `Zdjęcia etykiet kartonu (LOT/MHD) — Zamówienie ${ord.orderNumber || ord.invoiceNumber}`,
                                       photos: packagingPhotos.map((p) => p.dataUrl),
                                       currentIndex: idx,
                                     })
@@ -806,13 +806,13 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                                     type="button"
                                     onClick={() =>
                                       setLightbox({
-                                        title: `Zdjęcia produktów (LOT/MHD) — Zamówienie ${ord.orderNumber || ord.invoiceNumber}`,
+                                        title: `Zdjęcia etykiet kartonu (LOT/MHD) — Zamówienie ${ord.orderNumber || ord.invoiceNumber}`,
                                         photos: packagingPhotos.map((p) => p.dataUrl),
                                         currentIndex: idx,
                                       })
                                     }
                                     className="p-1.5 rounded-lg bg-white text-slate-900 hover:text-fuchsia-600 cursor-pointer shadow-xs"
-                                    title="Powiększ zdjęcie produktu"
+                                    title="Powiększ zdjęcie etykiety kartonu"
                                   >
                                     <Eye className="w-3.5 h-3.5" />
                                   </button>
@@ -820,7 +820,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                                     type="button"
                                     onClick={() => handleDeletePackagingPhoto(ord, pkg.id)}
                                     className="p-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 cursor-pointer shadow-xs"
-                                    title="Usuń zdjęcie produktu"
+                                    title="Usuń zdjęcie etykiety kartonu"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -846,7 +846,7 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                             }}
                             className="mt-3 p-4 rounded-xl border-2 border-dashed border-fuchsia-300 bg-white/80 text-center text-xs text-slate-500"
                           >
-                            Brak zdjęć produktów dla tego zamówienia. Kliknij przycisk poniżej lub przeciągnij zdjęcia opakowań tutaj.
+                            Brak zdjęć etykiet kartonu dla tego zamówienia. Kliknij przycisk poniżej lub przeciągnij zdjęcia etykiet kartonu tutaj.
                           </div>
                         )}
                       </div>
@@ -862,12 +862,12 @@ export const WarehouseWorkstationView: React.FC<WarehouseWorkstationViewProps> =
                           {uploadingPackagingOrderId === ord.id ? (
                             <>
                               <RefreshCw className="w-4 h-4 animate-spin" />
-                              <span>Przesyłanie zdjęć produktów...</span>
+                              <span>Przesyłanie zdjęć etykiet kartonu...</span>
                             </>
                           ) : (
                             <>
                               <Plus className="w-4 h-4" />
-                              <span>+ Uzupełnij zdjęcia produktów (LOT / MHD)</span>
+                              <span>+ Uzupełnij zdjęcia etykiet kartonu (LOT / MHD)</span>
                               <input
                                 type="file"
                                 multiple

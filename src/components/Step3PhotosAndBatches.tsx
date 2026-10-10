@@ -719,15 +719,15 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
                   ? 'bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-900 border border-fuchsia-300'
                   : 'bg-white hover:bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-300'
               }`}
-              title="Wyślij prośbę o zdjęcia produktów do stanowiska Magazyn"
+              title="Wyślij prośbę o zdjęcia etykiet kartonu do stanowiska Magazyn"
             >
               <Warehouse className="w-4 h-4 shrink-0" />
               <span>
                 {warehouseTaskStatus === 'completed'
-                  ? '✅ Zdjęcia produktów z magazynu uzupełnione'
+                  ? '✅ Zdjęcia etykiet kartonu uzupełnione'
                   : warehouseTaskStatus === 'assigned' || warehouseTaskStatus === 'in_progress'
-                  ? '✓ Wysłano: Uzupełnij zdjęcia produktów'
-                  : 'Wyślij zadanie do magazynu: Uzupełnij zdjęcia produktów'}
+                  ? '✓ Wysłano: Uzupełnij zdjęcia etykiet kartonu'
+                  : 'Wyślij zadanie do magazynu: Uzupełnij zdjęcia etykiet kartonu'}
               </span>
             </button>
           )}
