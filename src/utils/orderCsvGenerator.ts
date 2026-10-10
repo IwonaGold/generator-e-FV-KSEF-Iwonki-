@@ -405,13 +405,11 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
   const contactEmail = (avisoInfo.email || buyer.email || '').trim();
   const contactPhone = (avisoInfo.phone || buyer.phone || '').trim();
 
-  // Uwagi sprzedawcy: koniecznie "numer zamówienia - data złożenia zamówienia" + szczegóły
+  // Uwagi sprzedawcy (Notatka wewnętrzna w Sellrocket): "numer zamówienia - data złożenia zamówienia" + awizacja (bez dublowania terminu płatności i dostawy)
   const orderHeaderNote =
     orderNumber && orderDate ? `${orderNumber} - ${orderDate}` : orderNumber || orderDate;
   const sellerNotes = [
     orderHeaderNote ? `Zamówienie: ${orderHeaderNote}` : '',
-    deliveryDateStr ? `Termin dostawy: ${deliveryDateStr}` : '',
-    paymentDueDate ? `Termin płatności: ${paymentDueDate}` : '',
     avisoInfo.avisoMethod ? `Awizacja: ${avisoInfo.avisoMethod}` : '',
   ]
     .filter(Boolean)
