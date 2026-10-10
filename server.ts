@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { extractLotAfterPrefix, extractMhdDateAfterPrefix } from './src/utils/twoStageOcrService';
 import { parseKSeFInvoiceText } from './src/utils/ksefPdfInvoiceParser';
@@ -1927,7 +1928,30 @@ async function startServer() {
   }
 
   const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`🌸 Generator Iwonki KSeF działa na http://0.0.0.0:${port} [tryb: ${isProduction ? 'PRODUKCJA' : 'DEVELOPMENT'}]`);
+    const interfaces = os.networkInterfaces();
+    const lanUrls: string[] = [];
+    for (const name of Object.keys(interfaces)) {
+      for (const net of interfaces[name] || []) {
+        if (net.family === 'IPv4' && !net.internal) {
+          lanUrls.push(`http://${net.address}:${port}`);
+        }
+      }
+    }
+
+    console.log('');
+    console.log('======================================================================');
+    console.log(`🌸 EUBIOSIS KSeF FA(3) — SERWER URUCHOMIONY [tryb: ${isProduction ? 'PRODUKCJA' : 'ROBOCZY'}]`);
+    console.log('======================================================================');
+    console.log(`💻 Adres na TYM komputerze:`);
+    console.log(`   👉 http://localhost:${port}`);
+    if (lanUrls.length > 0) {
+      console.log('');
+      console.log(`📶 Adres dla INNYCH urządzeń w tej samej sieci Wi-Fi / LAN (po haśle):`);
+      lanUrls.forEach((url) => console.log(`   👉 ${url}`));
+    }
+    console.log('======================================================================');
+    console.log('   (Nie zamykaj tego okna podczas pracy z aplikacją)');
+    console.log('');
   });
   server.on('error', (err) => {
     console.error('❌ Błąd serwera HTTP:', err);
