@@ -317,8 +317,6 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
   // 1. Identyfikator zamówienia (wspólny dla wszystkich pozycji w tym zamówieniu!)
   const orderDate = (meta.orderDate || meta.issueDate || new Date().toISOString().slice(0, 10)).trim();
   const orderNumber = (meta.orderNumber || meta.invoiceNumber || `ZAM-${orderDate}`).trim();
-  // Czysto numeryczne Id zamówienia (np. "23465/2026/KPD" -> "234652026") dla pola "Id" w Sellrocket
-  const numericOrderId = cleanNumeric(orderNumber) || cleanNumeric(orderDate) || '1';
 
   // 2. Dane do faktury (Nabywca)
   const invoiceCompanyName = (buyer.name || matchedClient?.fullName || '').trim();
@@ -414,8 +412,10 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
     .join(' | ');
 
   // Nagłówki 1:1 zgodne z listą rozwijaną importu CSV w Sellrocket Enterprise
+  // UWAGA: Nie używamy kolumny "Id", ponieważ w Sellrocket "Id" oznacza aktualizację
+  // istniejącego już zamówienia w bazie Sellrocket ("Nie znaleziono zamówienia o podanym identyfikatorze").
+  // Do tworzenia nowego zamówienia i łączenia pozycji służy "Numer w sklepie".
   const headers = [
-    'Id',
     'Numer w sklepie',
     'Data dodania na platformie (UTC)',
     'Kupujący - Email',
@@ -473,7 +473,6 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
 
     lines.push(
       buildCsvRow([
-        numericOrderId,
         orderNumber,
         orderDate,
         contactEmail,
