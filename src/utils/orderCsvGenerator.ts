@@ -394,22 +394,38 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
     shippingCountry = invoiceCountry || 'PL';
   }
 
-  // 4. Termin płatności i kontakt z Centrum Wiedzy
+  // 4. Termin płatności, termin dostawy i kontakt z Centrum Wiedzy
   const effectivePaymentDays = meta.paymentDays ?? matchedClient?.paymentDays;
   const paymentDueDate = resolvePaymentDueDate(
     meta.dueDate,
     meta.issueDate || meta.orderDate,
     effectivePaymentDays
   );
+  const deliveryDateStr = (meta.deliveryDate || '').trim();
   const contactEmail = (avisoInfo.email || buyer.email || '').trim();
   const contactPhone = (avisoInfo.phone || buyer.phone || '').trim();
+
+  // Uwagi sprzedawcy: koniecznie "numer zamówienia - data złożenia zamówienia" + szczegóły
+  const orderHeaderNote =
+    orderNumber && orderDate ? `${orderNumber} - ${orderDate}` : orderNumber || orderDate;
   const sellerNotes = [
-    orderNumber ? `Zamówienie: ${orderNumber}` : '',
+    orderHeaderNote ? `Zamówienie: ${orderHeaderNote}` : '',
+    deliveryDateStr ? `Termin dostawy: ${deliveryDateStr}` : '',
     paymentDueDate ? `Termin płatności: ${paymentDueDate}` : '',
     avisoInfo.avisoMethod ? `Awizacja: ${avisoInfo.avisoMethod}` : '',
   ]
     .filter(Boolean)
     .join(' | ');
+
+  // Pole dodatkowe 1: Termin płatności
+  const extraField1 = paymentDueDate
+    ? effectivePaymentDays && !paymentDueDate.includes('dni')
+      ? `Termin płatności: ${paymentDueDate} (${effectivePaymentDays} dni)`
+      : `Termin płatności: ${paymentDueDate}`
+    : '';
+
+  // Pole dodatkowe 2: Termin dostawy
+  const extraField2 = deliveryDateStr ? `Termin dostawy: ${deliveryDateStr}` : '';
 
   // Nagłówki 1:1 zgodne z listą rozwijaną importu CSV w Sellrocket Enterprise
   // UWAGA: Nie używamy kolumny "Id", ponieważ w Sellrocket "Id" oznacza aktualizację
@@ -467,9 +483,6 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
     const cleanName = cleanProductName(it.name) || it.name || '';
     const eanCode = cleanNumeric(it.gtin || it.ean || '');
     const batchStr = (it.batchNumber || '').trim();
-    const expiryStr = (it.expiryDate || '').trim();
-    const extraField1 = batchStr ? `LOT: ${batchStr}` : paymentDueDate;
-    const extraField2 = expiryStr ? `EXP: ${expiryStr}` : '';
 
     lines.push(
       buildCsvRow([
