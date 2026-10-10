@@ -1,0 +1,142 @@
+[
+  {
+    "property": "SourceOrderId",
+    "column": 0
+  },
+  {
+    "property": "PlatformDateAddedUtc",
+    "column": 1
+  },
+  {
+    "property": "BuyerEmail",
+    "column": 2
+  },
+  {
+    "property": "BuyerPhone",
+    "column": 3
+  },
+  {
+    "property": "InvoicePayerCompanyName",
+    "column": 4
+  },
+  {
+    "property": "InvoicePayerFullName",
+    "column": 5
+  },
+  {
+    "property": "InvoicePayerNip",
+    "column": 6
+  },
+  {
+    "property": "InvoicePayerStreet",
+    "column": 7
+  },
+  {
+    "property": "InvoicePayerHouseNo",
+    "column": 8
+  },
+  {
+    "property": "InvoicePayerApartmentNo",
+    "column": 9
+  },
+  {
+    "property": "InvoicePayerPostCode",
+    "column": 10
+  },
+  {
+    "property": "InvoicePayerCity",
+    "column": 11
+  },
+  {
+    "property": "InvoicePayerCountryCode",
+    "column": 12
+  },
+  {
+    "property": "InvoicePayerEmail",
+    "column": 13
+  },
+  {
+    "property": "InvoicePayerPhone",
+    "column": 14
+  },
+  {
+    "property": "DeliveryRecipientCompanyName",
+    "column": 15
+  },
+  {
+    "property": "DeliveryRecipientFullName",
+    "column": 16
+  },
+  {
+    "property": "DeliveryRecipientStreet",
+    "column": 17
+  },
+  {
+    "property": "DeliveryRecipientHouseNo",
+    "column": 18
+  },
+  {
+    "property": "DeliveryRecipientApartmentNo",
+    "column": 19
+  },
+  {
+    "property": "DeliveryRecipientPostCode",
+    "column": 20
+  },
+  {
+    "property": "DeliveryRecipientCity",
+    "column": 21
+  },
+  {
+    "property": "DeliveryRecipientCountryCode",
+    "column": 22
+  },
+  {
+    "property": "DeliveryRecipientEmail",
+    "column": 23
+  },
+  {
+    "property": "DeliveryRecipientPhone",
+    "column": 24
+  },
+  {
+    "property": "SellerComments",
+    "column": 25
+  },
+  {
+    "property": "AdditionalField1",
+    "column": 26
+  },
+  {
+    "property": "AdditionalField2",
+    "column": 27
+  },
+  {
+    "property": "ProductName",
+    "column": 28
+  },
+  {
+    "property": "ProductEan",
+    "column": 29
+  },
+  {
+    "property": "ProductCode",
+    "column": 30
+  },
+  {
+    "property": "Quantity",
+    "column": 31
+  },
+  {
+    "property": "TaxRate",
+    "column": 32
+  },
+  {
+    "property": "PriceCurrency",
+    "column": 33
+  },
+  {
+    "property": "PriceUnit",
+    "column": 34
+  }
+]
