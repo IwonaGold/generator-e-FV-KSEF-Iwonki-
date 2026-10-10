@@ -220,103 +220,237 @@ function resolvePaymentDueDate(
 }
 
 /**
- * Generuje jednolity, płaski plik CSV z zamówieniem zdatny do importu do systemu e-commerce / ERP (Sellrocket).
- * Format techniczny: Separator kolumn: średnik (;), kodowanie: UTF-8 (z BOM \uFEFF).
- *
- * Wymagane kolumny (20):
- * - Dane zamówienia i kontrahenta:
- *   Numer zamówienia; Data zamówienia; Nazwa nabywcy; NIP nabywcy; Adres do faktury; Nazwa odbiorcy; Adres dostawy; Termin płatności
- * - Dane pozycji towarowych:
- *   Lp; Nazwa produktu; Kod EAN; Ilość; Jednostka; Cena netto; Stawka VAT; Cena brutto; Wartość netto; Wartość brutto; Numer serii (LOT); Data ważności
+ * Rozbija linię ulicy (np. "UL.KINGA C.GILLETTE 11", "ul. Nowatorów 31 lok. 4", "Hurtowa 2/5")
+ * na osobne pola wymagane przez Sellrocket: Ulica, Numer domu, Numer mieszkania.
+ */
+function splitStreetAndNumbers(
+  rawStreetLine?: string,
+  explicitStreet?: string,
+  explicitHouse?: string,
+  explicitApartment?: string
+): {
+  street: string;
+  houseNumber: string;
+  apartmentNumber: string;
+} {
+  if (explicitStreet && explicitStreet.trim() && explicitHouse && explicitHouse.trim()) {
+    return {
+      street: explicitStreet.trim(),
+      houseNumber: explicitHouse.trim(),
+      apartmentNumber: (explicitApartment || '').trim(),
+    };
+  }
+
+  let working = (rawStreetLine || '')
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!working) {
+    return { street: '', houseNumber: '1', apartmentNumber: '' };
+  }
+
+  let street = working;
+  let houseNumber = '';
+  let apartmentNumber = '';
+
+  // 1. Sprawdź "lok. X", "lokal X", "m. X" na końcu
+  const lokMatch = working.match(/^(.*?)\s+(?:lok\.?|lokal|m\.?)\s*([0-9a-zA-Z-]+)$/i);
+  if (lokMatch) {
+    const beforeLok = lokMatch[1].trim();
+    apartmentNumber = lokMatch[2].trim();
+    const houseMatch = beforeLok.match(/^(.*?)\s+([0-9]+[a-zA-Z]?)$/);
+    if (houseMatch) {
+      street = houseMatch[1].trim();
+      houseNumber = houseMatch[2].trim();
+    } else {
+      street = beforeLok;
+    }
+  } else {
+    // 2. Sprawdź zapis "Ulica 11/4" na końcu
+    const slashMatch = working.match(/^(.*?)\s+([0-9]+[a-zA-Z]?)\s*\/\s*([0-9a-zA-Z-]+)$/);
+    if (slashMatch) {
+      street = slashMatch[1].trim();
+      houseNumber = slashMatch[2].trim();
+      apartmentNumber = slashMatch[3].trim();
+    } else {
+      // 3. Złożony numer budynku na końcu (np. "ul. Kinga C. Gillette 1, 9 i 11") lub zwykły "Ulica 11" / "Ulica 60A"
+      const multiHouseMatch = working.match(
+        /^(.+?)\s+(\d+[a-zA-Z]?(?:\s*(?:,|i|oraz)\s*\d+[a-zA-Z]?)+)$/i
+      );
+      if (multiHouseMatch) {
+        street = multiHouseMatch[1].trim();
+        houseNumber = multiHouseMatch[2].trim();
+      } else {
+        const simpleHouseMatch = working.match(/^(.*?)\s+([0-9]+[a-zA-Z]?)$/);
+        if (simpleHouseMatch) {
+          street = simpleHouseMatch[1].trim();
+          houseNumber = simpleHouseMatch[2].trim();
+        }
+      }
+    }
+  }
+
+  // Estetyczne oddzielenie "UL." -> "ul. "
+  street = street.replace(/^UL\.(\S)/i, 'ul. $1');
+
+  return {
+    street: street || working,
+    houseNumber: houseNumber || '1',
+    apartmentNumber,
+  };
+}
+
+/**
+ * Generuje jednolity, płaski plik CSV dopasowany 1:1 do pól importu w Sellrocket Enterprise.
+ * Nazwy nagłówków odpowiadają dokładnie opcjom z listy rozwijanej w Sellrocket Enterprise,
+ * dzięki czemu:
+ * - wszystkie pozycje jednego zamówienia mają wspólne "Id" oraz "Numer w sklepie" (łączą się w 1 zamówienie),
+ * - adres faktury i dostawy jest rozbity na Ulicę, Numer domu, Numer mieszkania, Kod pocztowy, Miasto i Kod kraju ("PL"),
+ * - eliminuje to błąd "Brakujące pole Dane dostawy - Kod kraju".
  */
 export function generateOrderCSV(input: OrderCsvGenerationInput): string {
   const { buyer, thirdParty, meta, items, selectedChain, knowledgeClients } = input;
   const matchedClient = findMatchingKnowledgeClient(buyer, selectedChain, knowledgeClients);
+  const avisoInfo = resolveAvisoConfirmationContact(matchedClient, buyer);
 
-  // 1. Dane zamówienia i nabywcy (do faktury)
+  // 1. Identyfikator zamówienia (wspólny dla wszystkich pozycji w tym zamówieniu!)
   const orderDate = (meta.orderDate || meta.issueDate || new Date().toISOString().slice(0, 10)).trim();
   const orderNumber = (meta.orderNumber || meta.invoiceNumber || `ZAM-${orderDate}`).trim();
+  // Czysto numeryczne Id zamówienia (np. "23465/2026/KPD" -> "234652026") dla pola "Id" w Sellrocket
+  const numericOrderId = cleanNumeric(orderNumber) || cleanNumeric(orderDate) || '1';
+
+  // 2. Dane do faktury (Nabywca)
   const invoiceCompanyName = (buyer.name || matchedClient?.fullName || '').trim();
   const invoiceNip = cleanNumeric(buyer.nip || matchedClient?.nip || '');
-
-  const invoiceStreet = (
+  const rawHqAddr =
     buyer.addressLine1 ||
-    [buyer.street, buyer.houseNumber, buyer.apartmentNumber ? `/${buyer.apartmentNumber}` : '']
-      .filter(Boolean)
-      .join(' ') ||
-    matchedClient?.headquartersAddress ||
-    ''
-  ).trim();
-  const invoicePostalCode = (buyer.postalCode || '').trim();
-  const invoiceCity = (buyer.city || '').trim();
+    (matchedClient?.headquartersAddress && !/^zgodnie\s+z/i.test(matchedClient.headquartersAddress)
+      ? matchedClient.headquartersAddress
+      : '');
+  const parsedHq = parseWarehouseAddressString(rawHqAddr, buyer.postalCode, buyer.city);
+  const invParts = splitStreetAndNumbers(
+    parsedHq.streetLine,
+    buyer.street,
+    buyer.houseNumber,
+    buyer.apartmentNumber
+  );
+  const invoicePostalCode = (buyer.postalCode || parsedHq.postalCode || '').trim();
+  const invoiceCity = (buyer.city || parsedHq.city || '').trim();
+  const invoiceCountry = (buyer.countryCode || 'PL').trim() || 'PL';
 
-  const rawFormattedBuyerAddress = formatAdresL1(buyer);
-  const invoiceFullAddress =
-    rawFormattedBuyerAddress && rawFormattedBuyerAddress !== 'Polska'
-      ? rawFormattedBuyerAddress
-      : [invoiceStreet, [invoicePostalCode, invoiceCity].filter(Boolean).join(' ')]
-          .filter(Boolean)
-          .join(', ');
-
-  // 2. Dane odbiorcy i adres dostawy
+  // 3. Dane dostawy (Odbiorca / Magazyn docelowy)
   let shippingCompanyName = '';
-  let shippingFullAddress = '';
+  let shippingStreet = '';
+  let shippingHouseNumber = '';
+  let shippingApartmentNumber = '';
+  let shippingPostalCode = '';
+  let shippingCity = '';
+  let shippingCountry = 'PL';
+
+  const hasValidClientShipping =
+    matchedClient &&
+    matchedClient.shippingAddress &&
+    !/^zgodnie\s+z/i.test(matchedClient.shippingAddress.trim());
 
   if (thirdParty && thirdParty.name && thirdParty.name.trim()) {
     shippingCompanyName = thirdParty.name.trim();
-    const rawThirdPartyAddr = formatAdresL1(thirdParty);
-    shippingFullAddress =
-      rawThirdPartyAddr && rawThirdPartyAddr !== 'Polska'
-        ? rawThirdPartyAddr
-        : invoiceFullAddress;
-  } else if (matchedClient && (matchedClient.shippingWarehouseName || matchedClient.shippingAddress)) {
+    const parsedTp = parseWarehouseAddressString(
+      thirdParty.addressLine1,
+      thirdParty.postalCode,
+      thirdParty.city
+    );
+    const tpParts = splitStreetAndNumbers(
+      parsedTp.streetLine,
+      thirdParty.street,
+      thirdParty.houseNumber,
+      thirdParty.apartmentNumber
+    );
+    shippingStreet = tpParts.street || invParts.street;
+    shippingHouseNumber = tpParts.houseNumber || invParts.houseNumber;
+    shippingApartmentNumber = tpParts.apartmentNumber;
+    shippingPostalCode = (thirdParty.postalCode || parsedTp.postalCode || invoicePostalCode).trim();
+    shippingCity = (thirdParty.city || parsedTp.city || invoiceCity).trim();
+    shippingCountry = (thirdParty.countryCode || 'PL').trim() || 'PL';
+  } else if (hasValidClientShipping && matchedClient) {
     shippingCompanyName = (matchedClient.shippingWarehouseName || invoiceCompanyName).trim();
     const parsedShip = parseWarehouseAddressString(
       matchedClient.shippingAddress,
       invoicePostalCode,
       invoiceCity
     );
-    const shippingStreet = parsedShip.streetLine || invoiceStreet;
-    const shippingPostalCode = parsedShip.postalCode || invoicePostalCode;
-    const shippingCity = parsedShip.city || invoiceCity;
-    shippingFullAddress = [shippingStreet, [shippingPostalCode, shippingCity].filter(Boolean).join(' ')]
-      .filter(Boolean)
-      .join(', ');
+    const shipParts = splitStreetAndNumbers(parsedShip.streetLine);
+    shippingStreet = shipParts.street || invParts.street;
+    shippingHouseNumber = shipParts.houseNumber || invParts.houseNumber;
+    shippingApartmentNumber = shipParts.apartmentNumber;
+    shippingPostalCode = (parsedShip.postalCode || invoicePostalCode).trim();
+    shippingCity = (parsedShip.city || invoiceCity).trim();
+    shippingCountry = invoiceCountry || 'PL';
   } else {
     shippingCompanyName = invoiceCompanyName;
-    shippingFullAddress = invoiceFullAddress;
+    shippingStreet = invParts.street;
+    shippingHouseNumber = invParts.houseNumber;
+    shippingApartmentNumber = invParts.apartmentNumber;
+    shippingPostalCode = invoicePostalCode;
+    shippingCity = invoiceCity;
+    shippingCountry = invoiceCountry || 'PL';
   }
 
-  // 3. Termin płatności
+  // 4. Termin płatności i kontakt z Centrum Wiedzy
   const effectivePaymentDays = meta.paymentDays ?? matchedClient?.paymentDays;
   const paymentDueDate = resolvePaymentDueDate(
     meta.dueDate,
     meta.issueDate || meta.orderDate,
     effectivePaymentDays
   );
+  const contactEmail = (avisoInfo.email || buyer.email || '').trim();
+  const contactPhone = (avisoInfo.phone || buyer.phone || '').trim();
+  const sellerNotes = [
+    orderNumber ? `Zamówienie: ${orderNumber}` : '',
+    paymentDueDate ? `Termin płatności: ${paymentDueDate}` : '',
+    avisoInfo.avisoMethod ? `Awizacja: ${avisoInfo.avisoMethod}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
 
-  // Nagłówek jednolitego, płaskiego pliku CSV (Sellrocket / ERP)
+  // Nagłówki 1:1 zgodne z listą rozwijaną importu CSV w Sellrocket Enterprise
   const headers = [
-    'Numer zamówienia',
-    'Data zamówienia',
-    'Nazwa nabywcy',
-    'NIP nabywcy',
-    'Adres do faktury',
-    'Nazwa odbiorcy',
-    'Adres dostawy',
-    'Termin płatności',
-    'Lp',
-    'Nazwa produktu',
-    'Kod EAN',
-    'Ilość',
-    'Jednostka',
-    'Cena netto',
-    'Stawka VAT',
-    'Cena brutto',
-    'Wartość netto',
-    'Wartość brutto',
-    'Numer serii (LOT)',
-    'Data ważności',
+    'Id',
+    'Numer w sklepie',
+    'Data dodania na platformie (UTC)',
+    'Kupujący - Email',
+    'Kupujący - Telefon',
+    'Faktura - Nazwa firmy',
+    'Faktura - Pełna nazwa',
+    'Faktura - NIP',
+    'Faktura - Ulica',
+    'Faktura - Numer domu',
+    'Faktura - Numer mieszkania',
+    'Faktura - Kod pocztowy',
+    'Faktura - Miasto',
+    'Faktura - Kod kraju',
+    'Faktura - Email',
+    'Faktura - Telefon',
+    'Dane dostawy - Nazwa firmy',
+    'Dane dostawy - Pełna nazwa',
+    'Dane dostawy - Ulica',
+    'Dane dostawy - Numer domu',
+    'Dane dostawy - Numer mieszkania',
+    'Dane dostawy - Kod pocztowy',
+    'Dane dostawy - Miasto',
+    'Dane dostawy - Kod kraju',
+    'Dane dostawy - Email',
+    'Dane dostawy - Telefon',
+    'Uwagi sprzedawcy',
+    'Pole dodatkowe 1',
+    'Pole dodatkowe 2',
+    'Produkt - Nazwa',
+    'Produkt - EAN',
+    'Produkt - SKU',
+    'Ilość Produktu',
+    'Podatek Produktu - Stawka',
+    'Cena Produktu - Waluta',
+    'Cena Produktu - Jednostkowa',
   ];
 
   const lines: string[] = [buildCsvRow(headers)];
@@ -327,46 +461,58 @@ export function generateOrderCSV(input: OrderCsvGenerationInput): string {
       it.netPrice ?? it.unitPriceNet ?? it.originalNetPrice ?? it.correctedNetPrice ?? 0
     );
     const vatStr = String(it.vatRate || '8%').trim();
-    const vatNum = parseFloat(vatStr.replace('%', '').replace(',', '.')) || 0;
+    const vatNum = parseFloat(vatStr.replace('%', '').replace(',', '.')) || 8;
     const unitGross = Math.round(netPrice * (1 + vatNum / 100) * 100) / 100;
-    const lineNet = Math.round(qty * netPrice * 100) / 100;
-    const lineGross = Math.round(lineNet * (1 + vatNum / 100) * 100) / 100;
 
     const cleanName = cleanProductName(it.name) || it.name || '';
     const eanCode = cleanNumeric(it.gtin || it.ean || '');
-    const formattedVat = vatStr.includes('%') || vatStr.toLowerCase() === 'zw' ? vatStr : `${vatStr}%`;
+    const batchStr = (it.batchNumber || '').trim();
+    const expiryStr = (it.expiryDate || '').trim();
+    const extraField1 = batchStr ? `LOT: ${batchStr}` : paymentDueDate;
+    const extraField2 = expiryStr ? `EXP: ${expiryStr}` : '';
 
-    // UWAGA: W kolumnie "Lp" wpisujemy stałe "1" dla całego zamówienia (a nie 1, 2, 3...),
-    // ponieważ Sellrocket Enterprise traktuje "Lp" jako identyfikator/numer porządkowy zamówienia (widoczny w nawiasie pod ID zamówienia, np. (1), (2), (3))
-    // i przy różnych wartościach Lp (1, 2, 3, 4, 5) rozbija każdą pozycję na osobne zamówienie.
     lines.push(
       buildCsvRow([
+        numericOrderId,
         orderNumber,
         orderDate,
+        contactEmail,
+        contactPhone,
+        invoiceCompanyName,
         invoiceCompanyName,
         invoiceNip,
-        invoiceFullAddress,
+        invParts.street,
+        invParts.houseNumber,
+        invParts.apartmentNumber,
+        invoicePostalCode,
+        invoiceCity,
+        invoiceCountry,
+        contactEmail,
+        contactPhone,
         shippingCompanyName,
-        shippingFullAddress,
-        paymentDueDate,
-        1,
+        shippingCompanyName,
+        shippingStreet,
+        shippingHouseNumber,
+        shippingApartmentNumber,
+        shippingPostalCode,
+        shippingCity,
+        shippingCountry,
+        contactEmail,
+        contactPhone,
+        sellerNotes,
+        extraField1,
+        extraField2,
         cleanName,
         eanCode,
+        batchStr || eanCode,
         qty,
-        it.unit || 'szt.',
-        netPrice.toFixed(2).replace('.', ','),
-        formattedVat,
+        vatNum,
+        meta.currency || 'PLN',
         unitGross.toFixed(2).replace('.', ','),
-        lineNet.toFixed(2).replace('.', ','),
-        lineGross.toFixed(2).replace('.', ','),
-        it.batchNumber || '',
-        it.expiryDate || '',
       ])
     );
   });
 
-  // Czyste kodowanie UTF-8 (bez ukrytego znaku BOM \uFEFF na początku pierwszego nagłówka "Numer zamówienia",
-  // który w importerach ERP / Sellrocket potrafi uszkodzić rozpoznanie pierwszej kolumny)
   return lines.join('\r\n');
 }
 
