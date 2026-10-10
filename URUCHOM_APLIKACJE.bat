@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title Centrum Realizacji Zamowien - Serwer Lokalny i Wi-Fi
+title Centrum Realizacji Zamowien Sieciowych - Serwer Lokalny i Wi-Fi
 cd /d "%~dp0"
 
 echo ======================================================================
-echo   CENTRUM REALIZACJI ZAMOWIEN (EUBIOSIS KSeF FA(3))
+echo   CENTRUM REALIZACJI ZAMOWIEN SIECIOWYCH (EUBIOSIS KSeF FA(3))
 echo ======================================================================
 echo.
 
@@ -27,7 +27,7 @@ if not exist "dist\index.html" (
     call npm run build
 )
 
-echo Uruchamianie Centrum Realizacji Zamowien (http://localhost:3000)...
+echo Uruchamianie Centrum Realizacji Zamowien Sieciowych (http://localhost:3000)...
 set NODE_ENV=production
 start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://localhost:3000'"
 

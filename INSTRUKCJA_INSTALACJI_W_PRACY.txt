@@ -1,5 +1,5 @@
 ========================================================================
-  INSTRUKCJA URUCHOMIENIA: "CENTRUM REALIZACJI ZAMÓWIEŃ"
+  INSTRUKCJA URUCHOMIENIA: "CENTRUM REALIZACJI ZAMÓWIEŃ SIECIOWYCH"
   (W PRACY, W DOMU ORAZ NA KOMPUTERZE OSOBY ZASTĘPUJĄCEJ)
 ========================================================================
 
@@ -20,12 +20,12 @@ Wejdź do folderu aplikacji i kliknij dwukrotnie:
 Instalator automatycznie:
 1. Sprawdzi/zainstaluje środowisko Node.js.
 2. Zbuduje szybką wersję produkcyjną aplikacji.
-3. Utworzy na Pulpicie ikonę:
-   👉 "Centrum Realizacji Zamówień"
+3. Utworzy na Pulpicie różową ikonę XML:
+   👉 "Centrum Realizacji Zamówień Sieciowych"
 
 KROK 3: Codzienna praca (oraz współpraca z Magazynem przez Wi-Fi)
 ------------------------------------------------------------------------
-1. Kliknij dwukrotnie ikonę "Centrum Realizacji Zamówień" na Pulpicie.
+1. Kliknij dwukrotnie ikonę "Centrum Realizacji Zamówień Sieciowych" na Pulpicie.
 2. Przeglądarka automatycznie otworzy aplikację pod adresem:
    👉 http://localhost:3000
 3. W czarnym okienku serwera wyświetli się również adres Wi-Fi dla innych
@@ -36,8 +36,8 @@ KROK 3: Codzienna praca (oraz współpraca z Magazynem przez Wi-Fi)
 
 KROK 4: Przekazanie bazy osobie zastępującej w innej sieci
 ------------------------------------------------------------------------
-1. W górnym pasku aplikacji kliknij ikonę Chmury ("Synchronizacja") ->
-   zakładka "3. Sejf AES-256 & Kopia" -> "Pobierz bazę (.json)".
+1. W górnym pasku aplikacji kliknij zielony przycisk "☁️ Chmura Live" ->
+   zakładka "🔒 3. Sejf AES-256 & Kopia Zapasowa" -> "Pobierz bazę (.json)".
 2. Wyślij pobrany plik .json osobie zastępującej (np. mailem / Teams).
 3. Osoba zastępująca klika u siebie "Wczytaj bazę (.json)" — i od razu widzi
    wszystkie zamówienia w realizacji, zakończone oraz Centrum Wiedzy.
