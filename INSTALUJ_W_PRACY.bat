@@ -44,10 +44,10 @@ if %errorlevel% neq 0 (
     netsh advfirewall firewall add rule name="Centrum Realizacji Zamowien Wi-Fi (Port 3000)" dir=in action=allow protocol=TCP localport=3000 profile=private,domain >nul 2>nul
 )
 
-:: 4. Utworzenie skrotu "Centrum Realizacji Zamówień" na Pulpicie
+:: 4. Utworzenie skrotu "Centrum Realizacji Zamówień" na Pulpicie z rozowa ikona app-icon.ico
 echo.
 echo [KROK 4/4] Tworzenie ikony "Centrum Realizacji Zamówień" na Pulpicie...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $ShortcutPath = Join-Path $Desktop ('Centrum Realizacji Zam' + [char]0x00F3 + 'wie' + [char]0x0144 + '.lnk'); $Shortcut = $WshShell.CreateShortcut($ShortcutPath); $Shortcut.TargetPath = '%~dp0URUCHOM_APLIKACJE.bat'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.Description = 'Uruchom Centrum Realizacji Zamowien (Eubiosis KSeF)'; $Shortcut.IconLocation = 'shell32.dll,21'; $Shortcut.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $ShortcutPath = Join-Path $Desktop ('Centrum Realizacji Zam' + [char]0x00F3 + 'wie' + [char]0x0144 + '.lnk'); if (Test-Path $ShortcutPath) { Remove-Item $ShortcutPath -Force }; $Shortcut = $WshShell.CreateShortcut($ShortcutPath); $Shortcut.TargetPath = '%~dp0URUCHOM_APLIKACJE.bat'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.Description = 'Uruchom Centrum Realizacji Zamowien (Eubiosis KSeF)'; $Shortcut.IconLocation = '%~dp0app-icon.ico,0'; $Shortcut.Save(); ie4uinit.exe -show"
 
 echo.
 echo ======================================================================
