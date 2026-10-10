@@ -14,6 +14,7 @@ import {
   Layers,
   Sparkles,
   ZoomIn,
+  Warehouse,
 } from 'lucide-react';
 import { LogisticsFormat, InvoiceItem } from '../types/ksef';
 import { PhotoVerificationItem, BatchRecord } from '../types/twoStageOcr';
@@ -706,7 +707,31 @@ export const Step3PhotosAndBatches: React.FC<Step3PhotosAndBatchesProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onSendTaskToWarehouse && (
+            <button
+              type="button"
+              onClick={() => onSendTaskToWarehouse()}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer ${
+                warehouseTaskStatus === 'completed'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : warehouseTaskStatus === 'assigned' || warehouseTaskStatus === 'in_progress'
+                  ? 'bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-900 border border-fuchsia-300'
+                  : 'bg-white hover:bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-300'
+              }`}
+              title="Wyślij prośbę o zdjęcia produktów do stanowiska Magazyn"
+            >
+              <Warehouse className="w-4 h-4 shrink-0" />
+              <span>
+                {warehouseTaskStatus === 'completed'
+                  ? '✅ Zdjęcia produktów z magazynu uzupełnione'
+                  : warehouseTaskStatus === 'assigned' || warehouseTaskStatus === 'in_progress'
+                  ? '✓ Wysłano: Uzupełnij zdjęcia produktów'
+                  : 'Wyślij zadanie do magazynu: Uzupełnij zdjęcia produktów'}
+              </span>
+            </button>
+          )}
+
           {logisticsFormat === 'none' ? (
             <span className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 px-2.5 py-1 rounded-lg">
               Tryb: Faktura bez serii i dat

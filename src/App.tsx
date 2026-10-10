@@ -1515,6 +1515,12 @@ export default function App() {
         onUpdateItem={handleUpdateItem}
         orderPackagingPhotos={currentOrderPackagingPhotos}
         onOrderPackagingPhotosChange={handleUpdateCurrentOrderPackagingPhotos}
+        onSendTaskToWarehouse={() => handleSendCurrentOrderToWarehouse()}
+        warehouseTaskStatus={
+          activeMatchedArchivedOrder?.warehouseProductTaskStatus ||
+          activeMatchedArchivedOrder?.warehouseTaskStatus ||
+          'none'
+        }
       />
 
       {/* KROK 4: Automatyczna Weryfikacja Ceny Netto i Kodu EAN wg Cennika z Centrum Wiedzy (lub XLSX) */}
