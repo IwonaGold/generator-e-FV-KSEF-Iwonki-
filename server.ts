@@ -1927,7 +1927,7 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(port, '0.0.0.0', () => {
+  const getNetworkBannerLines = () => {
     const interfaces = os.networkInterfaces();
     const lanUrls: string[] = [];
     for (const name of Object.keys(interfaces)) {
@@ -1937,17 +1937,27 @@ async function startServer() {
         }
       }
     }
+    const host = os.hostname();
+    const hostUrl = host ? `http://${host}:${port}` : null;
+    return { lanUrls, hostUrl };
+  };
+
+  const server = app.listen(port, '0.0.0.0', () => {
+    const { lanUrls, hostUrl } = getNetworkBannerLines();
 
     console.log('');
     console.log('======================================================================');
-    console.log(`🌸 EUBIOSIS KSeF FA(3) — SERWER URUCHOMIONY [tryb: ${isProduction ? 'PRODUKCJA' : 'ROBOCZY'}]`);
+    console.log(`🌸 CENTRUM REALIZACJI ZAMÓWIEŃ SIECIOWYCH — SERWER URUCHOMIONY`);
     console.log('======================================================================');
     console.log(`💻 Adres na TYM komputerze:`);
     console.log(`   👉 http://localhost:${port}`);
-    if (lanUrls.length > 0) {
+    if (lanUrls.length > 0 || hostUrl) {
       console.log('');
       console.log(`📶 Adres dla INNYCH urządzeń w tej samej sieci Wi-Fi / LAN (po haśle):`);
-      lanUrls.forEach((url) => console.log(`   👉 ${url}`));
+      lanUrls.forEach((url) => console.log(`   👉 ${url}   (dla telefonów i komputerów)`));
+      if (hostUrl) {
+        console.log(`   👉 ${hostUrl}   (stały adres po nazwie komputera)`);
+      }
     }
     console.log('======================================================================');
     console.log('   (Nie zamykaj tego okna podczas pracy z aplikacją)');
@@ -1955,25 +1965,20 @@ async function startServer() {
   });
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      const interfaces = os.networkInterfaces();
-      const lanUrls: string[] = [];
-      for (const name of Object.keys(interfaces)) {
-        for (const net of interfaces[name] || []) {
-          if (net.family === 'IPv4' && !net.internal) {
-            lanUrls.push(`http://${net.address}:${port}`);
-          }
-        }
-      }
+      const { lanUrls, hostUrl } = getNetworkBannerLines();
       console.log('');
       console.log('======================================================================');
-      console.log('✅ CENTRUM REALIZACJI ZAMÓWIEŃ JEST JUŻ URUCHOMIONE W TLE!');
+      console.log('✅ CENTRUM REALIZACJI ZAMÓWIEŃ SIECIOWYCH JEST JUŻ URUCHOMIONE W TLE!');
       console.log('======================================================================');
       console.log(`💻 Adres na TYM komputerze:`);
       console.log(`   👉 http://localhost:${port}`);
-      if (lanUrls.length > 0) {
+      if (lanUrls.length > 0 || hostUrl) {
         console.log('');
         console.log(`📶 Adres dla INNYCH urządzeń w tej samej sieci Wi-Fi / LAN (po haśle):`);
-        lanUrls.forEach((url) => console.log(`   👉 ${url}`));
+        lanUrls.forEach((url) => console.log(`   👉 ${url}   (dla telefonów i komputerów)`));
+        if (hostUrl) {
+          console.log(`   👉 ${hostUrl}   (stały adres po nazwie komputera)`);
+        }
       }
       console.log('======================================================================');
       console.log('');
