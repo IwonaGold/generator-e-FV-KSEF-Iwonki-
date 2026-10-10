@@ -1953,7 +1953,33 @@ async function startServer() {
     console.log('   (Nie zamykaj tego okna podczas pracy z aplikacją)');
     console.log('');
   });
-  server.on('error', (err) => {
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      const interfaces = os.networkInterfaces();
+      const lanUrls: string[] = [];
+      for (const name of Object.keys(interfaces)) {
+        for (const net of interfaces[name] || []) {
+          if (net.family === 'IPv4' && !net.internal) {
+            lanUrls.push(`http://${net.address}:${port}`);
+          }
+        }
+      }
+      console.log('');
+      console.log('======================================================================');
+      console.log('✅ CENTRUM REALIZACJI ZAMÓWIEŃ JEST JUŻ URUCHOMIONE W TLE!');
+      console.log('======================================================================');
+      console.log(`💻 Adres na TYM komputerze:`);
+      console.log(`   👉 http://localhost:${port}`);
+      if (lanUrls.length > 0) {
+        console.log('');
+        console.log(`📶 Adres dla INNYCH urządzeń w tej samej sieci Wi-Fi / LAN (po haśle):`);
+        lanUrls.forEach((url) => console.log(`   👉 ${url}`));
+      }
+      console.log('======================================================================');
+      console.log('');
+      process.exitCode = 0;
+      return;
+    }
     console.error('❌ Błąd serwera HTTP:', err);
     process.exitCode = 1;
   });
