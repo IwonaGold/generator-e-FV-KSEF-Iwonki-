@@ -648,3 +648,206 @@ export function executeWarehouseDocument(
     warnings,
   };
 }
+
+/**
+ * Obsługa przeciągania i upuszczania (Drag & Drop) całego kafelka palety pomiędzy dwoma miejscami:
+ * - mode === 'move_all': przenosi całą zawartość z fromSlot na toSlot (łącząc partie tego samego produktu/LOT)
+ * - mode === 'swap_slots': zamienia palety miejscami (fromSlot ⇄ toSlot)
+ */
+export function executeSlotDragAndDrop(
+  state: WMSFullState,
+  params: {
+    fromSlotId: string;
+    toSlotId: string;
+    mode: 'move_all' | 'swap_slots';
+    performedBy: string;
+  }
+): { nextState: WMSFullState; error?: string; summary?: string } {
+  const { fromSlotId, toSlotId, mode, performedBy } = params;
+  if (fromSlotId === toSlotId) {
+    return { nextState: state };
+  }
+
+  const nextSlots = state.slots.map((s) => ({
+    ...s,
+    allocations: s.allocations.map((a) => ({ ...a })),
+  }));
+
+  const fromSlot = nextSlots.find((s) => s.id === fromSlotId);
+  const toSlot = nextSlots.find((s) => s.id === toSlotId);
+  if (!fromSlot || !toSlot) {
+    return { nextState: state, error: 'Nie znaleziono wybranego miejsca magazynowego.' };
+  }
+
+  const fromHasContent =
+    fromSlot.allocations.some((a) => a.quantity > 0) ||
+    Boolean(fromSlot.customDescription && fromSlot.customDescription.trim());
+  if (!fromHasContent) {
+    return { nextState: state, error: 'Wybrane miejsce źródłowe jest puste.' };
+  }
+
+  // Walidacja reguły > 12 msc dla gniazda PARTNER
+  if (toSlot.slotType === 'picking_partner_12m') {
+    const invalidBatch = fromSlot.allocations.find(
+      (b) =>
+        b.quantity > 0 &&
+        !b.isCustomItem &&
+        b.productId !== 'CUSTOM' &&
+        !isEligibleForPartner12Months(b.expiryDate)
+    );
+    if (invalidBatch) {
+      return {
+        nextState: state,
+        error: `Zablokowano! Na miejscu ${fromSlot.code} znajduje się partia ${invalidBatch.lotNumber} z datą ważności ${invalidBatch.expiryDate} (< 12 miesięcy). Gniazda PARTNER przyjmują wyłącznie towar z datą > 12 msc!`,
+      };
+    }
+  }
+
+  if (mode === 'swap_slots' && fromSlot.slotType === 'picking_partner_12m') {
+    const invalidSwapBatch = toSlot.allocations.find(
+      (b) =>
+        b.quantity > 0 &&
+        !b.isCustomItem &&
+        b.productId !== 'CUSTOM' &&
+        !isEligibleForPartner12Months(b.expiryDate)
+    );
+    if (invalidSwapBatch) {
+      return {
+        nextState: state,
+        error: `Zablokowano zamianę! Na miejscu ${toSlot.code} znajduje się partia ${invalidSwapBatch.lotNumber} z datą ważności ${invalidSwapBatch.expiryDate} (< 12 miesięcy), której nie można przenieść na gniazdo PARTNER (${fromSlot.code}).`,
+      };
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const nextHistory = [...state.movementsHistory];
+
+  if (mode === 'swap_slots') {
+    const tempAllocs = fromSlot.allocations;
+    const tempDesc = fromSlot.customDescription;
+
+    fromSlot.allocations = toSlot.allocations.map((a) => ({
+      ...a,
+      dedicatedForPartnerOnly:
+        fromSlot.slotType === 'picking_partner_12m' ? true : a.dedicatedForPartnerOnly,
+      updatedAt: nowIso,
+    }));
+    fromSlot.customDescription = toSlot.customDescription;
+
+    toSlot.allocations = tempAllocs.map((a) => ({
+      ...a,
+      dedicatedForPartnerOnly:
+        toSlot.slotType === 'picking_partner_12m' ? true : a.dedicatedForPartnerOnly,
+      updatedAt: nowIso,
+    }));
+    toSlot.customDescription = tempDesc;
+
+    const totalSwapped =
+      fromSlot.allocations.reduce((s, a) => s + a.quantity, 0) +
+      toSlot.allocations.reduce((s, a) => s + a.quantity, 0);
+
+    nextHistory.unshift({
+      id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: nowIso,
+      type: 'MOVE',
+      productId: 'SWAP',
+      productName: `Zamiana palet miejscami (${fromSlot.code} ⇄ ${toSlot.code})`,
+      quantity: totalSwapped,
+      lotNumber: '-',
+      expiryDate: '-',
+      fromSlotCode: fromSlot.code,
+      toSlotCode: toSlot.code,
+      performedBy,
+      notes: `Przeciągnij i upuść (Zamiana palet: ${fromSlot.code} ⇄ ${toSlot.code})`,
+    });
+
+    return {
+      nextState: {
+        ...state,
+        revision: state.revision + 1,
+        updatedAt: nowIso,
+        slots: nextSlots,
+        movementsHistory: nextHistory,
+      },
+      summary: `Zamieniono palety miejscami: ${fromSlot.code} ⇄ ${toSlot.code}`,
+    };
+  }
+
+  // mode === 'move_all'
+  let movedTotalQty = 0;
+  const movedNames: string[] = [];
+
+  for (const sourceBatch of fromSlot.allocations) {
+    if (sourceBatch.quantity <= 0) continue;
+    movedTotalQty += sourceBatch.quantity;
+    const isCustom = Boolean(sourceBatch.isCustomItem || sourceBatch.productId === 'CUSTOM');
+    const prod = state.products.find((p) => p.id === sourceBatch.productId);
+    movedNames.push(
+      isCustom
+        ? sourceBatch.customName || 'Pozycja ręczna'
+        : prod?.shortName || sourceBatch.productId
+    );
+
+    const existingTarget = toSlot.allocations.find((b) => {
+      if (isCustom) {
+        return b.isCustomItem && (b.customName || '').trim() === (sourceBatch.customName || '').trim();
+      }
+      return (
+        b.productId === sourceBatch.productId &&
+        b.lotNumber === sourceBatch.lotNumber &&
+        b.expiryDate === sourceBatch.expiryDate
+      );
+    });
+
+    if (existingTarget) {
+      existingTarget.quantity += sourceBatch.quantity;
+      existingTarget.updatedAt = nowIso;
+    } else {
+      toSlot.allocations.push({
+        ...sourceBatch,
+        id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        dedicatedForPartnerOnly:
+          toSlot.slotType === 'picking_partner_12m' ? true : sourceBatch.dedicatedForPartnerOnly,
+        updatedAt: nowIso,
+      });
+    }
+  }
+
+  if (fromSlot.customDescription && !toSlot.customDescription) {
+    toSlot.customDescription = fromSlot.customDescription;
+  } else if (fromSlot.customDescription && toSlot.customDescription) {
+    toSlot.customDescription = `${toSlot.customDescription} | ${fromSlot.customDescription}`;
+  }
+
+  fromSlot.allocations = [];
+  fromSlot.customDescription = undefined;
+
+  const labelSummary = movedNames.length > 0 ? movedNames.join(', ') : 'Opis miejsca';
+
+  nextHistory.unshift({
+    id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: nowIso,
+    type: 'MOVE',
+    productId: 'DRAG_MOVE',
+    productName: labelSummary,
+    quantity: movedTotalQty,
+    lotNumber: '-',
+    expiryDate: '-',
+    fromSlotCode: fromSlot.code,
+    toSlotCode: toSlot.code,
+    performedBy,
+    notes: `Przeciągnij i upuść (${fromSlot.code} ➔ ${toSlot.code})`,
+  });
+
+  return {
+    nextState: {
+      ...state,
+      revision: state.revision + 1,
+      updatedAt: nowIso,
+      slots: nextSlots,
+      movementsHistory: nextHistory,
+    },
+    summary: `Przesunięto paletę (${labelSummary}) z ${fromSlot.code} na ${toSlot.code}`,
+  };
+}
+

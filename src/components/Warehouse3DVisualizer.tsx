@@ -6,7 +6,7 @@ import {
   ProductCatalogItem,
 } from '../types/wms';
 import { isEligibleForPartner12Months } from '../utils/wfirmaParser';
-import { Compass, ArrowRight } from 'lucide-react';
+import { Compass, ArrowRight, GripVertical } from 'lucide-react';
 
 interface Warehouse3DVisualizerProps {
   warehouse: SpatialWarehouse;
@@ -14,6 +14,10 @@ interface Warehouse3DVisualizerProps {
   slots: WarehouseLocationSlot[];
   productMap: Map<string, ProductCatalogItem>;
   selectedSlotId: string | null;
+  draggedSlotId?: string | null;
+  onDragStartSlot?: (slotId: string) => void;
+  onDragEndSlot?: () => void;
+  onDropSlot?: (fromSlotId: string, toSlotId: string) => void;
   slotMatchesSearch: (slot: WarehouseLocationSlot) => boolean;
   filterZone: 'ALL' | 'picking' | 'pallet' | 'floor_pallet' | 'short_mhd' | 'custom_items';
   onSelectSlot: (slot: WarehouseLocationSlot) => void;
@@ -25,11 +29,16 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
   slots,
   productMap,
   selectedSlotId,
+  draggedSlotId,
+  onDragStartSlot,
+  onDragEndSlot,
+  onDropSlot,
   slotMatchesSearch,
   filterZone,
   onSelectSlot,
 }) => {
   const [hoveredRackId, setHoveredRackId] = useState<string | null>(null);
+  const [dragOverSlotId, setDragOverSlotId] = useState<string | null>(null);
 
   const allWhRacks = racks.filter((r) => r.warehouseId === warehouse.id);
 
@@ -71,6 +80,37 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
     (acc, s) => acc + s.allocations.reduce((sum, a) => sum + a.quantity, 0),
     0
   );
+
+  // Obsługa Drag & Drop kafelka
+  const handleSlotDragStart = (e: React.DragEvent, slot: WarehouseLocationSlot) => {
+    e.dataTransfer.setData('text/plain', slot.id);
+    e.dataTransfer.effectAllowed = 'move';
+    onDragStartSlot?.(slot.id);
+  };
+
+  const handleSlotDragOver = (e: React.DragEvent, slot: WarehouseLocationSlot) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverSlotId !== slot.id) {
+      setDragOverSlotId(slot.id);
+    }
+  };
+
+  const handleSlotDragLeave = (slot: WarehouseLocationSlot) => {
+    if (dragOverSlotId === slot.id) {
+      setDragOverSlotId(null);
+    }
+  };
+
+  const handleSlotDrop = (e: React.DragEvent, targetSlot: WarehouseLocationSlot) => {
+    e.preventDefault();
+    setDragOverSlotId(null);
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedSlotId;
+    if (sourceId && sourceId !== targetSlot.id) {
+      onDropSlot?.(sourceId, targetSlot.id);
+    }
+    onDragEndSlot?.();
+  };
 
   // Renderuje pojedynczy regał 12-paletowy na planie prostokątnej hali
   const renderRackOnFloorplan = (rack: WarehouseRack) => {
@@ -130,6 +170,10 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                       !(slot.customDescription && slot.customDescription.trim());
                     const isMatched = slotMatchesSearch(slot);
                     const isSelected = selectedSlotId === slot.id;
+                    const isBeingDragged = draggedSlotId === slot.id;
+                    const isDropTarget =
+                      dragOverSlotId === slot.id && draggedSlotId && draggedSlotId !== slot.id;
+
                     const hasCustom =
                       Boolean(slot.customDescription && slot.customDescription.trim()) ||
                       activeAllocs.some((a) => a.isCustomItem || a.productId === 'CUSTOM');
@@ -173,10 +217,29 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                       <button
                         key={slot.id}
                         type="button"
+                        draggable={!isEmpty}
+                        onDragStart={(e) => handleSlotDragStart(e, slot)}
+                        onDragEnd={() => {
+                          setDragOverSlotId(null);
+                          onDragEndSlot?.();
+                        }}
+                        onDragOver={(e) => handleSlotDragOver(e, slot)}
+                        onDragLeave={() => handleSlotDragLeave(slot)}
+                        onDrop={(e) => handleSlotDrop(e, slot)}
                         onClick={() => onSelectSlot(slot)}
-                        title={`${slot.code}: ${rawShortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'})`}
-                        className={`group rounded-lg p-2 border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[64px] ${
-                          isMatched
+                        title={
+                          isEmpty
+                            ? `${slot.code}: Wolne miejsce (Upuść tutaj paletę lub kliknij, aby dodać)`
+                            : `${slot.code}: ${rawShortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'}) — Złap myszką i przeciągnij na inne miejsce!`
+                        }
+                        className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[64px] select-none ${
+                          !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                        } ${
+                          isDropTarget
+                            ? 'bg-cyan-400 text-slate-950 border-white ring-4 ring-cyan-300 scale-105 z-20 shadow-xl'
+                            : isBeingDragged
+                            ? 'opacity-45 border-dashed border-amber-400 ring-2 ring-amber-400 scale-95'
+                            : isMatched
                             ? 'bg-amber-400 text-slate-950 border-white ring-2 ring-amber-300 scale-105 z-10'
                             : isSelected
                             ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300 z-10'
@@ -192,15 +255,22 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1 text-[9px] font-mono font-extrabold">
-                          <span className="opacity-80">M.{String(slot.position).padStart(2, '0')}</span>
+                          <span className="flex items-center gap-0.5 opacity-85">
+                            {!isEmpty && (
+                              <GripVertical className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 shrink-0" />
+                            )}
+                            <span>M.{String(slot.position).padStart(2, '0')}</span>
+                          </span>
                           {!isEmpty && (
-                            <span className="font-black">
-                              {totalQty.toLocaleString('pl-PL')}
-                            </span>
+                            <span className="font-black">{totalQty.toLocaleString('pl-PL')}</span>
                           )}
                         </div>
                         <div className="mt-0.5 leading-tight">
-                          {isEmpty ? (
+                          {isDropTarget ? (
+                            <div className="text-[10px] font-black uppercase tracking-tight text-slate-950">
+                              {isEmpty ? '📥 UPUŚĆ TUTAJ' : '⇄ UPUŚĆ (ZAMIEŃ / POŁĄCZ)'}
+                            </div>
+                          ) : isEmpty ? (
                             <div className="text-[10px] font-semibold opacity-60">Wolne</div>
                           ) : (
                             <>
@@ -252,6 +322,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-300 max-w-4xl">{warehouse.description}</p>
+          </div>
+
+          <div className="px-3.5 py-2 rounded-2xl bg-slate-950/70 border border-teal-500/40 text-xs text-teal-200 font-bold flex items-center gap-2">
+            <span>🖐️</span>
+            <span>Złap myszką dowolny zajęty kafelek i upuść go na inne miejsce (przeciągnij i upuść)</span>
           </div>
         </div>
 
@@ -308,7 +383,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
           <div className="flex items-center gap-2 text-white">
             <Compass className="w-5 h-5 text-teal-400" />
             <h3 className="text-sm font-extrabold uppercase tracking-wider text-teal-300">
-              Wizualizacja Hali — {warehouse.name} (Kliknij dowolne miejsce na regale lub na podłodze, aby edytować lub przesunąć towar)
+              Wizualizacja Hali — {warehouse.name} (Łap i puszczaj palety myszką pomiędzy miejscami lub kliknij, aby edytować)
             </h3>
           </div>
           <span className="text-xs text-slate-400">
@@ -437,6 +512,12 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             !(slot.customDescription && slot.customDescription.trim());
                           const isMatched = slotMatchesSearch(slot);
                           const isSelected = selectedSlotId === slot.id;
+                          const isBeingDragged = draggedSlotId === slot.id;
+                          const isDropTarget =
+                            dragOverSlotId === slot.id &&
+                            draggedSlotId &&
+                            draggedSlotId !== slot.id;
+
                           const hasCustom =
                             Boolean(slot.customDescription && slot.customDescription.trim()) ||
                             activeAllocs.some((a) => a.isCustomItem || a.productId === 'CUSTOM');
@@ -445,17 +526,38 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           const firstProd = firstAlloc
                             ? productMap.get(firstAlloc.productId)
                             : undefined;
-                          const shortLabel = hasCustom
+                          const rawShortLabel = hasCustom
                             ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
-                            : firstProd?.shortName || 'Wolne pole na podłodze';
+                            : (firstProd?.shortName || 'Wolne pole na podłodze')
+                                .replace(/omni[\s-]*biotic®?\s*/gi, '')
+                                .replace(/omni[\s-]*logic®?\s*/gi, '');
+
+                          const parts = rawShortLabel.split('•').map((s) => s.trim());
+                          const primaryType = parts[0] || rawShortLabel;
+                          const variantLabel = parts[1] || '';
 
                           return (
                             <button
                               key={slot.id}
                               type="button"
+                              draggable={!isEmpty}
+                              onDragStart={(e) => handleSlotDragStart(e, slot)}
+                              onDragEnd={() => {
+                                setDragOverSlotId(null);
+                                onDragEndSlot?.();
+                              }}
+                              onDragOver={(e) => handleSlotDragOver(e, slot)}
+                              onDragLeave={() => handleSlotDragLeave(slot)}
+                              onDrop={(e) => handleSlotDrop(e, slot)}
                               onClick={() => onSelectSlot(slot)}
-                              className={`rounded-xl p-2 border-2 text-left transition-all cursor-pointer ${
-                                isMatched
+                              className={`rounded-xl p-2 border-2 text-left transition-all select-none ${
+                                !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                              } ${
+                                isDropTarget
+                                  ? 'bg-cyan-400 text-slate-950 border-white ring-4 ring-cyan-300 scale-105 z-20 shadow-xl'
+                                  : isBeingDragged
+                                  ? 'opacity-45 border-dashed border-amber-400 ring-2 ring-amber-400 scale-95'
+                                  : isMatched
                                   ? 'bg-amber-400 text-slate-950 border-white ring-2 ring-amber-200 scale-105'
                                   : isSelected
                                   ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300'
@@ -465,13 +567,33 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1 text-[10px] font-mono font-black">
-                                <span>POLE #{String(slot.position).padStart(2, '0')}</span>
+                                <span className="flex items-center gap-0.5">
+                                  {!isEmpty && <GripVertical className="w-3 h-3 opacity-70" />}
+                                  <span>POLE #{String(slot.position).padStart(2, '0')}</span>
+                                </span>
                                 <span className="opacity-85">{slot.code}</span>
                               </div>
-                              <div className="text-xs font-extrabold truncate mt-1">
-                                {isEmpty ? '➕ Wolne miejsce podłogowe' : shortLabel}
-                              </div>
-                              {!isEmpty && (
+                              {isDropTarget ? (
+                                <div className="text-xs font-black uppercase mt-1 text-slate-950">
+                                  {isEmpty ? '📥 UPUŚĆ PALETĘ TUTAJ' : '⇄ UPUŚĆ (ZAMIEŃ / POŁĄCZ)'}
+                                </div>
+                              ) : isEmpty ? (
+                                <div className="text-xs font-extrabold mt-1 opacity-75">
+                                  ➕ Wolne miejsce podłogowe
+                                </div>
+                              ) : (
+                                <div className="mt-1 leading-tight">
+                                  <div className="text-xs font-extrabold break-words">
+                                    {primaryType}
+                                  </div>
+                                  {variantLabel && (
+                                    <div className="text-[10px] font-mono font-bold opacity-90">
+                                      {variantLabel}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {!isEmpty && !isDropTarget && (
                                 <div className="flex items-center justify-between text-[10px] font-mono mt-1 text-amber-200 font-bold">
                                   <span>
                                     {totalQty.toLocaleString('pl-PL')}{' '}

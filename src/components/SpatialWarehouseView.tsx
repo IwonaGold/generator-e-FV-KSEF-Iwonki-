@@ -7,7 +7,7 @@ import {
   StockAllocationBatch,
 } from '../types/wms';
 import { getMonthsUntilExpiry, isEligibleForPartner12Months } from '../utils/wfirmaParser';
-import { executeStockTransfer } from '../utils/wmsEngine';
+import { executeStockTransfer, executeSlotDragAndDrop } from '../utils/wmsEngine';
 import { Warehouse3DVisualizer } from './Warehouse3DVisualizer';
 import {
   MapPin,
@@ -49,6 +49,14 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     'ALL' | 'picking' | 'pallet' | 'floor_pallet' | 'short_mhd' | 'custom_items'
   >('ALL');
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+
+  // Stan przeciągania kafelków palet (Drag & Drop - łapię i puszczam)
+  const [draggedSlotId, setDraggedSlotId] = useState<string | null>(null);
+  const [pendingDrop, setPendingDrop] = useState<{
+    fromSlotId: string;
+    toSlotId: string;
+  } | null>(null);
+  const [dropError, setDropError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeWarehouseId) {
@@ -478,6 +486,77 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     setTransferError(null);
   };
 
+  // Obsługa upuszczenia kafelka palety na inne miejsce (Drag & Drop - łapię i puszczam)
+  const handleDropOnSlot = (fromSlotId: string, toSlotId: string) => {
+    setDraggedSlotId(null);
+    setDropError(null);
+    if (!fromSlotId || !toSlotId || fromSlotId === toSlotId) return;
+
+    const fromSlot = state.slots.find((s) => s.id === fromSlotId);
+    const toSlot = state.slots.find((s) => s.id === toSlotId);
+    if (!fromSlot || !toSlot) return;
+
+    const toIsOccupied =
+      toSlot.allocations.some((a) => a.quantity > 0) ||
+      Boolean(toSlot.customDescription && toSlot.customDescription.trim());
+
+    // Jeśli miejsce docelowe jest puste — od razu przenosimy całą paletę jednym ruchem
+    if (!toIsOccupied) {
+      const result = executeSlotDragAndDrop(state, {
+        fromSlotId,
+        toSlotId,
+        mode: 'move_all',
+        performedBy: workstationName,
+      });
+      if (result.error) {
+        alert(result.error);
+        return;
+      }
+      onUpdateState(result.nextState, result.summary || 'Przeniesiono paletę');
+      return;
+    }
+
+    // Jeśli miejsce docelowe jest już zajęte — pokazujemy szybkie okienko wyboru (Zamień miejscami / Połącz / Przenieś część)
+    setPendingDrop({ fromSlotId, toSlotId });
+  };
+
+  const handleExecutePendingDrop = (mode: 'move_all' | 'swap_slots') => {
+    if (!pendingDrop) return;
+    const result = executeSlotDragAndDrop(state, {
+      fromSlotId: pendingDrop.fromSlotId,
+      toSlotId: pendingDrop.toSlotId,
+      mode,
+      performedBy: workstationName,
+    });
+    if (result.error) {
+      setDropError(result.error);
+      return;
+    }
+    onUpdateState(result.nextState, result.summary || 'Przeniesiono paletę');
+    setPendingDrop(null);
+    setDropError(null);
+  };
+
+  const handleOpenPartialTransferFromDrop = () => {
+    if (!pendingDrop) return;
+    const fromSlot = state.slots.find((s) => s.id === pendingDrop.fromSlotId);
+    if (!fromSlot) return;
+    const firstBatch = fromSlot.allocations.find((a) => a.quantity > 0) || null;
+    setSelectedSlotId(fromSlot.id);
+    setSlotDescInput(fromSlot.customDescription || '');
+    setEditingSlotDesc(false);
+    setShowAddBatchForm(false);
+    setEditingBatchId(null);
+    if (firstBatch) {
+      setTransferBatch(firstBatch);
+      setTransferTargetSlotId(pendingDrop.toSlotId);
+      setTransferQty(firstBatch.quantity);
+      setTransferError(null);
+    }
+    setPendingDrop(null);
+    setDropError(null);
+  };
+
   // Zapis edycji ilości / LOT / MHD / opisu ręcznego na gnieździe
   const handleSaveBatchEdit = (batch: StockAllocationBatch) => {
     if (!selectedSlot) return;
@@ -653,9 +732,18 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     setSelectedWarehouseId(wh.id);
                     onSwitchWarehouseTab?.(wh.id);
                   }}
+                  onDragOver={(e) => {
+                    if (draggedSlotId && selectedWarehouseId !== wh.id) {
+                      e.preventDefault();
+                      setSelectedWarehouseId(wh.id);
+                      onSwitchWarehouseTab?.(wh.id);
+                    }
+                  }}
                   className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
                     isSelected
                       ? 'bg-teal-600 text-white shadow-sm ring-2 ring-teal-500/40'
+                      : draggedSlotId
+                      ? 'bg-amber-50 text-amber-900 border border-dashed border-amber-400 hover:bg-amber-100'
                       : 'bg-slate-100 text-slate-700 hover:bg-teal-50 hover:text-teal-900'
                   }`}
                 >
@@ -675,6 +763,12 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
             <button
               type="button"
               onClick={() => setSelectedWarehouseId('ALL')}
+              onDragOver={(e) => {
+                if (draggedSlotId && selectedWarehouseId !== 'ALL') {
+                  e.preventDefault();
+                  setSelectedWarehouseId('ALL');
+                }
+              }}
               className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 selectedWarehouseId === 'ALL'
                   ? 'bg-slate-900 text-white shadow-xs'
@@ -788,6 +882,31 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
             </div>
           </div>
         )}
+
+        {/* Aktywny pasek podpowiedzi podczas przeciągania kafelka palety */}
+        {draggedSlotId && (
+          <div className="p-3 rounded-xl bg-teal-950 text-white border border-teal-500 flex flex-wrap items-center justify-between gap-2 text-xs shadow-md">
+            <div className="flex items-center gap-2 font-bold">
+              <span className="px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 font-extrabold">
+                ✋ PRZECIĄGANIE PALETY
+              </span>
+              <span>
+                Trzymasz kafelek miejsca{' '}
+                <strong className="text-teal-300 font-mono">
+                  {state.slots.find((s) => s.id === draggedSlotId)?.code}
+                </strong>{' '}
+                — upuść go na dowolne wolne lub zajęte miejsce na regale albo na podłodze (możesz też najechać kursorem na zakładkę innego magazynu powyżej!).
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDraggedSlotId(null)}
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold cursor-pointer"
+            >
+              Anuluj
+            </button>
+          </div>
+        )}
       </div>
 
       {/* WIZUALIZACJA PRZESTRZENNA 3D HALI ORAZ KONSTRUKCJI REGAŁÓW Z PALETAMI EURO */}
@@ -802,6 +921,10 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
             selectedSlotId={selectedSlotId}
             slotMatchesSearch={slotMatchesSearch}
             filterZone={filterZone}
+            draggedSlotId={draggedSlotId}
+            onDragStartSlot={(slotId) => setDraggedSlotId(slotId)}
+            onDragEndSlot={() => setDraggedSlotId(null)}
+            onDropSlot={handleDropOnSlot}
             onSelectSlot={(slot) => {
               setSelectedSlotId(slot.id);
               setSlotDescInput(slot.customDescription || '');
@@ -813,6 +936,133 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
           />
         ))}
       </div>
+
+      {/* SZYBKIE OKIENKO WYBORU PO UPUSZCZENIU PALETY NA ZAJĘTE MIEJSCE */}
+      {pendingDrop && (() => {
+        const fromSlot = state.slots.find((s) => s.id === pendingDrop.fromSlotId);
+        const toSlot = state.slots.find((s) => s.id === pendingDrop.toSlotId);
+        if (!fromSlot || !toSlot) return null;
+
+        const describeSlot = (slot: WarehouseLocationSlot) => {
+          const active = slot.allocations.filter((a) => a.quantity > 0);
+          if (active.length > 0) {
+            const b = active[0];
+            const prod = productMap.get(b.productId);
+            const name = b.isCustomItem ? b.customName : prod?.shortName || b.productId;
+            const total = active.reduce((sum, item) => sum + item.quantity, 0);
+            return `${name} (${total} ${b.customUnit || 'szt.'})`;
+          }
+          if (slot.customDescription) return `📝 ${slot.customDescription}`;
+          return 'Puste miejsce';
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-lg w-full border-2 border-teal-500 shadow-2xl overflow-hidden">
+              <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <ArrowRightLeft className="w-5 h-5 text-teal-400" />
+                  <h3 className="text-base font-extrabold">
+                    Upuszczono paletę na zajęte miejsce
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingDrop(null);
+                    setDropError(null);
+                  }}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-2xl bg-teal-50 border border-teal-200">
+                    <div className="text-[10px] font-bold uppercase text-teal-700">
+                      Z miejsca (Przeciągana):
+                    </div>
+                    <div className="font-mono font-extrabold text-sm text-slate-900 mt-0.5">
+                      {fromSlot.code}
+                    </div>
+                    <div className="text-slate-700 font-semibold mt-1">
+                      {describeSlot(fromSlot)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200">
+                    <div className="text-[10px] font-bold uppercase text-amber-800">
+                      Na miejsce (Docelowe):
+                    </div>
+                    <div className="font-mono font-extrabold text-sm text-slate-900 mt-0.5">
+                      {toSlot.code}
+                    </div>
+                    <div className="text-slate-700 font-semibold mt-1">
+                      {describeSlot(toSlot)}
+                    </div>
+                  </div>
+                </div>
+
+                {dropError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs font-bold text-rose-900">
+                    ⚠️ {dropError}
+                  </div>
+                )}
+
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleExecutePendingDrop('swap_slots')}
+                    className="w-full p-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-left transition-colors cursor-pointer flex items-center justify-between shadow-sm"
+                  >
+                    <div>
+                      <div className="text-sm font-extrabold">
+                        ⇄ Zamień palety miejscami ({fromSlot.code} ↔ {toSlot.code})
+                      </div>
+                      <div className="text-[11px] text-indigo-100 mt-0.5">
+                        Paleta z {fromSlot.code} trafi na {toSlot.code}, a paleta z {toSlot.code} na {fromSlot.code}
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExecutePendingDrop('move_all')}
+                    className="w-full p-3.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-left transition-colors cursor-pointer flex items-center justify-between shadow-sm"
+                  >
+                    <div>
+                      <div className="text-sm font-extrabold">
+                        📥 Przenieś wszystko i połącz na miejscu {toSlot.code}
+                      </div>
+                      <div className="text-[11px] text-teal-100 mt-0.5">
+                        Miejsce {fromSlot.code} zostanie opróżnione, a towar dołączy do {toSlot.code}
+                      </div>
+                    </div>
+                  </button>
+
+                  {fromSlot.allocations.some((a) => a.quantity > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleOpenPartialTransferFromDrop}
+                      className="w-full p-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-left transition-colors cursor-pointer flex items-center justify-between border border-slate-300"
+                    >
+                      <div>
+                        <div className="text-xs font-extrabold">
+                          🔢 Przenieś tylko wybraną ilość sztuk...
+                        </div>
+                        <div className="text-[11px] text-slate-600">
+                          Otwórz okienko z wyborem dokładnej liczby sztuk do przeniesienia
+                        </div>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL SZCZEGÓŁÓW WYBRANEGO MIEJSCA PALETOWEGO / GNIAZDA KOMPLETACJI */}
       {selectedSlot && (
