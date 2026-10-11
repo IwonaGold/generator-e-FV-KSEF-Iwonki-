@@ -1,7 +1,7 @@
 import { WMSFullState, WorkstationRole } from '../types/wms';
 import { createInitialWMSState } from './defaultWmsData';
 
-const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v2';
+const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v3';
 const WORKSTATION_ROLE_KEY = 'eubiosis_wms_workstation_role_v1';
 const WORKSTATION_NAME_KEY = 'eubiosis_wms_workstation_name_v1';
 const BROADCAST_CHANNEL_NAME = 'eubiosis_wms_realtime_channel_v2';
@@ -43,8 +43,10 @@ export function loadLocalWMSState(): WMSFullState {
       if (
         parsed &&
         Array.isArray(parsed.warehouses) &&
+        Array.isArray(parsed.racks) &&
         Array.isArray(parsed.slots) &&
-        parsed.warehouses.some((w: any) => w.id === 'wh-mag-4')
+        parsed.warehouses.some((w: any) => w.id === 'wh-mag-4') &&
+        parsed.racks.some((r: any) => r.id === 'rack-m5-floor')
       ) {
         return parsed;
       }
@@ -71,11 +73,17 @@ export async function fetchServerWMSState(): Promise<WMSFullState | null> {
     if (!res.ok) return null;
     const data = await res.json();
     if (data?.state && Array.isArray(data.state.warehouses)) {
-      // Jeśli na serwerze był jeszcze stary układ sprzed podziału na Magazyn 4, 5, 6 — automatycznie zaktualizuj go do Magazynu 4, 5, 6!
-      if (!data.state.warehouses.some((w: any) => w.id === 'wh-mag-4')) {
+      if (
+        !data.state.warehouses.some((w: any) => w.id === 'wh-mag-4') ||
+        !Array.isArray(data.state.racks) ||
+        !data.state.racks.some((r: any) => r.id === 'rack-m5-floor')
+      ) {
         const upgraded = createInitialWMSState();
         upgraded.revision = (data.state.revision || 1) + 1;
-        await pushServerWMSState(upgraded, 'Aktualizacja struktury do Magazynu 4, 5 i 6');
+        await pushServerWMSState(
+          upgraded,
+          'Aktualizacja układu hal: prostokątne hale, brama po lewej, korytarz na środku, regały po bokach i palety na podłodze'
+        );
         return upgraded;
       }
       saveLocalWMSState(data.state);

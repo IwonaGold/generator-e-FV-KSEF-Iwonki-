@@ -138,7 +138,9 @@ export function computeAllProductsSummary(state: WMSFullState): ProductSummaryMe
     const inventoryDiff = totalControlledStock - wfirmaTotal;
     const partnerCoverageDiff = eligibleForPartnerQty - product.wfirmaStockPartner;
 
-    const palletLocs = locs.filter((l) => l.slotType === 'pallet_storage');
+    const palletLocs = locs.filter(
+      (l) => l.slotType === 'pallet_storage' || l.slotType === 'floor_pallet'
+    );
     const suggestedFefoPallet = palletLocs.length > 0 ? palletLocs[0] : null;
     const needsPickingReplenishment =
       palletReserveQty > 0 && totalPickingQty < product.minPickingStock;
@@ -415,7 +417,7 @@ export function executeWarehouseDocument(
             } else {
               if (slot.slotType === 'picking_standard' || slot.slotType === 'shelf_storage') priorityScore = 1;
               else if (slot.slotType === 'quarantine_promo') priorityScore = 2;
-              else if (slot.slotType === 'pallet_storage') priorityScore = 10;
+              else if (slot.slotType === 'pallet_storage' || slot.slotType === 'floor_pallet') priorityScore = 10;
               else if (slot.slotType === 'picking_partner_12m') priorityScore = 20;
             }
 
@@ -447,7 +449,7 @@ export function executeWarehouseDocument(
           cand.batch.updatedAt = nowIso;
           remainingToDeduct -= take;
 
-          if (cand.slot.slotType === 'pallet_storage') {
+          if (cand.slot.slotType === 'pallet_storage' || cand.slot.slotType === 'floor_pallet') {
             warnings.push(
               `Uwaga: W Strefie Kompletacji zabrakło ${take} szt. "${line.product.shortName}" — pobrano automatycznie z miejsca paletowego ${cand.slot.code} (LOT: ${cand.batch.lotNumber}).`
             );
@@ -559,13 +561,16 @@ export function executeWarehouseDocument(
           doc.docType === 'PW'
             ? (item.isPartnerChannel ? s.slotType === 'picking_partner_12m' : s.slotType === 'picking_standard') &&
               s.allocations.some((a) => a.productId === catalogProduct.id)
-            : s.slotType === 'pallet_storage' && s.allocations.some((a) => a.productId === catalogProduct.id)
+            : (s.slotType === 'pallet_storage' || s.slotType === 'floor_pallet') &&
+              s.allocations.some((a) => a.productId === catalogProduct.id)
         );
 
         if (!targetSlot) {
           targetSlot =
             nextSlots.find((s) =>
-              doc.docType === 'PW' ? s.slotType === 'picking_standard' : s.slotType === 'pallet_storage'
+              doc.docType === 'PW'
+                ? s.slotType === 'picking_standard'
+                : s.slotType === 'pallet_storage' || s.slotType === 'floor_pallet'
             ) || nextSlots[0];
         }
 

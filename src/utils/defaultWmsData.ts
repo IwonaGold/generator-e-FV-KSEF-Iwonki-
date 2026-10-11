@@ -994,7 +994,7 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
     code: 'MAG-4',
     name: 'Magazyn 4 — Kompletacja',
     description:
-      'Strefa Kompletacji bieżących zamówień (WZ i RW) oraz przyjęć PW. Zawiera gniazda główne (wspólne dla PL i PARTNER gdy MHD > 12 msc), wydzielone gniazda PARTNER (>12 msc) oraz regały próbek i zestawów.',
+      'Prostokątna hala kompletacji: po lewej stronie Brama, na środku Strefa Przemieszczania się, po bokach regały kompletacyjne (Główne, PARTNER >12m, Próbki, Zestawy) oraz wyznaczone miejsca paletowe na podłodze.',
     hasPickingZone: true,
   },
   {
@@ -1002,7 +1002,7 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
     code: 'MAG-5',
     name: 'Magazyn 5 — Składowanie',
     description:
-      'Magazyn składowania paletowego (zapas główny produktów oraz dostawy PZ). Stąd przesuwamy palety na Magazyn 4 (Kompletację) zgodnie z FEFO.',
+      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się, po obu bokach regały paletowe oraz wydzielone miejsca paletowe bezpośrednio na podłodze.',
     hasPickingZone: false,
   },
   {
@@ -1010,7 +1010,7 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
     code: 'MAG-6',
     name: 'Magazyn 6 — Składowanie',
     description:
-      'Drugi magazyn składowania paletowego (pełne palety z dostaw PZ, zapas rezerwowy oraz inne pozycje / materiały opisywane ręcznie).',
+      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się, po bokach regały paletowe + miejsca paletowe na podłodze (w tym pozycje opisywane ręcznie).',
     hasPickingZone: false,
   },
 ];
@@ -1021,8 +1021,9 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-picking-main',
     warehouseId: 'wh-mag-4',
     code: 'M4-KOMP',
-    name: 'Magazyn 4 — Regał Kompletacji Głównej (Wspólny PL + PARTNER gdy MHD > 12 msc)',
+    name: 'Lewy Bok (Góra) — Regał Kompletacji Głównej (PL + PARTNER gdy MHD > 12 msc)',
     zoneType: 'picking',
+    hallPlacement: 'top_wall',
     levelsCount: 3,
     slotsPerLevel: 6,
     colorTheme: 'emerald',
@@ -1031,8 +1032,9 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-picking-partner',
     warehouseId: 'wh-mag-4',
     code: 'M4-PARTNER',
-    name: 'Magazyn 4 — Gniazda Kompletacji PARTNER (> 12 msc, gdy na głównym jest < 12 msc)',
+    name: 'Lewy Bok (Góra) — Regał Kompletacji PARTNER (> 12 msc)',
     zoneType: 'picking',
+    hallPlacement: 'top_wall',
     levelsCount: 2,
     slotsPerLevel: 4,
     colorTheme: 'violet',
@@ -1041,8 +1043,9 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-samples',
     warehouseId: 'wh-mag-4',
     code: 'M4-PROBKI',
-    name: 'Magazyn 4 — Regał Próbek z Ulotką i Materiałów B2C',
+    name: 'Prawy Bok (Dół) — Regał Próbek z Ulotką i Materiałów B2C',
     zoneType: 'samples_kits',
+    hallPlacement: 'bottom_wall',
     levelsCount: 2,
     slotsPerLevel: 5,
     colorTheme: 'rose',
@@ -1051,10 +1054,22 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-kits-bags',
     warehouseId: 'wh-mag-4',
     code: 'M4-ZESTAWY',
-    name: 'Magazyn 4 — Regał Zestawów Promocyjnych, Toreb i Akcesoriów',
+    name: 'Prawy Bok (Dół) — Regał Zestawów Promocyjnych, Toreb i Akcesoriów',
     zoneType: 'samples_kits',
+    hallPlacement: 'bottom_wall',
     levelsCount: 2,
     slotsPerLevel: 5,
+    colorTheme: 'amber',
+  },
+  {
+    id: 'rack-m4-floor',
+    warehouseId: 'wh-mag-4',
+    code: 'M4-PODLOGA',
+    name: 'Strefa Podłogowa (Magazyn 4) — Miejsca Paletowe na Podłodze',
+    zoneType: 'floor_pallet',
+    hallPlacement: 'floor_zone',
+    levelsCount: 1,
+    slotsPerLevel: 4,
     colorTheme: 'amber',
   },
 
@@ -1063,8 +1078,9 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-m5-pal-a',
     warehouseId: 'wh-mag-5',
     code: 'M5-PAL-A',
-    name: 'Magazyn 5 — Regał Paletowy A (Składowanie OMNi-BiOTiC)',
+    name: 'Lewy Bok (Góra) — Regał Paletowy A (Składowanie OMNi-BiOTiC)',
     zoneType: 'pallet',
+    hallPlacement: 'top_wall',
     levelsCount: 3,
     slotsPerLevel: 5,
     colorTheme: 'blue',
@@ -1073,11 +1089,23 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-m5-pal-b',
     warehouseId: 'wh-mag-5',
     code: 'M5-PAL-B',
-    name: 'Magazyn 5 — Regał Paletowy B (Składowanie OMNi-LOGiC i MikroSan)',
+    name: 'Prawy Bok (Dół) — Regał Paletowy B (Składowanie OMNi-LOGiC i MikroSan)',
     zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
     levelsCount: 3,
     slotsPerLevel: 5,
     colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m5-floor',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-PODLOGA',
+    name: 'Strefa Podłogowa (Magazyn 5) — Miejsca Paletowe na Podłodze',
+    zoneType: 'floor_pallet',
+    hallPlacement: 'floor_zone',
+    levelsCount: 1,
+    slotsPerLevel: 5,
+    colorTheme: 'amber',
   },
 
   // === MAGAZYN 6: SKŁADOWANIE ===
@@ -1085,8 +1113,9 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-m6-pal-a',
     warehouseId: 'wh-mag-6',
     code: 'M6-PAL-A',
-    name: 'Magazyn 6 — Regał Paletowy A (Dostawy PZ / Zapas Paletowy)',
+    name: 'Lewy Bok (Góra) — Regał Paletowy A (Dostawy PZ / Zapas Paletowy)',
     zoneType: 'pallet',
+    hallPlacement: 'top_wall',
     levelsCount: 3,
     slotsPerLevel: 5,
     colorTheme: 'blue',
@@ -1095,9 +1124,21 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     id: 'rack-m6-pal-b',
     warehouseId: 'wh-mag-6',
     code: 'M6-PAL-B',
-    name: 'Magazyn 6 — Regał Paletowy B (Składowanie + Inne rzeczy / Materiały własne)',
+    name: 'Prawy Bok (Dół) — Regał Paletowy B (Zapas + Pozycje własne)',
     zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
     levelsCount: 3,
+    slotsPerLevel: 5,
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m6-floor',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-PODLOGA',
+    name: 'Strefa Podłogowa (Magazyn 6) — Miejsca Paletowe na Podłodze',
+    zoneType: 'floor_pallet',
+    hallPlacement: 'floor_zone',
+    levelsCount: 1,
     slotsPerLevel: 5,
     colorTheme: 'amber',
   },
@@ -1105,8 +1146,8 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
 
 /**
  * Buduje kompletną siatkę miejsc magazynowych (Magazyn 4 - Kompletacja, Magazyn 5 i 6 - Składowanie)
- * wraz z początkową alokacją stanów z zestawienia wFirma na dzień 11-10-2026,
- * oraz przykładowymi pozycjami z ręcznym opisem (inne rzeczy przechowywane na magazynie).
+ * z podziałem na Regały Boczne (Góra/Dół) oraz Miejsca Paletowe na Podłodze (P0),
+ * wraz z początkową alokacją stanów z zestawienia wFirma na dzień 11-10-2026.
  */
 export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[]): WarehouseLocationSlot[] {
   const slots: WarehouseLocationSlot[] = [];
@@ -1126,6 +1167,9 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
         } else if (rack.id === 'rack-picking-partner') {
           slotType = 'picking_partner_12m';
           maxCap = 250;
+        } else if (rack.zoneType === 'floor_pallet' || rack.hallPlacement === 'floor_zone') {
+          slotType = 'floor_pallet';
+          maxCap = 2500;
         } else if (rack.zoneType === 'samples_kits') {
           slotType = 'shelf_storage';
           maxCap = 5000;
@@ -1141,6 +1185,8 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
               ? `Magazyn 4 Kompletacja P${level}-${posStr}`
               : slotType === 'picking_partner_12m'
               ? `Magazyn 4 PARTNER (>12 msc) P${level}-${posStr}`
+              : slotType === 'floor_pallet'
+              ? `Miejsce Paletowe na Podłodze ${rack.code} (Pole #${posStr})`
               : `Miejsce Paletowe ${rack.code} (Poz. ${level}, M.${posStr})`,
           level,
           position: pos,
@@ -1152,7 +1198,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
     }
   }
 
-  // Rozmieść produkty z katalogu na Magazynie 4 (Kompletacja) oraz Magazynach 5 i 6 (Składowanie)
+  // Rozmieść produkty z katalogu na Magazynie 4 (Kompletacja) oraz Magazynach 5 i 6 (Składowanie + Podłoga)
   const pickingMainSlots = slots.filter((s) => s.rackId === 'rack-picking-main');
   const pickingPartnerSlots = slots.filter((s) => s.rackId === 'rack-picking-partner');
   const palletSlots = slots.filter(
@@ -1160,7 +1206,9 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
       s.rackId === 'rack-m5-pal-a' ||
       s.rackId === 'rack-m5-pal-b' ||
       s.rackId === 'rack-m6-pal-a' ||
-      s.rackId === 'rack-m6-pal-b'
+      s.rackId === 'rack-m6-pal-b' ||
+      s.rackId === 'rack-m5-floor' ||
+      s.rackId === 'rack-m6-floor'
   );
   const sampleSlots = slots.filter((s) => s.rackId === 'rack-samples');
   const kitBagSlots = slots.filter((s) => s.rackId === 'rack-kits-bags');
@@ -1316,10 +1364,28 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
     }
   }
 
-  // Przykładowe pozycje z ręcznym opisem (inne rzeczy spoza katalogu produktów wFirma) w Magazynie 6
-  const m6Slots = slots.filter((s) => s.rackId === 'rack-m6-pal-b');
-  if (m6Slots.length >= 2) {
-    const customSlot1 = m6Slots[m6Slots.length - 2];
+  // Przykładowe pozycje na miejscach paletowych na podłodze (w tym opis ręczny)
+  const m4FloorSlots = slots.filter((s) => s.rackId === 'rack-m4-floor');
+  if (m4FloorSlots.length >= 1) {
+    m4FloorSlots[0].customDescription = 'Paleta z kartonami zbiorczymi i wypełniaczem przy strefie pakowania';
+    m4FloorSlots[0].allocations.push({
+      id: 'batch-custom-m4-floor-1',
+      productId: 'CUSTOM',
+      isCustomItem: true,
+      customName: 'Kartony wysyłkowe B2C + rolki folii bąbelkowej i taśmy',
+      customUnit: 'paleta',
+      quantity: 1,
+      lotNumber: '-',
+      expiryDate: '',
+      palletLabel: 'Paleta podłogowa #1 (Pakowanie)',
+      notes: 'Podręczna paleta na podłodze przy strefie kompletacji',
+      updatedAt: nowIso,
+    });
+  }
+
+  const m6FloorSlots = slots.filter((s) => s.rackId === 'rack-m6-floor');
+  if (m6FloorSlots.length >= 2) {
+    const customSlot1 = m6FloorSlots[0];
     customSlot1.customDescription = 'Materiały do pakowania przesyłek kurierskich i paletowych';
     customSlot1.allocations.push({
       id: 'batch-custom-packaging-1',
@@ -1330,13 +1396,13 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
       quantity: 2,
       lotNumber: '-',
       expiryDate: '',
-      palletLabel: 'Materiały opakowaniowe',
+      palletLabel: 'Paleta na podłodze — Opakowania',
       notes: 'Zapas kartonów do wysyłek B2C oraz aptecznych',
       updatedAt: nowIso,
     });
 
-    const customSlot2 = m6Slots[m6Slots.length - 1];
-    customSlot2.customDescription = 'Wyposażenie targowe i konferencyjne';
+    const customSlot2 = m6FloorSlots[1];
+    customSlot2.customDescription = 'Wyposażenie targowe i konferencyjne na podłodze';
     customSlot2.allocations.push({
       id: 'batch-custom-conference-stand',
       productId: 'CUSTOM',
@@ -1346,7 +1412,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
       quantity: 1,
       lotNumber: '-',
       expiryDate: '',
-      palletLabel: 'Sprzęt konferencyjny',
+      palletLabel: 'Paleta na podłodze — Konferencje',
       notes: 'Zwrócone po ostatniej konferencji — gotowe do kolejnego wyjazdu',
       updatedAt: nowIso,
     });

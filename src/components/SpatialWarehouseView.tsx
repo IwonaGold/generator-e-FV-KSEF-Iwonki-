@@ -45,7 +45,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     activeWarehouseId || state.warehouses[0]?.id || 'wh-mag-4'
   );
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterZone, setFilterZone] = useState<'ALL' | 'picking' | 'pallet' | 'short_mhd' | 'custom_items'>('ALL');
+  const [filterZone, setFilterZone] = useState<
+    'ALL' | 'picking' | 'pallet' | 'floor_pallet' | 'short_mhd' | 'custom_items'
+  >('ALL');
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,7 +68,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
   const [newRackWhId, setNewRackWhId] = useState(activeWarehouseId || state.warehouses[0]?.id || 'wh-mag-4');
   const [newRackCode, setNewRackCode] = useState('');
   const [newRackName, setNewRackName] = useState('');
-  const [newRackZoneType, setNewRackZoneType] = useState<'picking' | 'pallet' | 'samples_kits'>('pallet');
+  const [newRackZoneType, setNewRackZoneType] = useState<'picking' | 'pallet' | 'floor_pallet' | 'samples_kits'>('pallet');
+  const [newRackPlacement, setNewRackPlacement] = useState<'top_wall' | 'bottom_wall' | 'floor_zone'>('top_wall');
   const [newRackSlotType, setNewRackSlotType] = useState<WarehouseLocationSlot['slotType']>('pallet_storage');
   const [newRackLevels, setNewRackLevels] = useState(3);
   const [newRackSlotsPerLevel, setNewRackSlotsPerLevel] = useState(5);
@@ -218,29 +221,32 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     setSelectedWarehouseId(id);
   };
 
-  // Dodawanie nowego regału wraz z automatycznym wygenerowaniem miejsc paletowych / półek
+  // Dodawanie nowego regału lub strefy paletowej na podłodze
   const handleCreateRack = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRackCode.trim() || !newRackName.trim()) return;
     const rackId = `rack-${Date.now()}`;
     const code = newRackCode.trim().toUpperCase();
-    const levels = Math.max(1, Math.min(10, Number(newRackLevels) || 1));
-    const slotsPerLvl = Math.max(1, Math.min(20, Number(newRackSlotsPerLevel) || 1));
+    const isFloor = newRackPlacement === 'floor_zone' || newRackSlotType === 'floor_pallet';
+    const levels = isFloor ? 1 : Math.max(1, Math.min(10, Number(newRackLevels) || 1));
+    const slotsPerLvl = Math.max(1, Math.min(25, Number(newRackSlotsPerLevel) || 1));
 
     const newRack: WarehouseRack = {
       id: rackId,
       warehouseId: newRackWhId,
       code,
       name: newRackName.trim(),
-      zoneType: newRackZoneType,
+      zoneType: isFloor ? 'floor_pallet' : newRackZoneType,
+      hallPlacement: isFloor ? 'floor_zone' : newRackPlacement,
       levelsCount: levels,
       slotsPerLevel: slotsPerLvl,
-      colorTheme:
-        newRackSlotType === 'picking_partner_12m'
-          ? 'violet'
-          : newRackSlotType === 'picking_standard'
-          ? 'emerald'
-          : 'blue',
+      colorTheme: isFloor
+        ? 'amber'
+        : newRackSlotType === 'picking_partner_12m'
+        ? 'violet'
+        : newRackSlotType === 'picking_standard'
+        ? 'emerald'
+        : 'blue',
     };
 
     const generatedSlots: WarehouseLocationSlot[] = [];
@@ -252,10 +258,12 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
           warehouseId: newRackWhId,
           rackId,
           code: `${code}-P${lvl}-${posStr}`,
-          name: `${newRackName.trim()} (Poz. ${lvl}, M.${posStr})`,
+          name: isFloor
+            ? `Miejsce Paletowe na Podłodze ${code} (Pole #${posStr})`
+            : `${newRackName.trim()} (Poz. ${lvl}, M.${posStr})`,
           level: lvl,
           position: pos,
-          slotType: newRackSlotType,
+          slotType: isFloor ? 'floor_pallet' : newRackSlotType,
           maxCapacityUnits: Number(newRackMaxCap) || 1000,
           allocations: [],
         });
@@ -726,8 +734,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
           <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
             {[
               { id: 'ALL', label: 'Wszystkie strefy' },
-              { id: 'picking', label: '🎯 Tylko Kompletacja' },
-              { id: 'pallet', label: '📦 Tylko Palety' },
+              { id: 'picking', label: '🎯 Kompletacja' },
+              { id: 'pallet', label: '📦 Regały Paletowe' },
+              { id: 'floor_pallet', label: '🟨 Palety na Podłodze' },
               { id: 'custom_items', label: `📝 Opis ręczny (${spatialStats.customItemsCount})` },
               { id: 'short_mhd', label: '⚠️ Krótka data (<12 msc)' },
             ].map((tab) => (
@@ -1560,49 +1569,77 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Kod regału (np. PAL-D):
+                  Kod regału / strefy (np. M5-PAL-C):
                 </label>
                 <input
                   type="text"
                   value={newRackCode}
                   onChange={(e) => setNewRackCode(e.target.value)}
-                  placeholder="PAL-D"
+                  placeholder="np. M5-PAL-C lub M5-PODLOGA"
                   className="w-full px-3 py-2 text-xs font-mono font-bold border border-slate-300 rounded-xl"
                   required
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Typ miejsc na regale:
+                  Typ miejsc:
                 </label>
                 <select
                   value={newRackSlotType}
                   onChange={(e) => {
                     const val = e.target.value as WarehouseLocationSlot['slotType'];
                     setNewRackSlotType(val);
-                    setNewRackZoneType(
-                      val === 'picking_standard' || val === 'picking_partner_12m'
-                        ? 'picking'
-                        : 'pallet'
-                    );
+                    if (val === 'floor_pallet') {
+                      setNewRackZoneType('floor_pallet');
+                      setNewRackPlacement('floor_zone');
+                      setNewRackLevels(1);
+                    } else if (val === 'picking_standard' || val === 'picking_partner_12m') {
+                      setNewRackZoneType('picking');
+                    } else {
+                      setNewRackZoneType('pallet');
+                    }
                   }}
                   className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl"
                 >
-                  <option value="pallet_storage">📦 Miejsca Paletowe (Zapas PZ)</option>
-                  <option value="picking_standard">🎯 Strefa Kompletacji (Główna)</option>
-                  <option value="picking_partner_12m">🟣 Strefa Kompletacji PARTNER (&gt;12 msc)</option>
+                  <option value="pallet_storage">📦 Regał Paletowy Boczny (Zapas PZ)</option>
+                  <option value="floor_pallet">🟨 Miejsca Paletowe na Podłodze (Posadzka P0)</option>
+                  <option value="picking_standard">🎯 Regał Kompletacji (Główny)</option>
+                  <option value="picking_partner_12m">🟣 Regał Kompletacji PARTNER (&gt;12 msc)</option>
                   <option value="shelf_storage">🗄️ Regał Półkowy (Próbki / Zestawy)</option>
                 </select>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Nazwa regału:</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Położenie w prostokątnej hali (względem bramy po lewej stronie):
+              </label>
+              <select
+                value={newRackPlacement}
+                onChange={(e) => {
+                  const p = e.target.value as 'top_wall' | 'bottom_wall' | 'floor_zone';
+                  setNewRackPlacement(p);
+                  if (p === 'floor_zone') {
+                    setNewRackSlotType('floor_pallet');
+                    setNewRackZoneType('floor_pallet');
+                    setNewRackLevels(1);
+                  }
+                }}
+                className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-slate-50"
+              >
+                <option value="top_wall">⬆️ Bok Górny Hali (Lewa ściana patrząc od bramy)</option>
+                <option value="bottom_wall">⬇️ Bok Dolny Hali (Prawa ściana patrząc od bramy)</option>
+                <option value="floor_zone">🟨 Strefa na Podłodze (Miejsca paletowe na posadzce P0)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Nazwa regału / strefy:</label>
               <input
                 type="text"
                 value={newRackName}
                 onChange={(e) => setNewRackName(e.target.value)}
-                placeholder="np. Regał Paletowy D — Dostawy Nowe"
+                placeholder="np. Lewy Bok — Regał Paletowy C lub Miejsca Paletowe na Podłodze"
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
                 required
               />
@@ -1617,19 +1654,20 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                   type="number"
                   min={1}
                   max={8}
-                  value={newRackLevels}
+                  disabled={newRackPlacement === 'floor_zone' || newRackSlotType === 'floor_pallet'}
+                  value={newRackPlacement === 'floor_zone' || newRackSlotType === 'floor_pallet' ? 1 : newRackLevels}
                   onChange={(e) => setNewRackLevels(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs font-mono font-bold border border-slate-300 rounded-xl"
+                  className="w-full px-3 py-2 text-xs font-mono font-bold border border-slate-300 rounded-xl disabled:bg-slate-100"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Miejsc na poziomie:
+                  Miejsc paletowych:
                 </label>
                 <input
                   type="number"
                   min={1}
-                  max={20}
+                  max={25}
                   value={newRackSlotsPerLevel}
                   onChange={(e) => setNewRackSlotsPerLevel(Number(e.target.value))}
                   className="w-full px-3 py-2 text-xs font-mono font-bold border border-slate-300 rounded-xl"
@@ -1661,7 +1699,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                 type="submit"
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
               >
-                Wygeneruj Regał ({newRackLevels * newRackSlotsPerLevel} miejsc)
+                Wygeneruj ({(newRackPlacement === 'floor_zone' || newRackSlotType === 'floor_pallet' ? 1 : newRackLevels) * newRackSlotsPerLevel} miejsc)
               </button>
             </div>
           </form>

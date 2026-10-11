@@ -61,7 +61,8 @@ export interface StockAllocationBatch {
 export type SlotType =
   | 'picking_standard'     // Strefa Kompletacji — gniazdo główne (wspólne gdy MHD > 12 msc)
   | 'picking_partner_12m'  // Strefa Kompletacji — wydzielone miejsce PARTNER (> 12 msc), gdy zwykłe ma < 12 msc
-  | 'pallet_storage'       // Miejsce Paletowe (zapas magazynowy / dostawy PZ)
+  | 'pallet_storage'       // Miejsce Paletowe na regale (zapas magazynowy / dostawy PZ)
+  | 'floor_pallet'         // Miejsce Paletowe bezpośrednio na podłodze hali (Posadzka P0)
   | 'shelf_storage'        // Regał półkowy (próbki, akcesoria, materiały)
   | 'quarantine_promo';    // Strefa krótkich dat / zestawów promocyjnych
 
@@ -69,7 +70,7 @@ export interface WarehouseLocationSlot {
   id: string;
   warehouseId: string;
   rackId: string;
-  code: string;               // Np. M4-KOMP-P0-01, M5-PAL-A-P0-01, M6-PAL-A-P0-01
+  code: string;               // Np. M4-KOMP-P0-01, M5-PAL-A-P0-01, M5-PODLOGA-P0-01
   name: string;               // Opis gniazda / miejsca paletowego
   customDescription?: string; // Dodatkowy ręczny opis miejsca (np. co tu przechowujemy na stałe)
   level: number;              // Poziom regału (0 = posadzka/dół, 1 = poziom 1, 2 = poziom 2...)
@@ -79,7 +80,9 @@ export interface WarehouseLocationSlot {
   allocations: StockAllocationBatch[];
 }
 
-export type ZoneType = 'picking' | 'pallet' | 'samples_kits';
+export type ZoneType = 'picking' | 'pallet' | 'floor_pallet' | 'samples_kits';
+
+export type HallPlacement = 'top_wall' | 'bottom_wall' | 'floor_zone';
 
 export interface WarehouseRack {
   id: string;
@@ -87,6 +90,7 @@ export interface WarehouseRack {
   code: string;
   name: string;
   zoneType: ZoneType;
+  hallPlacement?: HallPlacement; // Położenie w prostokątnej hali: góra (lewy bok od bramy), dół (prawy bok od bramy) lub podłoga
   levelsCount: number;
   slotsPerLevel: number;
   colorTheme: 'emerald' | 'blue' | 'violet' | 'amber' | 'rose';
