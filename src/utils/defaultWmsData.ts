@@ -994,7 +994,7 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
     code: 'MAG-4',
     name: 'Magazyn 4 — Kompletacja',
     description:
-      'Prostokątna hala kompletacji: po lewej stronie Brama, na środku Strefa Przemieszczania się, po bokach regały kompletacyjne (Główne, PARTNER >12m, Próbki, Zestawy) oraz wyznaczone miejsca paletowe na podłodze.',
+      'Prostokątna hala kompletacji: po lewej stronie Brama, na środku Strefa Przemieszczania się i Pakowania, a po bokach regały kompletacyjne 1–6 (Główne, PARTNER >12m, Próbki, Zestawy).',
     hasPickingZone: true,
   },
   {
@@ -1002,7 +1002,7 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
     code: 'MAG-5',
     name: 'Magazyn 5 — Składowanie',
     description:
-      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się, po obu bokach regały paletowe oraz wydzielone miejsca paletowe bezpośrednio na podłodze.',
+      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się oraz 12 miejsc paletowych na podłodze, po obu bokach regały paletowe 1–6.',
     hasPickingZone: false,
   },
   {
@@ -1010,14 +1010,14 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
     code: 'MAG-6',
     name: 'Magazyn 6 — Składowanie',
     description:
-      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się, po bokach regały paletowe + miejsca paletowe na podłodze (w tym pozycje opisywane ręcznie).',
+      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się oraz 12 miejsc paletowych na podłodze, po obu bokach regały paletowe 1–6.',
     hasPickingZone: false,
   },
 ];
 
 export const DEFAULT_RACKS: WarehouseRack[] = [
   // ============================================================================
-  // MAGAZYN 4 — KOMPLETACJA (Po 3 regały 12-paletowe na stronę + miejsca na podłodze)
+  // MAGAZYN 4 — KOMPLETACJA (Po 3 regały 12-paletowe na stronę — bez miejsc podłogowych)
   // ============================================================================
   // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
@@ -1087,21 +1087,9 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'emerald',
   },
-  // Miejsca paletowe na podłodze w Magazynie 4
-  {
-    id: 'rack-m4-floor',
-    warehouseId: 'wh-mag-4',
-    code: 'M4-PODLOGA',
-    name: 'Miejsca Paletowe na Podłodze (Magazyn 4)',
-    zoneType: 'floor_pallet',
-    hallPlacement: 'floor_zone',
-    levelsCount: 1,
-    slotsPerLevel: 6,
-    colorTheme: 'amber',
-  },
 
   // ============================================================================
-  // MAGAZYN 5 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + miejsca na podłodze)
+  // MAGAZYN 5 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + 12 miejsc na podłodze)
   // ============================================================================
   // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
@@ -1171,21 +1159,21 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'blue',
   },
-  // Miejsca paletowe na podłodze w Magazynie 5
+  // 12 miejsc paletowych na podłodze w Magazynie 5
   {
     id: 'rack-m5-floor',
     warehouseId: 'wh-mag-5',
     code: 'M5-PODLOGA',
-    name: 'Miejsca Paletowe na Podłodze (Magazyn 5)',
+    name: 'Miejsca Paletowe na Podłodze (Magazyn 5 — 12 miejsc)',
     zoneType: 'floor_pallet',
     hallPlacement: 'floor_zone',
     levelsCount: 1,
-    slotsPerLevel: 6,
+    slotsPerLevel: 12,
     colorTheme: 'amber',
   },
 
   // ============================================================================
-  // MAGAZYN 6 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + miejsca na podłodze)
+  // MAGAZYN 6 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + 12 miejsc na podłodze)
   // ============================================================================
   // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
@@ -1255,16 +1243,16 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
     slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'blue',
   },
-  // Miejsca paletowe na podłodze w Magazynie 6
+  // 12 miejsc paletowych na podłodze w Magazynie 6
   {
     id: 'rack-m6-floor',
     warehouseId: 'wh-mag-6',
     code: 'M6-PODLOGA',
-    name: 'Miejsca Paletowe na Podłodze (Magazyn 6)',
+    name: 'Miejsca Paletowe na Podłodze (Magazyn 6 — 12 miejsc)',
     zoneType: 'floor_pallet',
     hallPlacement: 'floor_zone',
     levelsCount: 1,
-    slotsPerLevel: 6,
+    slotsPerLevel: 12,
     colorTheme: 'amber',
   },
 ];
@@ -1484,12 +1472,14 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
     }
   }
 
-  // Przykładowe pozycje na miejscach paletowych na podłodze (w tym opis ręczny)
-  const m4FloorSlots = slots.filter((s) => s.rackId === 'rack-m4-floor');
-  if (m4FloorSlots.length >= 1) {
-    m4FloorSlots[0].customDescription = 'Paleta z kartonami zbiorczymi i wypełniaczem przy strefie pakowania';
-    m4FloorSlots[0].allocations.push({
-      id: 'batch-custom-m4-floor-1',
+  // Przykładowe pozycje na miejscach paletowych na podłodze w Magazynie 5 i 6 (w tym opis ręczny)
+  const m5FloorSlots = slots.filter((s) => s.rackId === 'rack-m5-floor');
+  if (m5FloorSlots.length >= 1) {
+    const targetFloorSlot =
+      m5FloorSlots.find((s) => s.allocations.length === 0) || m5FloorSlots[m5FloorSlots.length - 1];
+    targetFloorSlot.customDescription = 'Paleta z kartonami zbiorczymi i wypełniaczem';
+    targetFloorSlot.allocations.push({
+      id: 'batch-custom-m5-floor-1',
       productId: 'CUSTOM',
       isCustomItem: true,
       customName: 'Kartony wysyłkowe B2C + rolki folii bąbelkowej i taśmy',
@@ -1497,8 +1487,8 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
       quantity: 1,
       lotNumber: '-',
       expiryDate: '',
-      palletLabel: 'Paleta podłogowa #1 (Pakowanie)',
-      notes: 'Podręczna paleta na podłodze przy strefie kompletacji',
+      palletLabel: 'Paleta podłogowa (Magazyn 5)',
+      notes: 'Zapas materiałów do pakowania na podłodze w Magazynie 5',
       updatedAt: nowIso,
     });
   }

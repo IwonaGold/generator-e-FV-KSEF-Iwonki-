@@ -507,12 +507,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         </span>
                       </div>
 
-                      <div
-                        className="grid gap-2.5"
-                        style={{
-                          gridTemplateColumns: `repeat(${Math.max(1, floorSlots.length)}, minmax(120px, 1fr))`,
-                        }}
-                      >
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
                         {floorSlots.map((slot) => {
                           const activeAllocs = slot.allocations.filter((a) => a.quantity > 0);
                           const totalQty = activeAllocs.reduce((acc, a) => acc + a.quantity, 0);

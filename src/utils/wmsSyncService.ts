@@ -21,33 +21,80 @@ function applyCleanProductNames(state: WMSFullState): WMSFullState {
     return prod;
   });
 
+  // Usuń miejsca podłogowe z Magazynu 4 i ustaw dokładnie 12 miejsc podłogowych w Magazynie 5 i 6
+  const updatedRacks = Array.isArray(state.racks)
+    ? state.racks
+        .filter((r) => r.id !== 'rack-m4-floor' && !(r.warehouseId === 'wh-mag-4' && r.zoneType === 'floor_pallet'))
+        .map((r) => {
+          if (r.id === 'rack-m5-floor' || r.id === 'rack-m6-floor') {
+            return {
+              ...r,
+              slotsPerLevel: 12,
+              name:
+                r.id === 'rack-m5-floor'
+                  ? 'Miejsca Paletowe na Podłodze (Magazyn 5 — 12 miejsc)'
+                  : 'Miejsca Paletowe na Podłodze (Magazyn 6 — 12 miejsc)',
+            };
+          }
+          return r;
+        })
+    : state.racks;
+
   const prodById = new Map(updatedProducts.map((p) => [p.id, p]));
-  const updatedSlots = Array.isArray(state.slots)
-    ? state.slots.map((slot) => ({
-        ...slot,
-        allocations: (slot.allocations || []).map((batch) => {
-          if (batch.isCustomItem || batch.productId === 'CUSTOM') return batch;
-          if (batch.unitsPerCarton && batch.unitsPerCarton > 0) return batch;
-          const p = prodById.get(batch.productId);
-          const defaultUpc =
-            p?.category === 'mikrosan'
-              ? 12
-              : p?.category === 'sample'
-              ? 100
-              : 24;
-          return {
-            ...batch,
-            unitsPerCarton: defaultUpc,
-            fullCartonsCount: Math.floor(batch.quantity / defaultUpc),
-            looseUnitsInOpenCarton: batch.quantity % defaultUpc,
-          };
-        }),
-      }))
+  let updatedSlots = Array.isArray(state.slots)
+    ? state.slots
+        .filter((s) => s.rackId !== 'rack-m4-floor' && !(s.warehouseId === 'wh-mag-4' && s.slotType === 'floor_pallet'))
+        .map((slot) => ({
+          ...slot,
+          allocations: (slot.allocations || []).map((batch) => {
+            if (batch.isCustomItem || batch.productId === 'CUSTOM') return batch;
+            if (batch.unitsPerCarton && batch.unitsPerCarton > 0) return batch;
+            const p = prodById.get(batch.productId);
+            const defaultUpc =
+              p?.category === 'mikrosan'
+                ? 12
+                : p?.category === 'sample'
+                ? 100
+                : 24;
+            return {
+              ...batch,
+              unitsPerCarton: defaultUpc,
+              fullCartonsCount: Math.floor(batch.quantity / defaultUpc),
+              looseUnitsInOpenCarton: batch.quantity % defaultUpc,
+            };
+          }),
+        }))
     : state.slots;
+
+  // Dopilnuj aby w Magazynie 5 i Magazynie 6 było po 12 miejsc paletowych na podłodze (Pole #01..#12)
+  for (const floorConf of [
+    { rackId: 'rack-m5-floor', whId: 'wh-mag-5', codePrefix: 'M5-PODLOGA' },
+    { rackId: 'rack-m6-floor', whId: 'wh-mag-6', codePrefix: 'M6-PODLOGA' },
+  ]) {
+    for (let pos = 1; pos <= 12; pos++) {
+      const slotId = `slot-${floorConf.rackId}-0-${pos}`;
+      if (!updatedSlots.some((s) => s.id === slotId)) {
+        const posStr = String(pos).padStart(2, '0');
+        updatedSlots.push({
+          id: slotId,
+          warehouseId: floorConf.whId,
+          rackId: floorConf.rackId,
+          code: `${floorConf.codePrefix}-P0-${posStr}`,
+          name: `Miejsce Paletowe na Podłodze ${floorConf.codePrefix} (Pole #${posStr})`,
+          level: 0,
+          position: pos,
+          slotType: 'floor_pallet',
+          maxCapacityUnits: 2500,
+          allocations: [],
+        });
+      }
+    }
+  }
 
   return {
     ...state,
     products: updatedProducts,
+    racks: updatedRacks,
     slots: updatedSlots,
   };
 }
