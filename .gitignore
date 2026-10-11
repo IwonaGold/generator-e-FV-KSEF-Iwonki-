@@ -1,0 +1,6 @@
+node_modules/
+wms-state-backup.json
+data_backup/
+update_temp/
+update_temp.zip
+.DS_Store

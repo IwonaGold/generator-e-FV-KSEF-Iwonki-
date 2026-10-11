@@ -1,0 +1,22 @@
+======================================================================
+  INSTRUKCJA OBSŁUGI I INSTALACJI: MAGAZYN PRZESTRZENNY WMS EUBIOSIS
+======================================================================
+
+1. URUCHAMIANIE APLIKACJI:
+   - Kliknij dwukrotnie plik "URUCHOM_MAGAZYN.bat" (lub skrót "Magazyn Przestrzenny WMS" na Pulpicie).
+   - Aplikacja działa na porcie 3005 (http://localhost:3005), dzięki czemu może być uruchomiona
+     równolegle z aplikacją "Centrum Realizacji Zamówień Sieciowych" (która działa na porcie 3000).
+
+2. PRACA NA 2 STANOWISKACH PO WI-FI (KOORDYNATOR + MAGAZYN):
+   - Uruchom aplikację na głównym komputerze.
+   - Kliknij w prawym górnym rogu przycisk "Wi-Fi Sync & Kopia Danych".
+   - Zobaczysz adres sieciowy (np. http://192.168.1.XX:3005).
+   - Wpisz ten adres w przeglądarce na drugim komputerze lub tablecie na Magazynie (połączonym z tym samym Wi-Fi)
+     i przełącz w górnym pasku na "Stanowisko 2: Magazyn".
+   - Wszystkie przesunięcia palet, zatwierdzenia WZ/RW/PZ/PW oraz stany odświeżają się na żywo!
+
+3. PRZENOSZENIE NA KOMPUTER W PRACY:
+   - Skopiuj cały folder "MAGAZYN_WMS" na pendrive lub dysk.
+   - Na komputerze w pracy uruchom raz plik "INSTALUJ_W_PRACY.bat", który utworzy skrót na Pulpicie.
+   - W każdej chwili możesz też pobrać pełną kopię bazy (.json) przyciskiem "Pobierz bazę magazynu (.json)"
+     i wgrać ją na innym komputerze.
