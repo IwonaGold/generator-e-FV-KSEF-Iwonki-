@@ -1,7 +1,7 @@
 import { WMSFullState, WorkstationRole } from '../types/wms';
 import { createInitialWMSState } from './defaultWmsData';
 
-const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v3';
+const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v4';
 const WORKSTATION_ROLE_KEY = 'eubiosis_wms_workstation_role_v1';
 const WORKSTATION_NAME_KEY = 'eubiosis_wms_workstation_name_v1';
 const BROADCAST_CHANNEL_NAME = 'eubiosis_wms_realtime_channel_v2';
@@ -46,7 +46,7 @@ export function loadLocalWMSState(): WMSFullState {
         Array.isArray(parsed.racks) &&
         Array.isArray(parsed.slots) &&
         parsed.warehouses.some((w: any) => w.id === 'wh-mag-4') &&
-        parsed.racks.some((r: any) => r.id === 'rack-m5-floor')
+        parsed.racks.some((r: any) => r.id === 'rack-m5-r1')
       ) {
         return parsed;
       }
@@ -76,13 +76,13 @@ export async function fetchServerWMSState(): Promise<WMSFullState | null> {
       if (
         !data.state.warehouses.some((w: any) => w.id === 'wh-mag-4') ||
         !Array.isArray(data.state.racks) ||
-        !data.state.racks.some((r: any) => r.id === 'rack-m5-floor')
+        !data.state.racks.some((r: any) => r.id === 'rack-m5-r1')
       ) {
         const upgraded = createInitialWMSState();
         upgraded.revision = (data.state.revision || 1) + 1;
         await pushServerWMSState(
           upgraded,
-          'Aktualizacja układu hal: prostokątne hale, brama po lewej, korytarz na środku, regały po bokach i palety na podłodze'
+          'Aktualizacja układu hal: po 3 regały 12-paletowe na stronę (Regał 1, 2, 3 oraz Regał 4, 5, 6 od lewej) + miejsca na podłodze'
         );
         return upgraded;
       }

@@ -241,16 +241,15 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b-2 border-orange-500/80">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-md bg-orange-500 text-slate-950 font-mono text-xs font-black">
-              REGAŁ {rack.code}
+              {rack.name.split('(')[0].trim().toUpperCase()}
             </span>
-            <span className="text-xs font-extrabold text-white">{rack.name}</span>
+            <span className="text-[11px] font-bold text-slate-200 truncate">
+              {rack.code}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span className="px-2 py-0.5 rounded bg-slate-900 text-teal-300 text-[10px] font-mono border border-slate-700">
-              {sideLabel}
-            </span>
-            <span className="text-[11px] font-mono text-slate-300">
-              {rack.levelsCount} poz. × {rack.slotsPerLevel} miejsc
+              {rack.levelsCount * rack.slotsPerLevel} palet ({rack.levelsCount}×{rack.slotsPerLevel})
             </span>
           </div>
         </div>
@@ -731,11 +730,16 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           : 'bg-orange-500 text-slate-950'
                       }`}
                     >
-                      {isFloorZone ? `PODŁOGA ${rack.code}` : `REGAŁ ${rack.code}`}
+                      {isFloorZone
+                        ? `PODŁOGA (${rack.code})`
+                        : rack.name.split('(')[0].trim().toUpperCase()}
                     </div>
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-base font-extrabold text-white">{rack.name}</h3>
+                        <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] font-mono text-amber-300">
+                          {rack.code}
+                        </span>
                         <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-600 text-[11px] font-bold text-teal-300">
                           {placementBadge}
                         </span>
@@ -747,7 +751,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           ? '🟣 Regał Kompletacji PARTNER (> 12 msc) — wydzielone palety i kartony z długą datą ważności'
                           : isPickingRack
                           ? '🎯 Regał Kompletacji Głównej (Magazyn 4) — stąd schodzą bieżące wydania WZ i RW'
-                          : '🏭 Regał Paletowy Boczny — kliknij na dowolną paletę EURO, aby przesunąć lub edytować towar'}
+                          : '🏭 Regał Paletowy 12-miejscowy — kliknij na dowolną paletę EURO, aby przesunąć lub edytować towar'}
                       </p>
                     </div>
                   </div>
@@ -756,7 +760,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                     <span className="px-3 py-1 rounded-lg bg-slate-800 border border-slate-600 text-xs font-mono text-amber-300 font-bold">
                       {isFloorZone
                         ? `Posadzka P0: ${rack.slotsPerLevel} miejsc paletowych na podłodze`
-                        : `Konstrukcja: ${rack.levelsCount} poziomy × ${rack.slotsPerLevel} gniazd`}
+                        : `${rack.levelsCount * rack.slotsPerLevel} miejsc paletowych (${rack.levelsCount} poziomy × ${rack.slotsPerLevel} gniazda)`}
                     </span>
                   </div>
                 </div>

@@ -1016,137 +1016,261 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
 ];
 
 export const DEFAULT_RACKS: WarehouseRack[] = [
-  // === MAGAZYN 4: KOMPLETACJA ===
+  // ============================================================================
+  // MAGAZYN 4 — KOMPLETACJA (Po 3 regały 12-paletowe na stronę + miejsca na podłodze)
+  // ============================================================================
+  // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
-    id: 'rack-picking-main',
+    id: 'rack-m4-r1',
     warehouseId: 'wh-mag-4',
-    code: 'M4-KOMP',
-    name: 'Lewy Bok (Góra) — Regał Kompletacji Głównej (PL + PARTNER gdy MHD > 12 msc)',
+    code: 'M4-R1',
+    name: 'Regał 1 (Kompletacja Główna)',
     zoneType: 'picking',
     hallPlacement: 'top_wall',
-    levelsCount: 3,
-    slotsPerLevel: 6,
+    levelsCount: 4,
+    slotsPerLevel: 3, // 4 poziomy × 3 miejsca = 12 miejsc paletowych
     colorTheme: 'emerald',
   },
   {
-    id: 'rack-picking-partner',
+    id: 'rack-m4-r2',
     warehouseId: 'wh-mag-4',
-    code: 'M4-PARTNER',
-    name: 'Lewy Bok (Góra) — Regał Kompletacji PARTNER (> 12 msc)',
+    code: 'M4-R2',
+    name: 'Regał 2 (Kompletacja Główna)',
     zoneType: 'picking',
     hallPlacement: 'top_wall',
-    levelsCount: 2,
-    slotsPerLevel: 4,
-    colorTheme: 'violet',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'emerald',
   },
   {
-    id: 'rack-samples',
+    id: 'rack-m4-r3',
     warehouseId: 'wh-mag-4',
-    code: 'M4-PROBKI',
-    name: 'Prawy Bok (Dół) — Regał Próbek z Ulotką i Materiałów B2C',
+    code: 'M4-R3',
+    name: 'Regał 3 (Kompletacja PARTNER >12 msc)',
+    zoneType: 'picking',
+    hallPlacement: 'top_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'violet',
+  },
+  // Bok Dolny (od lewej strony od bramy: Regał 4, Regał 5, Regał 6)
+  {
+    id: 'rack-m4-r4',
+    warehouseId: 'wh-mag-4',
+    code: 'M4-R4',
+    name: 'Regał 4 (Próbki z Ulotką i B2C)',
     zoneType: 'samples_kits',
     hallPlacement: 'bottom_wall',
-    levelsCount: 2,
-    slotsPerLevel: 5,
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'rose',
   },
   {
-    id: 'rack-kits-bags',
+    id: 'rack-m4-r5',
     warehouseId: 'wh-mag-4',
-    code: 'M4-ZESTAWY',
-    name: 'Prawy Bok (Dół) — Regał Zestawów Promocyjnych, Toreb i Akcesoriów',
+    code: 'M4-R5',
+    name: 'Regał 5 (Zestawy Promocyjne i Akcesoria)',
     zoneType: 'samples_kits',
     hallPlacement: 'bottom_wall',
-    levelsCount: 2,
-    slotsPerLevel: 5,
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'amber',
   },
+  {
+    id: 'rack-m4-r6',
+    warehouseId: 'wh-mag-4',
+    code: 'M4-R6',
+    name: 'Regał 6 (Kompletacja Rezerwowa)',
+    zoneType: 'picking',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'emerald',
+  },
+  // Miejsca paletowe na podłodze w Magazynie 4
   {
     id: 'rack-m4-floor',
     warehouseId: 'wh-mag-4',
     code: 'M4-PODLOGA',
-    name: 'Strefa Podłogowa (Magazyn 4) — Miejsca Paletowe na Podłodze',
+    name: 'Miejsca Paletowe na Podłodze (Magazyn 4)',
     zoneType: 'floor_pallet',
     hallPlacement: 'floor_zone',
     levelsCount: 1,
-    slotsPerLevel: 4,
+    slotsPerLevel: 6,
     colorTheme: 'amber',
   },
 
-  // === MAGAZYN 5: SKŁADOWANIE ===
+  // ============================================================================
+  // MAGAZYN 5 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + miejsca na podłodze)
+  // ============================================================================
+  // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
-    id: 'rack-m5-pal-a',
+    id: 'rack-m5-r1',
     warehouseId: 'wh-mag-5',
-    code: 'M5-PAL-A',
-    name: 'Lewy Bok (Góra) — Regał Paletowy A (Składowanie OMNi-BiOTiC)',
+    code: 'M5-R1',
+    name: 'Regał 1 (12-paletowy)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 3,
-    slotsPerLevel: 5,
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'blue',
   },
   {
-    id: 'rack-m5-pal-b',
+    id: 'rack-m5-r2',
     warehouseId: 'wh-mag-5',
-    code: 'M5-PAL-B',
-    name: 'Prawy Bok (Dół) — Regał Paletowy B (Składowanie OMNi-LOGiC i MikroSan)',
+    code: 'M5-R2',
+    name: 'Regał 2 (12-paletowy)',
     zoneType: 'pallet',
-    hallPlacement: 'bottom_wall',
-    levelsCount: 3,
-    slotsPerLevel: 5,
+    hallPlacement: 'top_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'blue',
   },
+  {
+    id: 'rack-m5-r3',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-R3',
+    name: 'Regał 3 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'top_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  // Bok Dolny (od lewej strony od bramy: Regał 4, Regał 5, Regał 6)
+  {
+    id: 'rack-m5-r4',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-R4',
+    name: 'Regał 4 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m5-r5',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-R5',
+    name: 'Regał 5 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m5-r6',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-R6',
+    name: 'Regał 6 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  // Miejsca paletowe na podłodze w Magazynie 5
   {
     id: 'rack-m5-floor',
     warehouseId: 'wh-mag-5',
     code: 'M5-PODLOGA',
-    name: 'Strefa Podłogowa (Magazyn 5) — Miejsca Paletowe na Podłodze',
+    name: 'Miejsca Paletowe na Podłodze (Magazyn 5)',
     zoneType: 'floor_pallet',
     hallPlacement: 'floor_zone',
     levelsCount: 1,
-    slotsPerLevel: 5,
+    slotsPerLevel: 6,
     colorTheme: 'amber',
   },
 
-  // === MAGAZYN 6: SKŁADOWANIE ===
+  // ============================================================================
+  // MAGAZYN 6 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + miejsca na podłodze)
+  // ============================================================================
+  // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
-    id: 'rack-m6-pal-a',
+    id: 'rack-m6-r1',
     warehouseId: 'wh-mag-6',
-    code: 'M6-PAL-A',
-    name: 'Lewy Bok (Góra) — Regał Paletowy A (Dostawy PZ / Zapas Paletowy)',
+    code: 'M6-R1',
+    name: 'Regał 1 (12-paletowy)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 3,
-    slotsPerLevel: 5,
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'blue',
   },
   {
-    id: 'rack-m6-pal-b',
+    id: 'rack-m6-r2',
     warehouseId: 'wh-mag-6',
-    code: 'M6-PAL-B',
-    name: 'Prawy Bok (Dół) — Regał Paletowy B (Zapas + Pozycje własne)',
+    code: 'M6-R2',
+    name: 'Regał 2 (12-paletowy)',
     zoneType: 'pallet',
-    hallPlacement: 'bottom_wall',
-    levelsCount: 3,
-    slotsPerLevel: 5,
+    hallPlacement: 'top_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
     colorTheme: 'blue',
   },
+  {
+    id: 'rack-m6-r3',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-R3',
+    name: 'Regał 3 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'top_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  // Bok Dolny (od lewej strony od bramy: Regał 4, Regał 5, Regał 6)
+  {
+    id: 'rack-m6-r4',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-R4',
+    name: 'Regał 4 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m6-r5',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-R5',
+    name: 'Regał 5 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m6-r6',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-R6',
+    name: 'Regał 6 (12-paletowy)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 4,
+    slotsPerLevel: 3, // 12 miejsc paletowych
+    colorTheme: 'blue',
+  },
+  // Miejsca paletowe na podłodze w Magazynie 6
   {
     id: 'rack-m6-floor',
     warehouseId: 'wh-mag-6',
     code: 'M6-PODLOGA',
-    name: 'Strefa Podłogowa (Magazyn 6) — Miejsca Paletowe na Podłodze',
+    name: 'Miejsca Paletowe na Podłodze (Magazyn 6)',
     zoneType: 'floor_pallet',
     hallPlacement: 'floor_zone',
     levelsCount: 1,
-    slotsPerLevel: 5,
+    slotsPerLevel: 6,
     colorTheme: 'amber',
   },
 ];
 
 /**
- * Buduje kompletną siatkę miejsc magazynowych (Magazyn 4 - Kompletacja, Magazyn 5 i 6 - Składowanie)
- * z podziałem na Regały Boczne (Góra/Dół) oraz Miejsca Paletowe na Podłodze (P0),
+ * Buduje kompletną siatkę miejsc magazynowych (Magazyn 4, 5, 6 — po 3 regały 12-paletowe na stronę + miejsca na podłodze)
  * wraz z początkową alokacją stanów z zestawienia wFirma na dzień 11-10-2026.
  */
 export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[]): WarehouseLocationSlot[] {
@@ -1161,10 +1285,10 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
         let slotType: WarehouseLocationSlot['slotType'] = 'pallet_storage';
         let maxCap = 2000;
 
-        if (rack.id === 'rack-picking-main') {
+        if (rack.id === 'rack-m4-r1' || rack.id === 'rack-m4-r2' || rack.id === 'rack-m4-r6') {
           slotType = 'picking_standard';
           maxCap = 300;
-        } else if (rack.id === 'rack-picking-partner') {
+        } else if (rack.id === 'rack-m4-r3') {
           slotType = 'picking_partner_12m';
           maxCap = 250;
         } else if (rack.zoneType === 'floor_pallet' || rack.hallPlacement === 'floor_zone') {
@@ -1182,12 +1306,12 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
           code: slotCode,
           name:
             slotType === 'picking_standard'
-              ? `Magazyn 4 Kompletacja P${level}-${posStr}`
+              ? `${rack.name} — P${level}-${posStr}`
               : slotType === 'picking_partner_12m'
-              ? `Magazyn 4 PARTNER (>12 msc) P${level}-${posStr}`
+              ? `${rack.name} — P${level}-${posStr}`
               : slotType === 'floor_pallet'
               ? `Miejsce Paletowe na Podłodze ${rack.code} (Pole #${posStr})`
-              : `Miejsce Paletowe ${rack.code} (Poz. ${level}, M.${posStr})`,
+              : `${rack.name} — Poziom P${level}, Miejsce ${posStr}`,
           level,
           position: pos,
           slotType,
@@ -1198,20 +1322,16 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
     }
   }
 
-  // Rozmieść produkty z katalogu na Magazynie 4 (Kompletacja) oraz Magazynach 5 i 6 (Składowanie + Podłoga)
-  const pickingMainSlots = slots.filter((s) => s.rackId === 'rack-picking-main');
-  const pickingPartnerSlots = slots.filter((s) => s.rackId === 'rack-picking-partner');
-  const palletSlots = slots.filter(
-    (s) =>
-      s.rackId === 'rack-m5-pal-a' ||
-      s.rackId === 'rack-m5-pal-b' ||
-      s.rackId === 'rack-m6-pal-a' ||
-      s.rackId === 'rack-m6-pal-b' ||
-      s.rackId === 'rack-m5-floor' ||
-      s.rackId === 'rack-m6-floor'
+  // Rozmieść produkty z katalogu na Magazynie 4 (Kompletacja) oraz Magazynach 5 i 6 (Regały 1-6 + Podłoga)
+  const pickingMainSlots = slots.filter(
+    (s) => s.rackId === 'rack-m4-r1' || s.rackId === 'rack-m4-r2' || s.rackId === 'rack-m4-r6'
   );
-  const sampleSlots = slots.filter((s) => s.rackId === 'rack-samples');
-  const kitBagSlots = slots.filter((s) => s.rackId === 'rack-kits-bags');
+  const pickingPartnerSlots = slots.filter((s) => s.rackId === 'rack-m4-r3');
+  const palletSlots = slots.filter(
+    (s) => s.warehouseId === 'wh-mag-5' || s.warehouseId === 'wh-mag-6'
+  );
+  const sampleSlots = slots.filter((s) => s.rackId === 'rack-m4-r4');
+  const kitBagSlots = slots.filter((s) => s.rackId === 'rack-m4-r5');
 
   let mainPickIdx = 0;
   let partnerPickIdx = 0;
@@ -1243,7 +1363,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
           expiryDate: '2027-05-31',
           dedicatedForPartnerOnly: false,
           palletLabel: 'Karton Kompletacyjny (Krótka data <12m)',
-          notes: 'Partia poniżej 12 msc — tylko dla zamówień standardowych/sklepu. Partnerzy pobierają z M4-PARTNER!',
+          notes: 'Partia poniżej 12 msc — tylko dla zamówień standardowych/sklepu. Partnerzy pobierają z Regału 3 (PARTNER)!',
           updatedAt: nowIso,
         });
 
@@ -1256,7 +1376,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
           lotNumber: `LOT-26P${200 + i}`,
           expiryDate: '2028-04-30',
           dedicatedForPartnerOnly: true,
-          palletLabel: 'Gniazdo PARTNER (>12 msc)',
+          palletLabel: 'Regał 3 — Gniazdo PARTNER (>12 msc)',
           notes: 'Wydzielona partia dla Partnerów (powyżej 12 miesięcy ważności)',
           updatedAt: nowIso,
         });
