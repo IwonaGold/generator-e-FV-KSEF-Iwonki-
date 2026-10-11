@@ -1299,7 +1299,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         <span className="text-[10px] font-bold text-slate-500 mr-1">
                           Szybkie pakowanie:
                         </span>
-                        {[12, 20, 24, 30, 48, 100].map((preset) => (
+                        {[9, 12, 27, 45, 51, 54, 63, 72, 80, 81, 135].map((preset) => (
                           <button
                             key={preset}
                             type="button"
@@ -1327,19 +1327,52 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         <label className="block text-[10px] font-bold text-slate-700 mb-1">
                           1. Ilość pełnych kartonów:
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={allocFullCartons}
-                          onChange={(e) => {
-                            const fc = Math.max(0, Number(e.target.value) || 0);
-                            setAllocFullCartons(fc);
-                            if (allocUnitsPerCarton > 0) {
-                              setAllocQty(fc * allocUnitsPerCarton + allocLooseUnits);
-                            }
-                          }}
-                          className="w-full px-3 py-2 text-xs font-mono font-extrabold bg-teal-50/50 border border-teal-300 rounded-xl"
-                        />
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const fc = Math.max(0, allocFullCartons - 1);
+                              setAllocFullCartons(fc);
+                              if (allocUnitsPerCarton > 0) {
+                                setAllocQty(fc * allocUnitsPerCarton + allocLooseUnits);
+                              }
+                            }}
+                            className="px-2 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-xs font-black cursor-pointer border border-slate-300"
+                            title="Odejmij 1 pełny karton"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={allocFullCartons === 0 ? '' : allocFullCartons}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const fc = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                              setAllocFullCartons(fc);
+                              if (allocUnitsPerCarton > 0) {
+                                setAllocQty(fc * allocUnitsPerCarton + allocLooseUnits);
+                              }
+                            }}
+                            className="w-full px-2.5 py-2 text-xs font-mono font-extrabold bg-teal-50/50 border border-teal-300 rounded-xl text-center"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const fc = allocFullCartons + 1;
+                              setAllocFullCartons(fc);
+                              if (allocUnitsPerCarton > 0) {
+                                setAllocQty(fc * allocUnitsPerCarton + allocLooseUnits);
+                              }
+                            }}
+                            className="px-2 py-2 rounded-lg bg-teal-100 hover:bg-teal-200 text-teal-900 font-mono text-xs font-black cursor-pointer border border-teal-300"
+                            title="Dodaj 1 pełny karton"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
 
                       <div>
@@ -1349,9 +1382,12 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         <input
                           type="number"
                           min={0}
-                          value={allocUnitsPerCarton}
+                          placeholder="np. 51"
+                          value={allocUnitsPerCarton === 0 ? '' : allocUnitsPerCarton}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => {
-                            const upc = Math.max(0, Number(e.target.value) || 0);
+                            const raw = e.target.value;
+                            const upc = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
                             setAllocUnitsPerCarton(upc);
                             if (upc > 0) {
                               setAllocQty(allocFullCartons * upc + allocLooseUnits);
@@ -1362,22 +1398,71 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-700 mb-1">
-                          3. W otwartym kartonie (szt.):
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={allocLooseUnits}
-                          onChange={(e) => {
-                            const loose = Math.max(0, Number(e.target.value) || 0);
-                            setAllocLooseUnits(loose);
-                            if (allocUnitsPerCarton > 0) {
-                              setAllocQty(allocFullCartons * allocUnitsPerCarton + loose);
-                            }
-                          }}
-                          className="w-full px-3 py-2 text-xs font-mono font-extrabold bg-amber-50/70 border border-amber-300 rounded-xl"
-                        />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[10px] font-bold text-slate-700">
+                            3. W otwartym kartonie:
+                          </label>
+                          {allocLooseUnits > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAllocLooseUnits(0);
+                                if (allocUnitsPerCarton > 0) {
+                                  setAllocQty(allocFullCartons * allocUnitsPerCarton);
+                                }
+                              }}
+                              className="text-[9px] font-extrabold text-rose-600 hover:underline cursor-pointer"
+                            >
+                              ✕ Brak otw.
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const loose = Math.max(0, allocLooseUnits - 1);
+                              setAllocLooseUnits(loose);
+                              if (allocUnitsPerCarton > 0) {
+                                setAllocQty(allocFullCartons * allocUnitsPerCarton + loose);
+                              }
+                            }}
+                            className="px-2 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-xs font-black cursor-pointer border border-slate-300"
+                            title="Odejmij 1 szt. z otwartego kartonu"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="Brak (0)"
+                            value={allocLooseUnits === 0 ? '' : allocLooseUnits}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const loose = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                              setAllocLooseUnits(loose);
+                              if (allocUnitsPerCarton > 0) {
+                                setAllocQty(allocFullCartons * allocUnitsPerCarton + loose);
+                              }
+                            }}
+                            className="w-full px-2.5 py-2 text-xs font-mono font-extrabold bg-amber-50/70 border border-amber-300 rounded-xl text-center placeholder:text-slate-400 placeholder:font-normal"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const loose = allocLooseUnits + 1;
+                              setAllocLooseUnits(loose);
+                              if (allocUnitsPerCarton > 0) {
+                                setAllocQty(allocFullCartons * allocUnitsPerCarton + loose);
+                              }
+                            }}
+                            className="px-2 py-2 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-mono text-xs font-black cursor-pointer border border-amber-300"
+                            title="Dodaj 1 szt. w otwartym kartonie"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
 
                       <div>
@@ -1387,9 +1472,12 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         <input
                           type="number"
                           min={1}
-                          value={allocQty}
+                          placeholder="0"
+                          value={allocQty === 0 ? '' : allocQty}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => {
-                            const total = Math.max(1, Number(e.target.value) || 1);
+                            const raw = e.target.value;
+                            const total = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
                             setAllocQty(total);
                             if (allocUnitsPerCarton > 0) {
                               setAllocFullCartons(Math.floor(total / allocUnitsPerCarton));
@@ -1600,39 +1688,120 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         <label className="block text-[10px] font-bold text-indigo-900 mb-1">
                           Przesuń pełnych kartonów (po {transferBatch.unitsPerCarton} szt.):
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={transferFullCartons}
-                          onChange={(e) => {
-                            const fc = Math.max(0, Number(e.target.value) || 0);
-                            const upc = Number(transferBatch.unitsPerCarton) || 1;
-                            setTransferFullCartons(fc);
-                            setTransferQty(
-                              Math.min(transferBatch.quantity, fc * upc + transferLooseUnits)
-                            );
-                          }}
-                          className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-indigo-50/50 border border-indigo-300 rounded-lg"
-                        />
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const fc = Math.max(0, transferFullCartons - 1);
+                              const upc = Number(transferBatch.unitsPerCarton) || 1;
+                              setTransferFullCartons(fc);
+                              setTransferQty(
+                                Math.min(transferBatch.quantity, fc * upc + transferLooseUnits)
+                              );
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-xs font-black cursor-pointer border border-slate-300"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={transferFullCartons === 0 ? '' : transferFullCartons}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const fc = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                              const upc = Number(transferBatch.unitsPerCarton) || 1;
+                              setTransferFullCartons(fc);
+                              setTransferQty(
+                                Math.min(transferBatch.quantity, fc * upc + transferLooseUnits)
+                              );
+                            }}
+                            className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-indigo-50/50 border border-indigo-300 rounded-lg text-center"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const fc = transferFullCartons + 1;
+                              const upc = Number(transferBatch.unitsPerCarton) || 1;
+                              setTransferFullCartons(fc);
+                              setTransferQty(
+                                Math.min(transferBatch.quantity, fc * upc + transferLooseUnits)
+                              );
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-900 font-mono text-xs font-black cursor-pointer border border-indigo-300"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
-                          + Sztuk z otwartego kartonu:
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={transferLooseUnits}
-                          onChange={(e) => {
-                            const loose = Math.max(0, Number(e.target.value) || 0);
-                            const upc = Number(transferBatch.unitsPerCarton) || 1;
-                            setTransferLooseUnits(loose);
-                            setTransferQty(
-                              Math.min(transferBatch.quantity, transferFullCartons * upc + loose)
-                            );
-                          }}
-                          className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-amber-50/50 border border-amber-300 rounded-lg"
-                        />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[10px] font-bold text-indigo-900">
+                            + Sztuk z otwartego kartonu:
+                          </label>
+                          {transferLooseUnits > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const upc = Number(transferBatch.unitsPerCarton) || 1;
+                                setTransferLooseUnits(0);
+                                setTransferQty(Math.min(transferBatch.quantity, transferFullCartons * upc));
+                              }}
+                              className="text-[9px] font-extrabold text-rose-600 hover:underline cursor-pointer"
+                            >
+                              ✕ Brak otw.
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const loose = Math.max(0, transferLooseUnits - 1);
+                              const upc = Number(transferBatch.unitsPerCarton) || 1;
+                              setTransferLooseUnits(loose);
+                              setTransferQty(
+                                Math.min(transferBatch.quantity, transferFullCartons * upc + loose)
+                              );
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-xs font-black cursor-pointer border border-slate-300"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="Brak (0)"
+                            value={transferLooseUnits === 0 ? '' : transferLooseUnits}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const loose = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                              const upc = Number(transferBatch.unitsPerCarton) || 1;
+                              setTransferLooseUnits(loose);
+                              setTransferQty(
+                                Math.min(transferBatch.quantity, transferFullCartons * upc + loose)
+                              );
+                            }}
+                            className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-amber-50/50 border border-amber-300 rounded-lg text-center placeholder:text-slate-400 placeholder:font-normal"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const loose = transferLooseUnits + 1;
+                              const upc = Number(transferBatch.unitsPerCarton) || 1;
+                              setTransferLooseUnits(loose);
+                              setTransferQty(
+                                Math.min(transferBatch.quantity, transferFullCartons * upc + loose)
+                              );
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-mono text-xs font-black cursor-pointer border border-amber-300"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
                       <div className="text-[11px] font-mono text-indigo-950 font-bold pb-1">
                         = Wyliczona ilość: <strong>{transferQty} szt.</strong>
@@ -1918,7 +2087,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   <span className="text-[10px] font-semibold text-slate-500">
                                     Szybkie pakowanie:
                                   </span>
-                                  {[12, 20, 24, 30, 48, 100].map((preset) => (
+                                  {[9, 12, 27, 45, 51, 54, 63, 72, 80, 81, 135].map((preset) => (
                                     <button
                                       key={preset}
                                       type="button"
@@ -1943,19 +2112,52 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
                                     Ilość pełnych kartonów:
                                   </label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={editFullCartons}
-                                    onChange={(e) => {
-                                      const fc = Math.max(0, Number(e.target.value) || 0);
-                                      setEditFullCartons(fc);
-                                      if (editUnitsPerCarton > 0) {
-                                        setEditQty(fc * editUnitsPerCarton + editLooseUnits);
-                                      }
-                                    }}
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold bg-teal-50/60 border border-teal-300 rounded-lg"
-                                  />
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const fc = Math.max(0, editFullCartons - 1);
+                                        setEditFullCartons(fc);
+                                        if (editUnitsPerCarton > 0) {
+                                          setEditQty(fc * editUnitsPerCarton + editLooseUnits);
+                                        }
+                                      }}
+                                      className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-xs font-black cursor-pointer border border-slate-300"
+                                      title="Odejmij 1 pełny karton"
+                                    >
+                                      −
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      placeholder="0"
+                                      value={editFullCartons === 0 ? '' : editFullCartons}
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const fc = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                                        setEditFullCartons(fc);
+                                        if (editUnitsPerCarton > 0) {
+                                          setEditQty(fc * editUnitsPerCarton + editLooseUnits);
+                                        }
+                                      }}
+                                      className="w-full px-2 py-1.5 text-xs font-mono font-extrabold bg-teal-50/60 border border-teal-300 rounded-lg text-center"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const fc = editFullCartons + 1;
+                                        setEditFullCartons(fc);
+                                        if (editUnitsPerCarton > 0) {
+                                          setEditQty(fc * editUnitsPerCarton + editLooseUnits);
+                                        }
+                                      }}
+                                      className="px-2 py-1.5 rounded-lg bg-teal-100 hover:bg-teal-200 text-teal-900 font-mono text-xs font-black cursor-pointer border border-teal-300"
+                                      title="Dodaj 1 pełny karton"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
                                 </div>
                                 <div>
                                   <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
@@ -1964,9 +2166,12 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   <input
                                     type="number"
                                     min={0}
-                                    value={editUnitsPerCarton}
+                                    placeholder="np. 51"
+                                    value={editUnitsPerCarton === 0 ? '' : editUnitsPerCarton}
+                                    onFocus={(e) => e.currentTarget.select()}
                                     onChange={(e) => {
-                                      const upc = Math.max(0, Number(e.target.value) || 0);
+                                      const raw = e.target.value;
+                                      const upc = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
                                       setEditUnitsPerCarton(upc);
                                       if (upc > 0) {
                                         setEditQty(editFullCartons * upc + editLooseUnits);
@@ -1976,22 +2181,71 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
-                                    Ilość w kartonie otwartym:
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={editLooseUnits}
-                                    onChange={(e) => {
-                                      const loose = Math.max(0, Number(e.target.value) || 0);
-                                      setEditLooseUnits(loose);
-                                      if (editUnitsPerCarton > 0) {
-                                        setEditQty(editFullCartons * editUnitsPerCarton + loose);
-                                      }
-                                    }}
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold bg-amber-50/70 border border-amber-300 rounded-lg"
-                                  />
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className="block text-[10px] font-bold text-slate-700">
+                                      W kartonie otwartym:
+                                    </label>
+                                    {editLooseUnits > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditLooseUnits(0);
+                                          if (editUnitsPerCarton > 0) {
+                                            setEditQty(editFullCartons * editUnitsPerCarton);
+                                          }
+                                        }}
+                                        className="text-[9px] font-extrabold text-rose-600 hover:underline cursor-pointer"
+                                      >
+                                        ✕ Brak otw.
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const loose = Math.max(0, editLooseUnits - 1);
+                                        setEditLooseUnits(loose);
+                                        if (editUnitsPerCarton > 0) {
+                                          setEditQty(editFullCartons * editUnitsPerCarton + loose);
+                                        }
+                                      }}
+                                      className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-xs font-black cursor-pointer border border-slate-300"
+                                      title="Odejmij 1 szt. z otwartego kartonu"
+                                    >
+                                      −
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      placeholder="Brak (0)"
+                                      value={editLooseUnits === 0 ? '' : editLooseUnits}
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const loose = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                                        setEditLooseUnits(loose);
+                                        if (editUnitsPerCarton > 0) {
+                                          setEditQty(editFullCartons * editUnitsPerCarton + loose);
+                                        }
+                                      }}
+                                      className="w-full px-2 py-1.5 text-xs font-mono font-extrabold bg-amber-50/70 border border-amber-300 rounded-lg text-center placeholder:text-slate-400 placeholder:font-normal"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const loose = editLooseUnits + 1;
+                                        setEditLooseUnits(loose);
+                                        if (editUnitsPerCarton > 0) {
+                                          setEditQty(editFullCartons * editUnitsPerCarton + loose);
+                                        }
+                                      }}
+                                      className="px-2 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-mono text-xs font-black cursor-pointer border border-amber-300"
+                                      title="Dodaj 1 szt. w otwartym kartonie"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
                                 </div>
                                 <div>
                                   <label className="block text-[10px] font-extrabold text-emerald-900 mb-0.5">
@@ -2000,9 +2254,12 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   <input
                                     type="number"
                                     min={0}
-                                    value={editQty}
+                                    placeholder="0"
+                                    value={editQty === 0 ? '' : editQty}
+                                    onFocus={(e) => e.currentTarget.select()}
                                     onChange={(e) => {
-                                      const total = Math.max(0, Number(e.target.value) || 0);
+                                      const raw = e.target.value;
+                                      const total = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
                                       setEditQty(total);
                                       if (editUnitsPerCarton > 0) {
                                         setEditFullCartons(Math.floor(total / editUnitsPerCarton));
