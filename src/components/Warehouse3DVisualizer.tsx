@@ -5,7 +5,7 @@ import {
   WarehouseLocationSlot,
   ProductCatalogItem,
 } from '../types/wms';
-import { isEligibleForPartner12Months } from '../utils/wfirmaParser';
+import { getMonthsUntilExpiry, isEligibleForPartner12Months } from '../utils/wfirmaParser';
 import { getBatchCartonBreakdown } from '../utils/wmsEngine';
 import { Compass, ArrowRight, GripVertical } from 'lucide-react';
 
@@ -40,6 +40,130 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 }) => {
   const [hoveredRackId, setHoveredRackId] = useState<string | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<string | null>(null);
+
+  /**
+   * 6-kolorowy system oznaczeń palet:
+   * 1. 🟪 Fioletowy — SF (Sample Folders / Próbki)
+   * 2. 🟦 Niebieski — Kartony / Torby / Pozostałe materiały
+   * 3. 🟥 Czerwony — Palety z datą ważności poniżej 6 miesięcy (< 6 msc)
+   * 4. 🩷 Różowy — Palety z etykietą PARTNER (nigdy poniżej 12 msc: >= 12 msc)
+   * 5. 🟨 Żółty — Palety pierwsze do wyjścia (firstToExit)
+   * 6. 🟩 Zielony — Pozostałe miejsca na produkty
+   */
+  const getSlotColorAndBadge = (slot: WarehouseLocationSlot) => {
+    const activeAllocs = slot.allocations.filter((a) => a.quantity > 0);
+    const hasDescOnly =
+      activeAllocs.length === 0 && Boolean(slot.customDescription && slot.customDescription.trim());
+
+    // 1. SF (Sample Folders / Próbki) -> FIOLETOWY
+    const isSfPallet =
+      activeAllocs.some((a) => {
+        const prod = productMap.get(a.productId);
+        if (prod?.category === 'sample') return true;
+        const text = `${a.customName || ''} ${a.palletLabel || ''} ${a.notes || ''} ${prod?.shortName || ''} ${prod?.name || ''}`;
+        return /\bsf\b|sample\s*folder|próbk/i.test(text);
+      }) || /\bsf\b|sample\s*folder|próbk/i.test(slot.customDescription || '');
+
+    if (isSfPallet) {
+      return {
+        category: 'sf' as const,
+        tileClass:
+          'bg-violet-600/50 border-violet-300 text-violet-50 hover:bg-violet-600/65 shadow-sm',
+        barClass: 'bg-violet-300',
+        badgeText: '🟪 SF',
+        badgeClass: 'bg-violet-950/80 text-violet-200 border border-violet-400/60',
+      };
+    }
+
+    // 2. Kartony / Torby / Pozostałe materiały -> NIEBIESKI
+    const isMaterialsPallet =
+      hasDescOnly ||
+      (activeAllocs.length > 0 &&
+        activeAllocs.every((a) => {
+          const prod = productMap.get(a.productId);
+          return a.isCustomItem || a.productId === 'CUSTOM' || prod?.category === 'accessory';
+        }));
+
+    if (isMaterialsPallet) {
+      return {
+        category: 'materials' as const,
+        tileClass:
+          'bg-blue-600/50 border-blue-300 text-blue-50 hover:bg-blue-600/65 shadow-sm',
+        barClass: 'bg-blue-300',
+        badgeText: '🟦 MATERIAŁY',
+        badgeClass: 'bg-blue-950/80 text-blue-200 border border-blue-400/60',
+      };
+    }
+
+    // 3. Palety z datą ważności poniżej 6 miesięcy (< 6 msc) -> CZERWONY
+    const hasBelow6Months = activeAllocs.some(
+      (a) =>
+        !a.isCustomItem &&
+        a.productId !== 'CUSTOM' &&
+        Boolean(a.expiryDate) &&
+        getMonthsUntilExpiry(a.expiryDate) < 6
+    );
+
+    if (hasBelow6Months) {
+      return {
+        category: 'red_short_6m' as const,
+        tileClass:
+          'bg-red-600/55 border-red-300 text-red-50 hover:bg-red-600/70 shadow-sm',
+        barClass: 'bg-red-300',
+        badgeText: '🟥 <6 MSC',
+        badgeClass: 'bg-red-950/85 text-red-200 border border-red-400/70',
+      };
+    }
+
+    // 4. Etykieta PARTNER (miejsca PARTNER nie są poniżej 12 msc: >= 12 msc) -> RÓŻOWY
+    const hasPartnerLabel = activeAllocs.some(
+      (a) =>
+        !a.isCustomItem &&
+        a.productId !== 'CUSTOM' &&
+        Boolean(a.dedicatedForPartnerOnly) &&
+        isEligibleForPartner12Months(a.expiryDate)
+    );
+
+    if (hasPartnerLabel) {
+      return {
+        category: 'partner_pink' as const,
+        tileClass:
+          'bg-pink-500/50 border-pink-300 text-pink-50 hover:bg-pink-500/65 shadow-sm',
+        barClass: 'bg-pink-300',
+        badgeText: '🩷 PARTNER',
+        badgeClass: 'bg-pink-950/80 text-pink-200 border border-pink-300/70',
+      };
+    }
+
+    // 5. Palety pierwsze do wyjścia -> ŻÓŁTY
+    const isFirstToExit = activeAllocs.some(
+      (a) =>
+        Boolean(a.firstToExit) ||
+        /1\.?\s*do\s*wyj[śs]cia|pierwsz[ae]\s*do\s*wyj[śs]cia/i.test(a.palletLabel || '') ||
+        /1\.?\s*do\s*wyj[śs]cia|pierwsz[ae]\s*do\s*wyj[śs]cia/i.test(a.notes || '')
+    );
+
+    if (isFirstToExit) {
+      return {
+        category: 'first_yellow' as const,
+        tileClass:
+          'bg-yellow-400/40 border-yellow-300 text-yellow-50 hover:bg-yellow-400/55 shadow-sm',
+        barClass: 'bg-yellow-300',
+        badgeText: '🟨 1. DO WYJŚCIA',
+        badgeClass: 'bg-yellow-950/85 text-yellow-200 border border-yellow-300/70',
+      };
+    }
+
+    // 6. Pozostałe miejsca na produkty -> ZIELONY
+    return {
+      category: 'product_green' as const,
+      tileClass:
+        'bg-emerald-600/45 border-emerald-400 text-emerald-50 hover:bg-emerald-600/60 shadow-sm',
+      barClass: 'bg-emerald-400',
+      badgeText: '',
+      badgeClass: '',
+    };
+  };
 
   const allWhRacks = racks.filter((r) => r.warehouseId === warehouse.id);
 
@@ -113,7 +237,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
     onDragEndSlot?.();
   };
 
-  // Renderuje pojedynczy regał 12-paletowy na planie prostokątnej hali
+  // Renderuje pojedynczy regał na planie prostokątnej hali
   const renderRackOnFloorplan = (rack: WarehouseRack) => {
     const rackSlots = slots.filter((s) => s.rackId === rack.id);
     const levels = Array.from(new Set(rackSlots.map((s) => s.level))).sort((a, b) => b - a);
@@ -205,6 +329,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                     const firstAlloc = activeAllocs[0];
                     const firstProd = firstAlloc ? productMap.get(firstAlloc.productId) : undefined;
                     const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
+                    const visualInfo = !isEmpty ? getSlotColorAndBadge(slot) : null;
                     const rawShortLabel =
                       firstAlloc?.isCustomItem || firstAlloc?.productId === 'CUSTOM'
                         ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
@@ -252,7 +377,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             ? `${slot.code}: Wolne miejsce (Upuść tutaj paletę lub kliknij, aby dodać)`
                             : `${slot.code}: ${allItemsTooltip}${
                                 cartonInfo?.hasCartons ? ` | ${cartonInfo.fullDescription}` : ''
-                              } — Złap myszką i przeciągnij na inne miejsce!`
+                              } — Kliknij aby zmienić etykietę PARTNER / 1. do wyjścia lub przeciągnij myszką!`
                         }
                         className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] select-none ${
                           !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
@@ -267,19 +392,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300 z-10'
                             : isEmpty
                             ? 'bg-slate-900/60 border-dashed border-slate-600 text-slate-500 hover:border-slate-400'
-                            : isCombinedPallet
-                            ? 'bg-amber-500/25 border-amber-400/80 text-amber-100 hover:bg-amber-500/40'
-                            : hasCustom || hasShort
-                            ? 'bg-amber-500/25 border-amber-400/80 text-amber-100 hover:bg-amber-500/40'
-                            : slot.slotType === 'picking_partner_12m'
-                            ? 'bg-violet-500/30 border-violet-400/80 text-violet-100 hover:bg-violet-500/45'
-                            : slot.slotType === 'picking_standard'
-                            ? 'bg-emerald-500/30 border-emerald-400/80 text-emerald-100 hover:bg-emerald-500/45'
-                            : 'bg-blue-500/30 border-blue-400/80 text-blue-100 hover:bg-blue-500/45'
+                            : visualInfo?.tileClass || 'bg-emerald-600/45 border-emerald-400 text-emerald-50'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1 text-[9px] font-mono font-extrabold">
-                          <span className="flex items-center gap-0.5 opacity-85">
+                          <span className="flex items-center gap-0.5 opacity-90">
                             {!isEmpty && (
                               <GripVertical className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 shrink-0" />
                             )}
@@ -302,23 +419,32 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             <div className="text-[10px] font-semibold opacity-60">Wolne</div>
                           ) : (
                             <>
+                              {visualInfo?.badgeText && (
+                                <div className="mb-0.5">
+                                  <span
+                                    className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight ${visualInfo.badgeClass}`}
+                                  >
+                                    {visualInfo.badgeText}
+                                  </span>
+                                </div>
+                              )}
                               <div className="text-[11px] font-extrabold leading-tight break-words">
                                 {primaryType}
                               </div>
                               <div className="flex flex-wrap items-center gap-1 mt-0.5">
                                 {variantLabel && (
-                                  <span className="text-[10px] font-mono font-bold opacity-90 leading-tight">
+                                  <span className="text-[10px] font-mono font-bold opacity-95 leading-tight">
                                     {variantLabel}
                                   </span>
                                 )}
                                 {mhdShort && (
-                                  <span className="text-[9px] font-mono font-bold bg-slate-950/40 px-1 rounded">
+                                  <span className="text-[9px] font-mono font-bold bg-slate-950/45 px-1 rounded">
                                     {mhdShort}
                                   </span>
                                 )}
                               </div>
                               {isCombinedPallet && (
-                                <div className="mt-0.5 pt-0.5 border-t border-white/15 space-y-0.5">
+                                <div className="mt-0.5 pt-0.5 border-t border-white/20 space-y-0.5">
                                   {activeAllocs.slice(1).map((extra) => {
                                     const ep = productMap.get(extra.productId);
                                     const elbl = extra.isCustomItem
@@ -341,7 +467,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                 </div>
                               )}
                               {cartonInfo?.hasCartons && (
-                                <div className="text-[9px] font-mono font-extrabold opacity-95 mt-0.5 bg-slate-950/35 px-1 py-0.5 rounded inline-block">
+                                <div className="text-[9px] font-mono font-extrabold opacity-95 mt-0.5 bg-slate-950/40 px-1 py-0.5 rounded inline-block">
                                   {cartonInfo.shortBadge}
                                 </div>
                               )}
@@ -349,7 +475,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           )}
                         </div>
                         {!isEmpty && (
-                          <div className="h-1 w-full bg-amber-500/90 rounded-full mt-1" />
+                          <div
+                            className={`h-1 w-full rounded-full mt-1 ${
+                              visualInfo?.barClass || 'bg-emerald-300'
+                            }`}
+                          />
                         )}
                       </button>
                     );
@@ -389,11 +519,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
           <div className="px-3.5 py-2 rounded-2xl bg-slate-950/70 border border-teal-500/40 text-xs text-teal-200 font-bold flex items-center gap-2">
             <span>🖐️</span>
-            <span>Złap myszką dowolny zajęty kafelek i upuść go na inne miejsce (przeciągnij i upuść)</span>
+            <span>Kliknij paletę aby dodać etykietę PARTNER (różowy) / 1. do wyjścia (żółty) lub przeciągnij myszką</span>
           </div>
         </div>
 
-        {/* Szybkie liczniki dla tej hali */}
+        {/* Szybkie liczniki dla tej hali + Legenda 6 kolorów */}
         <div className="mt-4 pt-3 border-t border-slate-700/80 flex flex-wrap items-center justify-between gap-4 text-xs">
           <div className="flex flex-wrap items-center gap-5">
             <span>
@@ -419,22 +549,30 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+          <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold">
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block border border-white/40" />
-              <span>Kompletacja Główna</span>
+              <span className="w-3.5 h-3.5 rounded-xs bg-pink-500 inline-block border border-pink-200" />
+              <span>🩷 PARTNER (&ge;12 msc)</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-violet-500 inline-block border border-white/40" />
-              <span>Gniazdo PARTNER (&gt;12m)</span>
+              <span className="w-3.5 h-3.5 rounded-xs bg-yellow-400 inline-block border border-yellow-100" />
+              <span>🟨 Pierwsza do wyjścia</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-blue-500 inline-block border border-white/40" />
-              <span>Regał Paletowy</span>
+              <span className="w-3.5 h-3.5 rounded-xs bg-red-600 inline-block border border-red-200" />
+              <span>🟥 Data &lt; 6 msc</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-amber-400 inline-block border border-white/40" />
-              <span>Paleta na Podłodze / Opis ręczny</span>
+              <span className="w-3.5 h-3.5 rounded-xs bg-emerald-600 inline-block border border-emerald-200" />
+              <span>🟩 Pozostałe produkty</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-xs bg-violet-600 inline-block border border-violet-200" />
+              <span>🟪 SF (Próbki)</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-xs bg-blue-600 inline-block border border-blue-200" />
+              <span>🟦 Kartony / Torby / Materiały</span>
             </span>
           </div>
         </div>
@@ -585,6 +723,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             ? productMap.get(firstAlloc.productId)
                             : undefined;
                           const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
+                          const visualInfo = !isEmpty ? getSlotColorAndBadge(slot) : null;
                           const rawShortLabel = hasCustom
                             ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
                             : (firstProd?.shortName || 'Wolne pole na podłodze')
@@ -633,7 +772,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                   ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300'
                                   : isEmpty
                                   ? 'bg-slate-900/75 border-dashed border-amber-400/50 text-amber-200/70 hover:border-amber-300'
-                                  : 'bg-amber-500/25 border-amber-400 text-white hover:bg-amber-500/35'
+                                  : visualInfo?.tileClass || 'bg-emerald-600/45 border-emerald-400 text-emerald-50'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1 text-[10px] font-mono font-black">
@@ -642,7 +781,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                   <span>{slot.position} PALETA</span>
                                 </span>
                                 {mhdShort && (
-                                  <span className="bg-slate-950/50 px-1 rounded text-amber-200">
+                                  <span className="bg-slate-950/50 px-1 rounded text-white">
                                     {mhdShort}
                                   </span>
                                 )}
@@ -657,6 +796,15 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                 </div>
                               ) : (
                                 <div className="mt-1 leading-tight">
+                                  {visualInfo?.badgeText && (
+                                    <div className="mb-0.5">
+                                      <span
+                                        className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight ${visualInfo.badgeClass}`}
+                                      >
+                                        {visualInfo.badgeText}
+                                      </span>
+                                    </div>
+                                  )}
                                   <div className="text-xs font-extrabold break-words">
                                     {primaryType}
                                   </div>
@@ -666,14 +814,14 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                     </div>
                                   )}
                                   {cartonInfo?.hasCartons && (
-                                    <div className="text-[10px] font-mono font-extrabold text-amber-200 mt-0.5 bg-slate-950/40 px-1.5 py-0.5 rounded inline-block">
+                                    <div className="text-[10px] font-mono font-extrabold text-white mt-0.5 bg-slate-950/45 px-1.5 py-0.5 rounded inline-block">
                                       {cartonInfo.shortBadge}
                                     </div>
                                   )}
                                 </div>
                               )}
                               {!isEmpty && !isDropTarget && (
-                                <div className="flex items-center justify-between text-[10px] font-mono mt-1 text-amber-200 font-bold">
+                                <div className="flex items-center justify-between text-[10px] font-mono mt-1 opacity-95 font-bold">
                                   <span>
                                     {totalQty.toLocaleString('pl-PL')}{' '}
                                     {firstAlloc?.customUnit || 'szt.'}

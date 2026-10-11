@@ -183,13 +183,13 @@ export function computeAllProductsSummary(state: WMSFullState): ProductSummaryMe
     let hasShortBatchOnMainPicking = false;
 
     for (const l of locs) {
-      if (l.slotType === 'picking_standard') {
+      if (l.dedicatedForPartnerOnly || l.slotType === 'picking_partner_12m') {
+        pickingPartnerQty += l.quantity;
+      } else if (l.slotType === 'picking_standard') {
         pickingStandardQty += l.quantity;
         if (!l.isPartnerEligible12m) {
           hasShortBatchOnMainPicking = true;
         }
-      } else if (l.slotType === 'picking_partner_12m') {
-        pickingPartnerQty += l.quantity;
       } else {
         palletReserveQty += l.quantity;
       }
@@ -339,7 +339,9 @@ export function executeStockTransfer(
       lotNumber: sourceBatch.lotNumber,
       expiryDate: sourceBatch.expiryDate,
       dedicatedForPartnerOnly:
-        dedicatedForPartnerOnly ?? (toSlot.slotType === 'picking_partner_12m' ? true : false),
+        dedicatedForPartnerOnly ??
+        (toSlot.slotType === 'picking_partner_12m' ? true : sourceBatch.dedicatedForPartnerOnly),
+      firstToExit: sourceBatch.firstToExit,
       palletLabel:
         toSlot.slotType === 'picking_standard'
           ? 'Magazyn 4 — Kompletacja'

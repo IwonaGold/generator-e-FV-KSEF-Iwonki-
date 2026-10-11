@@ -1,7 +1,7 @@
 import { WMSFullState, WorkstationRole } from '../types/wms';
 import { createInitialWMSState, DEFAULT_PRODUCTS_CATALOG } from './defaultWmsData';
 
-const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v7_oct_inv_cennik';
+const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v8_colors_labels';
 const WORKSTATION_ROLE_KEY = 'eubiosis_wms_workstation_role_v1';
 const WORKSTATION_NAME_KEY = 'eubiosis_wms_workstation_name_v1';
 const BROADCAST_CHANNEL_NAME = 'eubiosis_wms_realtime_channel_v2';
@@ -142,17 +142,23 @@ export async function fetchServerWMSState(): Promise<WMSFullState | null> {
     if (!res.ok) return null;
     const data = await res.json();
     if (data?.state && Array.isArray(data.state.warehouses)) {
+      const hasFirstToExitFlag =
+        Array.isArray(data.state.slots) &&
+        data.state.slots.some((s: any) =>
+          Array.isArray(s.allocations) && s.allocations.some((a: any) => a.firstToExit === true)
+        );
       if (
         !data.state.warehouses.some((w: any) => w.id === 'wh-mag-4') ||
         !Array.isArray(data.state.racks) ||
         !data.state.racks.some((r: any) => r.id === 'rack-m4-r7') ||
-        !data.state.racks.some((r: any) => r.id === 'rack-m5-r8')
+        !data.state.racks.some((r: any) => r.id === 'rack-m5-r8') ||
+        !hasFirstToExitFlag
       ) {
         const upgraded = createInitialWMSState();
         upgraded.revision = (data.state.revision || 1) + 1;
         await pushServerWMSState(
           upgraded,
-          'Odtworzenie Inwentaryzacji Października (Magazyn 4, 5, 6) + Cennik kartonów'
+          'Aktualizacja 6-kolorowego systemu oznaczeń palet (PARTNER / 1. do wyjścia / <6 msc / Produkty / SF / Materiały)'
         );
         return upgraded;
       }

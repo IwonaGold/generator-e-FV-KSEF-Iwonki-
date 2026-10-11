@@ -102,6 +102,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
   const [allocLot, setAllocLot] = useState<string>('LOT-2026');
   const [allocExpiry, setAllocExpiry] = useState<string>('2028-06-30');
   const [allocPalletLabel, setAllocPalletLabel] = useState<string>('Paleta #1');
+  const [allocPartnerOnly, setAllocPartnerOnly] = useState<boolean>(false);
+  const [allocFirstToExit, setAllocFirstToExit] = useState<boolean>(false);
 
   // Edycja ręcznego opisu samego miejsca paletowego (slot.customDescription)
   const [editingSlotDesc, setEditingSlotDesc] = useState(false);
@@ -193,9 +195,13 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
           customItemsCount++;
           continue;
         }
-        if (s.slotType === 'picking_standard') pickingUnits += a.quantity;
-        else if (s.slotType === 'picking_partner_12m') pickingPartner12mUnits += a.quantity;
-        else palletUnits += a.quantity;
+        if (a.dedicatedForPartnerOnly || s.slotType === 'picking_partner_12m') {
+          pickingPartner12mUnits += a.quantity;
+        } else if (s.slotType === 'picking_standard') {
+          pickingUnits += a.quantity;
+        } else {
+          palletUnits += a.quantity;
+        }
 
         if (!isEligibleForPartner12Months(a.expiryDate)) {
           shortDateBatchesCount++;
@@ -403,17 +409,20 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     if (!allocProductId) return;
 
     if (
-      selectedSlot.slotType === 'picking_partner_12m' &&
+      (selectedSlot.slotType === 'picking_partner_12m' || allocPartnerOnly) &&
       !isEligibleForPartner12Months(allocExpiry)
     ) {
       alert(
-        `Zablokowano! Gniazdo ${selectedSlot.code} jest przeznaczone dla produktów PARTNER, które muszą mieć zawsze powyżej 12 miesięcy daty ważności (podano: ${allocExpiry}).`
+        `Zablokowano! Miejsca z etykietą PARTNER (różowe) nie mogą mieć daty ważności poniżej 12 miesięcy (podano: ${allocExpiry}).`
       );
       return;
     }
 
     const prod = productMap.get(allocProductId);
     const upcCatalog = Math.max(0, Number(allocUnitsPerCarton) || 0);
+    const isPartner =
+      (allocPartnerOnly || selectedSlot.slotType === 'picking_partner_12m') &&
+      isEligibleForPartner12Months(allocExpiry);
 
     const nextSlots = state.slots.map((s) => {
       if (s.id !== selectedSlot.id) return s;
@@ -430,6 +439,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
           ...nextAllocs[existingIdx],
           quantity: nextAllocs[existingIdx].quantity + allocQty,
           unitsPerCarton: upcCatalog > 0 ? upcCatalog : nextAllocs[existingIdx].unitsPerCarton,
+          dedicatedForPartnerOnly: isPartner ? true : nextAllocs[existingIdx].dedicatedForPartnerOnly,
+          firstToExit: allocFirstToExit ? true : nextAllocs[existingIdx].firstToExit,
           updatedAt: nowIso,
         };
         nextAllocs[existingIdx] = syncBatchCartonBreakdown(merged);
@@ -443,7 +454,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
           looseUnitsInOpenCarton: upcCatalog > 0 ? Math.max(0, Number(allocLooseUnits) || 0) : undefined,
           lotNumber: allocLot.trim() || 'LOT-2026',
           expiryDate: allocExpiry || '2028-06-30',
-          dedicatedForPartnerOnly: s.slotType === 'picking_partner_12m',
+          dedicatedForPartnerOnly: isPartner,
+          firstToExit: isPartner ? false : allocFirstToExit,
           palletLabel: allocPalletLabel.trim() || 'Alokacja ręczna',
           updatedAt: nowIso,
         });
@@ -604,6 +616,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     const fullEdit = Math.max(0, Number(editFullCartons) || 0);
     const looseEdit = Math.max(0, Number(editLooseUnits) || 0);
     const finalQty = Math.max(0, Number(editQty) || 0);
+    const canStillBePartner = isCustom ? false : isEligibleForPartner12Months(editExpiry);
 
     const nextSlots = state.slots.map((s) => {
       if (s.id !== selectedSlot.id) return s;
@@ -622,6 +635,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                   looseUnitsInOpenCarton: upcEdit > 0 ? looseEdit : undefined,
                   lotNumber: isCustom ? '-' : editLot.trim(),
                   expiryDate: isCustom ? '' : editExpiry,
+                  dedicatedForPartnerOnly: canStillBePartner ? b.dedicatedForPartnerOnly : false,
                   palletLabel: editPalletLabel.trim(),
                   updatedAt: nowIso,
                 }
@@ -641,6 +655,152 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
       `Zaktualizowano pozycję i kartony na miejscu ${selectedSlot.code}`
     );
     setEditingBatchId(null);
+  };
+
+  // Szybkie przełączanie etykiety PARTNER (różowy) na pojedynczej partii
+  const handleToggleBatchPartner = (batch: StockAllocationBatch) => {
+    if (!selectedSlot) return;
+    if (!isEligibleForPartner12Months(batch.expiryDate)) {
+      alert(
+        `Zablokowano! Miejsca i palety PARTNER nie mogą mieć daty ważności poniżej 12 miesięcy (partia ma datę: ${batch.expiryDate}).`
+      );
+      return;
+    }
+    const nextVal = !batch.dedicatedForPartnerOnly;
+    const nowIso = new Date().toISOString();
+    const nextSlots = state.slots.map((s) =>
+      s.id !== selectedSlot.id
+        ? s
+        : {
+            ...s,
+            allocations: s.allocations.map((b) =>
+              b.id === batch.id
+                ? {
+                    ...b,
+                    dedicatedForPartnerOnly: nextVal,
+                    firstToExit: nextVal ? false : b.firstToExit,
+                    updatedAt: nowIso,
+                  }
+                : b
+            ),
+          }
+    );
+    onUpdateState(
+      {
+        ...state,
+        revision: state.revision + 1,
+        updatedAt: nowIso,
+        slots: nextSlots,
+      },
+      nextVal
+        ? `Dodano etykietę 🩷 PARTNER (kolor różowy) na palecie ${selectedSlot.code}`
+        : `Usunięto etykietę PARTNER z palety ${selectedSlot.code}`
+    );
+  };
+
+  // Szybkie przełączanie etykiety Pierwsza do wyjścia (żółty) na pojedynczej partii
+  const handleToggleBatchFirstToExit = (batch: StockAllocationBatch) => {
+    if (!selectedSlot) return;
+    const nextVal = !batch.firstToExit;
+    const nowIso = new Date().toISOString();
+    const nextSlots = state.slots.map((s) =>
+      s.id !== selectedSlot.id
+        ? s
+        : {
+            ...s,
+            allocations: s.allocations.map((b) =>
+              b.id === batch.id
+                ? {
+                    ...b,
+                    firstToExit: nextVal,
+                    dedicatedForPartnerOnly: nextVal ? false : b.dedicatedForPartnerOnly,
+                    updatedAt: nowIso,
+                  }
+                : b
+            ),
+          }
+    );
+    onUpdateState(
+      {
+        ...state,
+        revision: state.revision + 1,
+        updatedAt: nowIso,
+        slots: nextSlots,
+      },
+      nextVal
+        ? `Oznaczono paletę ${selectedSlot.code} jako 🟨 Pierwsza do wyjścia (kolor żółty)`
+        : `Zdjęto oznaczenie Pierwsza do wyjścia z palety ${selectedSlot.code}`
+    );
+  };
+
+  // Szybkie ustawienie etykiety dla CAŁEJ palety (1 kliknięcie w nagłówku modala)
+  const handleSetWholeSlotLabel = (mode: 'partner' | 'first_to_exit' | 'standard') => {
+    if (!selectedSlot) return;
+    const prodBatches = selectedSlot.allocations.filter(
+      (b) => b.quantity > 0 && !b.isCustomItem && b.productId !== 'CUSTOM'
+    );
+    if (prodBatches.length === 0) return;
+
+    if (mode === 'partner') {
+      const eligibleBatches = prodBatches.filter((b) => isEligibleForPartner12Months(b.expiryDate));
+      if (eligibleBatches.length === 0) {
+        alert(
+          'Zablokowano! Miejsca PARTNER nie mogą mieć daty ważności poniżej 12 miesięcy. Na tej palecie wszystkie partie mają poniżej 12 miesięcy.'
+        );
+        return;
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const nextSlots = state.slots.map((s) => {
+      if (s.id !== selectedSlot.id) return s;
+      return {
+        ...s,
+        allocations: s.allocations.map((b) => {
+          if (b.isCustomItem || b.productId === 'CUSTOM') return b;
+          const isElig = isEligibleForPartner12Months(b.expiryDate);
+          if (mode === 'partner') {
+            return {
+              ...b,
+              dedicatedForPartnerOnly: isElig ? true : false,
+              firstToExit: false,
+              updatedAt: nowIso,
+            };
+          }
+          if (mode === 'first_to_exit') {
+            return {
+              ...b,
+              firstToExit: true,
+              dedicatedForPartnerOnly: false,
+              updatedAt: nowIso,
+            };
+          }
+          return {
+            ...b,
+            dedicatedForPartnerOnly: false,
+            firstToExit: false,
+            updatedAt: nowIso,
+          };
+        }),
+      };
+    });
+
+    const summaryMsg =
+      mode === 'partner'
+        ? `Ustawiono etykietę 🩷 PARTNER (kolor różowy) dla palety ${selectedSlot.code}`
+        : mode === 'first_to_exit'
+        ? `Ustawiono etykietę 🟨 Pierwsza do wyjścia (kolor żółty) dla palety ${selectedSlot.code}`
+        : `Ustawiono 🟩 standardowy kolor produktu (zielony) dla palety ${selectedSlot.code}`;
+
+    onUpdateState(
+      {
+        ...state,
+        revision: state.revision + 1,
+        updatedAt: nowIso,
+        slots: nextSlots,
+      },
+      summaryMsg
+    );
   };
 
   const handleDeleteBatchFromSlot = (batch: StockAllocationBatch) => {
@@ -693,53 +853,53 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
         <div className="bg-emerald-50/90 rounded-2xl p-4 border border-emerald-200 shadow-xs">
           <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
             <Package className="w-4 h-4 text-emerald-600" />
-            <span>Strefa Kompletacji (Główna)</span>
+            <span>🟩 Magazyn 4 (Kompletacja)</span>
           </div>
           <div className="mt-1 text-2xl font-extrabold text-emerald-950 font-mono">
             {spatialStats.pickingUnits.toLocaleString('pl-PL')} <span className="text-sm font-normal">szt.</span>
           </div>
           <p className="text-[11px] text-emerald-800 mt-0.5">
-            Wspólna dla PL i PARTNER (gdy MHD &gt; 12 msc)
+            Główne miejsca produktowe i pierwsze do wyjścia (🟨)
           </p>
         </div>
 
-        <div className="bg-violet-50/90 rounded-2xl p-4 border border-violet-200 shadow-xs">
-          <div className="text-xs font-bold text-violet-900 flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-violet-600" />
-            <span>Gniazda PARTNER (&gt;12 msc)</span>
+        <div className="bg-pink-50/90 rounded-2xl p-4 border border-pink-200 shadow-xs">
+          <div className="text-xs font-bold text-pink-900 flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-pink-600" />
+            <span>🩷 Etykieta PARTNER (&ge;12 msc)</span>
           </div>
-          <div className="mt-1 text-2xl font-extrabold text-violet-950 font-mono">
+          <div className="mt-1 text-2xl font-extrabold text-pink-950 font-mono">
             {spatialStats.pickingPartner12mUnits.toLocaleString('pl-PL')}{' '}
             <span className="text-sm font-normal">szt.</span>
           </div>
-          <p className="text-[11px] text-violet-800 mt-0.5">
-            Osobne miejsce, gdy główna partia ma &lt; 12 msc
+          <p className="text-[11px] text-pink-800 mt-0.5">
+            Różowe palety PARTNER (nigdy poniżej 12 msc)
           </p>
         </div>
 
-        <div className="bg-blue-50/90 rounded-2xl p-4 border border-blue-200 shadow-xs">
-          <div className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-blue-600" />
-            <span>Zapas na Paletach i Półkach</span>
+        <div className="bg-teal-50/90 rounded-2xl p-4 border border-teal-200 shadow-xs">
+          <div className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
+            <Layers className="w-4 h-4 text-teal-600" />
+            <span>🟩 Zapas na Paletach (Mag. 5 i 6)</span>
           </div>
-          <div className="mt-1 text-2xl font-extrabold text-blue-950 font-mono">
+          <div className="mt-1 text-2xl font-extrabold text-teal-950 font-mono">
             {spatialStats.palletUnits.toLocaleString('pl-PL')} <span className="text-sm font-normal">szt.</span>
           </div>
-          <p className="text-[11px] text-blue-800 mt-0.5">
-            Miejsca paletowe dostaw PZ oraz regały próbek
+          <p className="text-[11px] text-teal-800 mt-0.5">
+            Pozostałe miejsca na produkty (zielone)
           </p>
         </div>
 
-        <div className="bg-amber-50/90 rounded-2xl p-4 border border-amber-200 shadow-xs">
-          <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-            <span>Partie z datą &lt; 12 msc</span>
+        <div className="bg-red-50/90 rounded-2xl p-4 border border-red-200 shadow-xs">
+          <div className="text-xs font-bold text-red-900 flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+            <span>🟥 / ⚠️ Krótka data (&lt;12 msc)</span>
           </div>
-          <div className="mt-1 text-2xl font-extrabold text-amber-950 font-mono">
+          <div className="mt-1 text-2xl font-extrabold text-red-950 font-mono">
             {spatialStats.shortDateBatchesCount} <span className="text-sm font-normal">partii</span>
           </div>
-          <p className="text-[11px] text-amber-800 mt-0.5">
-            Blokowane dla Partnerów (do sprzedaży zwykłej / promo)
+          <p className="text-[11px] text-red-800 mt-0.5">
+            W tym palety &lt; 6 msc oznaczone na czerwono (🟥)
           </p>
         </div>
       </div>
@@ -1190,6 +1350,138 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                 )}
               </div>
 
+              {/* PASEK SZYBKIEGO WYBORU ETYKIETY I KOLORU PALETY (1 KLIKNIĘCIE) */}
+              {selectedSlot.allocations.some(
+                (a) => a.quantity > 0 && !a.isCustomItem && a.productId !== 'CUSTOM'
+              ) && (() => {
+                const prodBatches = selectedSlot.allocations.filter(
+                  (a) => a.quantity > 0 && !a.isCustomItem && a.productId !== 'CUSTOM'
+                );
+                const hasBelow6m = prodBatches.some(
+                  (a) => Boolean(a.expiryDate) && getMonthsUntilExpiry(a.expiryDate) < 6
+                );
+                const hasEligible12m = prodBatches.some((a) =>
+                  isEligibleForPartner12Months(a.expiryDate)
+                );
+                const isPartnerActive = prodBatches.some(
+                  (a) => Boolean(a.dedicatedForPartnerOnly) && isEligibleForPartner12Months(a.expiryDate)
+                );
+                const isFirstToExitActive = prodBatches.some((a) => Boolean(a.firstToExit));
+
+                return (
+                  <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                        <span>🎨 Etykieta i kolor tej palety na planie magazynu:</span>
+                      </div>
+                      {hasBelow6m && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-extrabold">
+                          🟥 Uwaga: Partia poniżej 6 msc — paleta ma kolor czerwony
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSetWholeSlotLabel(isPartnerActive ? 'standard' : 'partner')}
+                        disabled={!hasEligible12m}
+                        title={
+                          !hasEligible12m
+                            ? 'Miejsca PARTNER nie mogą mieć daty ważności poniżej 12 miesięcy!'
+                            : 'Dodaj lub zdejmij etykietę PARTNER (zmienia kolor kafelka na różowy)'
+                        }
+                        className={`p-2.5 rounded-xl border-2 text-left transition-all flex items-center justify-between gap-2 ${
+                          !hasEligible12m
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-70'
+                            : isPartnerActive
+                            ? 'bg-pink-500 border-pink-600 text-white shadow-sm ring-2 ring-pink-300 cursor-pointer'
+                            : 'bg-white border-pink-300 text-pink-950 hover:bg-pink-50 cursor-pointer'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-extrabold">
+                            🩷 Etykieta PARTNER
+                          </div>
+                          <div
+                            className={`text-[10px] ${
+                              isPartnerActive ? 'text-pink-100' : 'text-slate-500'
+                            }`}
+                          >
+                            {!hasEligible12m
+                              ? '🔒 Wymagane ≥ 12 msc'
+                              : isPartnerActive
+                              ? 'Aktywna (Różowy) — kliknij aby zdjąć'
+                              : 'Zmień kolor na różowy (≥12 msc)'}
+                          </div>
+                        </div>
+                        {isPartnerActive && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSetWholeSlotLabel(isFirstToExitActive ? 'standard' : 'first_to_exit')
+                        }
+                        className={`p-2.5 rounded-xl border-2 text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                          isFirstToExitActive && !isPartnerActive
+                            ? 'bg-yellow-400 border-yellow-500 text-slate-950 shadow-sm ring-2 ring-yellow-300'
+                            : 'bg-white border-yellow-400 text-amber-950 hover:bg-yellow-50'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-extrabold">
+                            🟨 Pierwsza do wyjścia
+                          </div>
+                          <div
+                            className={`text-[10px] ${
+                              isFirstToExitActive && !isPartnerActive
+                                ? 'text-slate-800 font-semibold'
+                                : 'text-slate-500'
+                            }`}
+                          >
+                            {isFirstToExitActive && !isPartnerActive
+                              ? 'Aktywna (Żółty) — kliknij aby zdjąć'
+                              : 'Zmień kolor na żółty'}
+                          </div>
+                        </div>
+                        {isFirstToExitActive && !isPartnerActive && (
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-slate-950" />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSetWholeSlotLabel('standard')}
+                        className={`p-2.5 rounded-xl border-2 text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                          !isPartnerActive && !isFirstToExitActive
+                            ? 'bg-emerald-600 border-emerald-700 text-white shadow-sm ring-2 ring-emerald-300'
+                            : 'bg-white border-emerald-300 text-emerald-950 hover:bg-emerald-50'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-extrabold">
+                            🟩 Zwykłe miejsce produktu
+                          </div>
+                          <div
+                            className={`text-[10px] ${
+                              !isPartnerActive && !isFirstToExitActive
+                                ? 'text-emerald-100'
+                                : 'text-slate-500'
+                            }`}
+                          >
+                            Pozostałe produkty (Zielony)
+                          </div>
+                        </div>
+                        {!isPartnerActive && !isFirstToExitActive && (
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Przyciski szybkich akcji na miejscu */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-extrabold text-slate-800">
@@ -1204,6 +1496,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                       setAllocUnitsPerCarton(24);
                       setAllocLooseUnits(2);
                       setAllocQty(2 * 24 + 2);
+                      setAllocPartnerOnly(false);
+                      setAllocFirstToExit(false);
                       setShowAddBatchForm(true);
                       setTransferBatch(null);
                     }}
@@ -1605,7 +1899,13 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         <input
                           type="date"
                           value={allocExpiry}
-                          onChange={(e) => setAllocExpiry(e.target.value)}
+                          onChange={(e) => {
+                            const exp = e.target.value;
+                            setAllocExpiry(exp);
+                            if (!isEligibleForPartner12Months(exp)) {
+                              setAllocPartnerOnly(false);
+                            }
+                          }}
                           className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-xl"
                           required
                         />
@@ -1621,6 +1921,43 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                           placeholder="np. Paleta #4 (Dostawa PZ)"
                           className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl"
                         />
+                      </div>
+                      <div className="sm:col-span-3 flex flex-wrap items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          disabled={!isEligibleForPartner12Months(allocExpiry)}
+                          onClick={() => {
+                            const next = !allocPartnerOnly;
+                            setAllocPartnerOnly(next);
+                            if (next) setAllocFirstToExit(false);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-extrabold border-2 transition-all flex items-center gap-1.5 ${
+                            !isEligibleForPartner12Months(allocExpiry)
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                              : allocPartnerOnly
+                              ? 'bg-pink-500 border-pink-600 text-white shadow-xs cursor-pointer'
+                              : 'bg-white border-pink-300 text-pink-900 hover:bg-pink-50 cursor-pointer'
+                          }`}
+                        >
+                          <span>🩷 Etykieta PARTNER (Różowy — wymagane &ge;12 msc)</span>
+                          {allocPartnerOnly && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !allocFirstToExit;
+                            setAllocFirstToExit(next);
+                            if (next) setAllocPartnerOnly(false);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-extrabold border-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                            allocFirstToExit
+                              ? 'bg-yellow-400 border-yellow-500 text-slate-950 shadow-xs'
+                              : 'bg-white border-yellow-400 text-amber-950 hover:bg-yellow-50'
+                          }`}
+                        >
+                          <span>🟨 Pierwsza do wyjścia (Żółty)</span>
+                          {allocFirstToExit && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1903,10 +2240,18 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     return (
                       <div
                         key={batch.id}
-                        className={`p-4 rounded-2xl border flex flex-col gap-3 ${
+                        className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${
                           isCustom
-                            ? 'bg-amber-50/60 border-amber-200'
-                            : 'bg-slate-50 border-slate-200'
+                            ? /\bsf\b|sample\s*folder|próbk/i.test(batch.customName || '')
+                              ? 'bg-violet-50/70 border-violet-300'
+                              : 'bg-blue-50/60 border-blue-200'
+                            : monthsLeft < 6
+                            ? 'bg-red-50/80 border-red-300'
+                            : batch.dedicatedForPartnerOnly && eligible12m
+                            ? 'bg-pink-50/80 border-pink-300'
+                            : batch.firstToExit
+                            ? 'bg-yellow-50/80 border-yellow-300'
+                            : 'bg-emerald-50/50 border-emerald-200'
                         }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1918,18 +2263,40 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   : prod?.name || batch.productId}
                               </span>
                               {isCustom ? (
-                                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-extrabold">
-                                  📝 Inna rzecz / Ręczny opis pozycji
+                                /\bsf\b|sample\s*folder|próbk/i.test(batch.customName || '') ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-violet-600 text-white text-[10px] font-extrabold">
+                                    🟪 SF (Sample Folders / Próbki)
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold">
+                                    🟦 Kartony / Torby / Materiały
+                                  </span>
+                                )
+                              ) : monthsLeft < 6 ? (
+                                <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-extrabold flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>🟥 Data &lt; 6 msc ({monthsLeft} msc)</span>
                                 </span>
                               ) : eligible12m ? (
                                 <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-[10px] font-bold flex items-center gap-1">
                                   <CheckCircle2 className="w-3 h-3" />
-                                  <span>OK dla PARTNER (&gt;12 msc: {monthsLeft} msc)</span>
+                                  <span>OK dla PARTNER (&ge;12 msc: {monthsLeft} msc)</span>
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-extrabold flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3 text-amber-600" />
-                                  <span>Krótka data: {monthsLeft} msc (&lt;12 msc — tylko PL / Sklep)</span>
+                                  <span>Data 6–12 msc: {monthsLeft} msc (brak możliwości PARTNER)</span>
+                                </span>
+                              )}
+
+                              {!isCustom && batch.dedicatedForPartnerOnly && eligible12m && (
+                                <span className="px-2.5 py-0.5 rounded-full bg-pink-500 text-white text-[10px] font-extrabold">
+                                  🩷 Etykieta PARTNER
+                                </span>
+                              )}
+                              {!isCustom && batch.firstToExit && (
+                                <span className="px-2.5 py-0.5 rounded-full bg-yellow-400 text-slate-950 border border-yellow-500 text-[10px] font-extrabold">
+                                  🟨 Pierwsza do wyjścia
                                 </span>
                               )}
                             </div>
@@ -1942,7 +2309,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                   </span>
                                 )}
                                 {batch.palletLabel && (
-                                  <span className="text-amber-800 font-semibold">
+                                  <span className="text-blue-800 font-semibold">
                                     🏷️ {batch.palletLabel}
                                   </span>
                                 )}
@@ -1963,6 +2330,53 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                     🏷️ {batch.palletLabel}
                                   </span>
                                 )}
+                              </div>
+                            )}
+
+                            {/* SZYBKIE PRZYCISKI ETYKIET NA POJEDYNCZEJ PARTII */}
+                            {!isCustom && (
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={!eligible12m}
+                                  onClick={() => handleToggleBatchPartner(batch)}
+                                  title={
+                                    !eligible12m
+                                      ? 'Miejsca PARTNER nie mogą mieć daty ważności poniżej 12 miesięcy!'
+                                      : 'Dodaj lub usuń etykietę PARTNER (kolor różowy)'
+                                  }
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition-all flex items-center gap-1 ${
+                                    !eligible12m
+                                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                      : batch.dedicatedForPartnerOnly
+                                      ? 'bg-pink-500 border-pink-600 text-white shadow-2xs cursor-pointer'
+                                      : 'bg-white border-pink-300 text-pink-900 hover:bg-pink-50 cursor-pointer'
+                                  }`}
+                                >
+                                  <span>
+                                    {!eligible12m
+                                      ? '🔒 PARTNER (wymaga ≥12 msc)'
+                                      : batch.dedicatedForPartnerOnly
+                                      ? '🩷 Etykieta PARTNER (Aktywna)'
+                                      : '+ 🩷 Dodaj etykietę PARTNER'}
+                                  </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleBatchFirstToExit(batch)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer flex items-center gap-1 ${
+                                    batch.firstToExit
+                                      ? 'bg-yellow-400 border-yellow-500 text-slate-950 shadow-2xs'
+                                      : 'bg-white border-yellow-400 text-amber-950 hover:bg-yellow-50'
+                                  }`}
+                                >
+                                  <span>
+                                    {batch.firstToExit
+                                      ? '🟨 Pierwsza do wyjścia (Aktywna)'
+                                      : '+ 🟨 Oznacz: Pierwsza do wyjścia'}
+                                  </span>
+                                </button>
                               </div>
                             )}
 

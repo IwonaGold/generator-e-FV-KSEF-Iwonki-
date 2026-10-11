@@ -1018,7 +1018,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
     quantity: number,
     expiryDate: string,
     palletLabel?: string,
-    notes?: string
+    opts?: { partner?: boolean; firstToExit?: boolean }
   ) => {
     const slot = slotMap.get(`slot-${rackId}-${level}-${pos}`);
     if (!slot) return;
@@ -1033,8 +1033,9 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
       looseUnitsInOpenCarton: quantity % upc,
       lotNumber: expiryDate ? `MHD-${expiryDate.slice(5, 7)}/${expiryDate.slice(2, 4)}` : '-',
       expiryDate,
+      dedicatedForPartnerOnly: opts?.partner || false,
+      firstToExit: opts?.firstToExit || false,
       palletLabel: palletLabel || 'Inwentaryzacja Październik',
-      notes,
       updatedAt: nowIso,
     };
     slot.allocations.push(batch);
@@ -1074,95 +1075,95 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
   addCustom('rack-m4-r1', 2, 1, 'Papier Miodowy + Papier Uzupełniający', 1, 'paleta', 'Paleta łączona (Opakowania)');
   addCustom('rack-m4-r1', 2, 2, 'KARTON M', 1760, 'szt.', 'CAŁA PALETA');
   // 1 Regał Poz II Pal 3: wolne
-  addProd('rack-m4-r1', 1, 1, 'prod-9120117912728', 15, '2028-03-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r1', 1, 1, 'prod-9120117912896', 153, '2028-04-30', 'Paleta łączona (2/2)');
-  addProd('rack-m4-r1', 1, 2, 'prod-9120117912803', 375, '2027-12-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r1', 1, 2, 'prod-9120117913138', 211, '2028-02-29', 'Paleta łączona (2/2)');
-  addProd('rack-m4-r1', 1, 3, 'prod-9120117912858', 35, '2027-05-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r1', 1, 3, 'prod-9120117912902', 86, '2028-01-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r1', 1, 1, 'prod-9120117912728', 15, '2028-03-31', 'Paleta łączona (1/2)', { partner: true });
+  addProd('rack-m4-r1', 1, 1, 'prod-9120117912896', 153, '2028-04-30', 'Paleta łączona (2/2)', { partner: true });
+  addProd('rack-m4-r1', 1, 2, 'prod-9120117912803', 375, '2027-12-31', 'Paleta łączona (1/2)', { partner: true });
+  addProd('rack-m4-r1', 1, 2, 'prod-9120117913138', 211, '2028-02-29', 'Paleta łączona (2/2)', { partner: true });
+  addProd('rack-m4-r1', 1, 3, 'prod-9120117912858', 35, '2027-05-31', 'Paleta łączona (1/2)', { firstToExit: true });
+  addProd('rack-m4-r1', 1, 3, 'prod-9120117912902', 86, '2028-01-31', 'Paleta łączona (2/2)', { partner: true });
   addProd('rack-m4-r1', 0, 1, 'prod-9120117912933', 298, '2027-03-31', 'Poziom 0 (03_27)');
   addProd('rack-m4-r1', 0, 1, 'prod-9120117912933', 275, '2026-12-31', 'CAŁA PALETA (12_26)');
   addProd('rack-m4-r1', 0, 1, 'prod-9120117912933', 32, '2026-11-30', 'Krótka data (11_26)');
-  addProd('rack-m4-r1', 0, 1, 'prod-9120117912919', 10, '2028-01-31', 'Paleta łączona (Pectin 180)');
-  addProd('rack-m4-r1', 0, 2, 'prod-9120117912773', 365, '2027-12-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r1', 0, 2, 'prod-9120117914692', 57, '2027-12-31', 'Paleta łączona (2/2)');
-  addProd('rack-m4-r1', 0, 3, 'prod-9120117914470', 1617, '2027-11-30', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r1', 0, 3, 'prod-9120117912667', 96, '2027-12-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r1', 0, 1, 'prod-9120117912919', 10, '2028-01-31', 'Paleta łączona (Pectin 180)', { partner: true });
+  addProd('rack-m4-r1', 0, 2, 'prod-9120117912773', 365, '2027-12-31', 'Paleta łączona (1/2)', { partner: true });
+  addProd('rack-m4-r1', 0, 2, 'prod-9120117914692', 57, '2027-12-31', 'Paleta łączona (2/2)', { partner: true });
+  addProd('rack-m4-r1', 0, 3, 'prod-9120117914470', 1617, '2027-11-30', 'Paleta łączona (1/2)', { partner: true });
+  addProd('rack-m4-r1', 0, 3, 'prod-9120117912667', 96, '2027-12-31', 'Paleta łączona (2/2)', { partner: true });
 
   // --- 2 REGAŁ (rack-m4-r2) ---
   addProd('rack-m4-r2', 2, 1, 'prod-9120117912667', 3240, '2027-12-31', 'CAŁA PALETA');
   addProd('rack-m4-r2', 2, 2, 'prod-9120117912858', 946, '2027-05-31', 'CAŁA PALETA');
   // 2 Regał Poz II Pal 3: wolne
-  addProd('rack-m4-r2', 1, 1, 'prod-9120117912797', 1368, '2028-02-29', 'CAŁA PALETA');
-  addProd('rack-m4-r2', 1, 2, 'prod-9120117912810', 109, '2028-02-29', 'Paleta łączona (02_28)');
+  addProd('rack-m4-r2', 1, 1, 'prod-9120117912797', 1368, '2028-02-29', 'CAŁA PALETA', { partner: true });
+  addProd('rack-m4-r2', 1, 2, 'prod-9120117912810', 109, '2028-02-29', 'Paleta łączona (02_28)', { partner: true });
   addProd('rack-m4-r2', 1, 2, 'prod-9120117912810', 29, '2026-11-30', 'Paleta łączona (11_26)');
   // 2 Regał Poz I Pal 3: wolne
-  addProd('rack-m4-r2', 0, 1, 'prod-9120117912865', 135, '2027-11-30', 'CAŁA PALETA');
-  addProd('rack-m4-r2', 0, 2, 'prod-9120117915651', 102, '2028-08-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r2', 0, 2, 'prod-9120001435692', 73, '2027-11-30', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r2', 0, 1, 'prod-9120117912865', 135, '2027-11-30', 'CAŁA PALETA', { partner: true });
+  addProd('rack-m4-r2', 0, 2, 'prod-9120117915651', 102, '2028-08-31', 'Paleta łączona (1/2)', { partner: true });
+  addProd('rack-m4-r2', 0, 2, 'prod-9120001435692', 73, '2027-11-30', 'Paleta łączona (2/2)', { partner: true });
 
   // --- 3 REGAŁ (rack-m4-r3, 2 kolumny) ---
   addProd('rack-m4-r3', 2, 1, 'prod-9120117912797', 1863, '2027-03-31', 'CAŁA PALETA');
   addCustom('rack-m4-r3', 2, 2, 'KARTON M LONG', 1760, 'szt.', 'CAŁA PALETA');
-  addProd('rack-m4-r3', 1, 1, 'prod-9120117912834', 647, '2028-04-30', 'CAŁA PALETA');
+  addProd('rack-m4-r3', 1, 1, 'prod-9120117912834', 647, '2028-04-30', 'CAŁA PALETA', { firstToExit: true });
   // 3 Regał Poz I Pal 2: wolne
-  addProd('rack-m4-r3', 0, 1, 'prod-9120117912773', 837, '2027-09-30', 'Paleta łączona (09_27)');
-  addProd('rack-m4-r3', 0, 1, 'prod-9120117912773', 490, '2027-05-31', 'Paleta łączona (05_27)');
-  addProd('rack-m4-r3', 0, 2, 'prod-9120117912872', 157, '2027-10-31', 'CAŁA PALETA');
+  addProd('rack-m4-r3', 0, 1, 'prod-9120117912773', 837, '2027-09-30', 'Paleta łączona (09_27)', { firstToExit: true });
+  addProd('rack-m4-r3', 0, 1, 'prod-9120117912773', 490, '2027-05-31', 'Paleta łączona (05_27)', { firstToExit: true });
+  addProd('rack-m4-r3', 0, 2, 'prod-9120117912872', 157, '2027-10-31', 'CAŁA PALETA', { partner: true });
 
   // --- 4 REGAŁ (rack-m4-r4) ---
   addCustom('rack-m4-r4', 2, 1, 'KARTON 40x40x30', 200, 'szt.', 'Opakowania');
-  addProd('rack-m4-r4', 2, 2, 'prod-9120117912865', 1134, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 2, 2, 'prod-9120117912865', 1134, '2027-05-31', 'CAŁA PALETA', { firstToExit: true });
   addCustom('rack-m4-r4', 2, 3, 'Karton 60x40x30', 120, 'szt.', 'CAŁA PALETA');
-  addProd('rack-m4-r4', 1, 1, 'prod-9120117912841', 826, '2027-10-31', 'CAŁA PALETA');
-  addProd('rack-m4-r4', 1, 2, 'prod-9120117912902', 60, '2027-02-28', 'CAŁA PALETA');
-  addProd('rack-m4-r4', 1, 3, 'prod-9120117912896', 153, '2027-02-28', 'CAŁA PALETA');
-  addProd('rack-m4-r4', 0, 1, 'prod-9120117912889', 96, '2027-10-31', 'CAŁA PALETA');
-  addProd('rack-m4-r4', 0, 2, 'prod-9120117914906', 143, '2027-11-30', 'CAŁA PALETA');
-  addProd('rack-m4-r4', 0, 3, 'prod-9120117912919', 151, '2027-09-30', 'Paleta łączona (09_27)');
-  addProd('rack-m4-r4', 0, 3, 'prod-9120117912919', 217, '2028-01-31', 'Paleta łączona (01_28)');
-  addProd('rack-m4-r4', 0, 3, 'prod-9120117912926', 42, '2028-02-29', 'Paleta łączona (Pectin 84)');
+  addProd('rack-m4-r4', 1, 1, 'prod-9120117912841', 826, '2027-10-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r4', 1, 2, 'prod-9120117912902', 60, '2027-02-28', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r4', 1, 3, 'prod-9120117912896', 153, '2027-02-28', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r4', 0, 1, 'prod-9120117912889', 96, '2027-10-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r4', 0, 2, 'prod-9120117914906', 143, '2027-11-30', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r4', 0, 3, 'prod-9120117912919', 151, '2027-09-30', 'Paleta łączona (09_27)', { firstToExit: true });
+  addProd('rack-m4-r4', 0, 3, 'prod-9120117912919', 217, '2028-01-31', 'Paleta łączona (01_28)', { firstToExit: true });
+  addProd('rack-m4-r4', 0, 3, 'prod-9120117912926', 42, '2028-02-29', 'Paleta łączona (Pectin 84)', { firstToExit: true });
 
   // --- 5 REGAŁ (rack-m4-r5) ---
   addProd('rack-m4-r5', 2, 1, 'prod-9120117914470', 77, '2027-09-30', 'Paleta łączona (+ Karton 60x40x40: 120 szt.)');
   addCustom('rack-m4-r5', 2, 1, 'Karton 60x40x40', 120, 'szt.', 'CAŁA PALETA (na palecie z Travel 14)');
   addCustom('rack-m4-r5', 2, 2, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
   addCustom('rack-m4-r5', 2, 3, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
-  addProd('rack-m4-r5', 1, 1, 'prod-9120117914470', 500, '2027-03-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r5', 1, 1, 'prod-9120117912858', 228, '2027-03-31', 'Paleta łączona (2/2)');
-  addProd('rack-m4-r5', 1, 2, 'prod-9120117912858', 828, '2027-04-30', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r5', 1, 2, 'prod-9120117912865', 169, '2027-05-31', 'Paleta łączona (2/2)');
-  addProd('rack-m4-r5', 1, 3, 'prod-9120117912711', 416, '2028-03-31', 'CAŁA PALETA');
-  addProd('rack-m4-r5', 0, 1, 'prod-9120001435692', 1157, '2027-08-31', 'CAŁA PALETA');
-  addProd('rack-m4-r5', 0, 2, 'prod-9120117912858', 1018, '2027-01-31', 'CAŁA PALETA');
-  addProd('rack-m4-r5', 0, 3, 'prod-9120117912681', 1191, '2028-03-31', 'CAŁA PALETA (+ Flora 28 i Hetox)');
-  addProd('rack-m4-r5', 0, 3, 'prod-9120117912865', 15, '2027-04-30', 'Paleta łączona');
-  addProd('rack-m4-r5', 0, 3, 'prod-9120117912827', 183, '2028-01-31', 'Paleta łączona');
+  addProd('rack-m4-r5', 1, 1, 'prod-9120117914470', 500, '2027-03-31', 'Paleta łączona (1/2)', { firstToExit: true });
+  addProd('rack-m4-r5', 1, 1, 'prod-9120117912858', 228, '2027-03-31', 'Paleta łączona (2/2)', { firstToExit: true });
+  addProd('rack-m4-r5', 1, 2, 'prod-9120117912858', 828, '2027-04-30', 'Paleta łączona (1/2)', { firstToExit: true });
+  addProd('rack-m4-r5', 1, 2, 'prod-9120117912865', 169, '2027-05-31', 'Paleta łączona (2/2)', { firstToExit: true });
+  addProd('rack-m4-r5', 1, 3, 'prod-9120117912711', 416, '2028-03-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r5', 0, 1, 'prod-9120001435692', 1157, '2027-08-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r5', 0, 2, 'prod-9120117912858', 1018, '2027-01-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r5', 0, 3, 'prod-9120117912681', 1191, '2028-03-31', 'CAŁA PALETA (+ Flora 28 i Hetox)', { firstToExit: true });
+  addProd('rack-m4-r5', 0, 3, 'prod-9120117912865', 15, '2027-04-30', 'Paleta łączona', { firstToExit: true });
+  addProd('rack-m4-r5', 0, 3, 'prod-9120117912827', 183, '2028-01-31', 'Paleta łączona', { firstToExit: true });
 
   // --- 6 REGAŁ (rack-m4-r6) ---
   addCustom('rack-m4-r6', 2, 1, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
   addCustom('rack-m4-r6', 2, 2, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
   addProd('rack-m4-r6', 2, 3, 'prod-9120117912667', 1620, '2027-12-31', 'CAŁA PALETA');
-  addProd('rack-m4-r6', 1, 1, 'prod-9120117912704', 475, '2028-05-31', 'CAŁA PALETA');
-  addProd('rack-m4-r6', 1, 2, 'prod-9120117912667', 1871, '2027-12-31', 'CAŁA PALETA');
-  addProd('rack-m4-r6', 1, 3, 'prod-9120117912728', 735, '2027-09-30', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r6', 1, 3, 'prod-9120117913138', 111, '2027-08-31', 'Paleta łączona (2/2)');
-  addProd('rack-m4-r6', 0, 1, 'prod-9120117914692', 359, '2027-09-30', 'CAŁA PALETA');
-  addProd('rack-m4-r6', 0, 2, 'prod-9120117911370', 1482, '2028-03-31', 'CAŁA PALETA');
-  addProd('rack-m4-r6', 0, 3, 'prod-9120117912674', 993, '2028-07-31', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 1, 1, 'prod-9120117912704', 475, '2028-05-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r6', 1, 2, 'prod-9120117912667', 1871, '2027-12-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r6', 1, 3, 'prod-9120117912728', 735, '2027-09-30', 'Paleta łączona (1/2)', { firstToExit: true });
+  addProd('rack-m4-r6', 1, 3, 'prod-9120117913138', 111, '2027-08-31', 'Paleta łączona (2/2)', { firstToExit: true });
+  addProd('rack-m4-r6', 0, 1, 'prod-9120117914692', 359, '2027-09-30', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r6', 0, 2, 'prod-9120117911370', 1482, '2028-03-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r6', 0, 3, 'prod-9120117912674', 993, '2028-07-31', 'CAŁA PALETA', { firstToExit: true });
 
   // --- 7 REGAŁ (rack-m4-r7) ---
   addCustom('rack-m4-r7', 2, 1, 'KARTON XL', 640, 'szt.', 'CAŁA PALETA');
-  addProd('rack-m4-r7', 2, 2, 'prod-9120117912797', 2154, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m4-r7', 2, 2, 'prod-9120117912797', 2154, '2027-05-31', 'CAŁA PALETA', { firstToExit: true });
   addCustom('rack-m4-r7', 2, 3, 'KARTON XL', 640, 'szt.', 'CAŁA PALETA');
-  addProd('rack-m4-r7', 1, 1, 'prod-9120117915651', 459, '2027-03-31', 'CAŁA PALETA');
-  addProd('rack-m4-r7', 1, 2, 'prod-9120117912797', 439, '2027-01-31', 'CAŁA PALETA');
+  addProd('rack-m4-r7', 1, 1, 'prod-9120117915651', 459, '2027-03-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r7', 1, 2, 'prod-9120117912797', 439, '2027-01-31', 'CAŁA PALETA', { firstToExit: true });
   // 7 Regał Poz I Pal 3: wolne
-  addProd('rack-m4-r7', 0, 1, 'prod-9120117912759', 1049, '2028-04-30', 'CAŁA PALETA (1/2)');
-  addProd('rack-m4-r7', 0, 1, 'prod-9120117912766', 302, '2028-08-31', 'CAŁA PALETA (2/2)');
-  addProd('rack-m4-r7', 0, 2, 'prod-9120117912803', 332, '2027-05-31', 'CAŁA PALETA');
-  addProd('rack-m4-r7', 0, 3, 'prod-9120117912742', 347, '2028-08-31', 'Paleta łączona (1/2)');
-  addProd('rack-m4-r7', 0, 3, 'prod-9120117912735', 57, '2027-12-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r7', 0, 1, 'prod-9120117912759', 1049, '2028-04-30', 'CAŁA PALETA (1/2)', { firstToExit: true });
+  addProd('rack-m4-r7', 0, 1, 'prod-9120117912766', 302, '2028-08-31', 'CAŁA PALETA (2/2)', { firstToExit: true });
+  addProd('rack-m4-r7', 0, 2, 'prod-9120117912803', 332, '2027-05-31', 'CAŁA PALETA', { firstToExit: true });
+  addProd('rack-m4-r7', 0, 3, 'prod-9120117912742', 347, '2028-08-31', 'Paleta łączona (1/2)', { firstToExit: true });
+  addProd('rack-m4-r7', 0, 3, 'prod-9120117912735', 57, '2027-12-31', 'Paleta łączona (2/2)', { firstToExit: true });
 
   // ==========================================================================
   // 2. LOKAL NR 5 (MAGAZYN 5) — 8 REGAŁÓW + 12 MIEJSC NA PODŁODZE
@@ -1170,7 +1171,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
   // --- 1 REGAŁ (rack-m5-r1, 2 kolumny) ---
   addProd('rack-m5-r1', 2, 1, 'prod-9120117913138', 3240, '2028-02-29', 'CAŁA PALETA');
   addCustom('rack-m5-r1', 2, 2, 'Palety EURO (zapas)', 1, 'paleta', 'Palety');
-  addProd('rack-m5-r1', 1, 1, 'prod-9120117912902', 182, '2027-04-30', 'Paleta');
+  addProd('rack-m5-r1', 1, 1, 'prod-9120117912902', 182, '2027-04-30', 'Paleta', { firstToExit: true });
   addProd('rack-m5-r1', 1, 2, 'prod-9120117912902', 393, '2027-04-30', 'CAŁA PALETA');
   addCustom('rack-m5-r1', 0, 1, 'MARKETING — materiały reklamowe', 1, 'paleta', 'Marketing');
   addProd('rack-m5-r1', 0, 2, 'prod-9120117912926', 475, '2028-03-31', 'Paleta łączona + MARKETING (03_28)');
@@ -1205,7 +1206,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
   addProd('rack-m5-r4', 2, 1, 'prod-9120117912810', 1080, '2028-02-29', 'CAŁA PALETA');
   addProd('rack-m5-r4', 2, 2, 'prod-9120117912810', 1224, '2028-02-29', 'CAŁA PALETA');
   addProd('rack-m5-r4', 1, 1, 'prod-9120117912810', 1224, '2028-02-29', 'CAŁA PALETA');
-  addProd('rack-m5-r4', 1, 2, 'prod-9120117912896', 395, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m5-r4', 1, 2, 'prod-9120117912896', 395, '2027-05-31', 'CAŁA PALETA', { firstToExit: true });
   addProd('rack-m5-r4', 0, 1, 'prod-9120117912933', 384, '2026-12-31', 'CAŁA PALETA');
   addProd('rack-m5-r4', 0, 2, 'prod-9120117912933', 384, '2026-12-31', 'CAŁA PALETA');
 
@@ -1214,7 +1215,7 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
   addProd('rack-m5-r5', 2, 2, 'prod-9120117912711', 437, '2028-05-31', 'Paleta łączona (05_28)');
   addProd('rack-m5-r5', 2, 2, 'prod-9120117912711', 209, '2028-09-30', 'Paleta łączona (09_28)');
   addProd('rack-m5-r5', 1, 1, 'prod-9120117912711', 648, '2028-08-31', 'CAŁA PALETA');
-  addProd('rack-m5-r5', 1, 2, 'prod-9120117912728', 2160, '2028-03-31', 'CAŁA PALETA');
+  addProd('rack-m5-r5', 1, 2, 'prod-9120117912728', 2160, '2028-03-31', 'CAŁA PALETA', { firstToExit: true });
   addProd('rack-m5-r5', 0, 1, 'prod-9120117912704', 1095, '2028-08-31', 'Paleta łączona (08_28)');
   addProd('rack-m5-r5', 0, 1, 'prod-9120117912704', 129, '2028-10-31', 'Paleta łączona (10_28)');
   addProd('rack-m5-r5', 0, 2, 'prod-9120117912681', 2160, '2028-08-31', 'CAŁA PALETA');
@@ -1364,9 +1365,9 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
   addCustom('rack-m6-floor', 0, 1, 'Mikrosan Torba', 5600, 'szt.', 'Materiały');
   // Pola 2, 3, 4, 5, 6: wolne
   addProd('rack-m6-floor', 0, 7, 'prod-9120117912766', 682, '2028-10-31', 'CAŁA PALETA');
-  addProd('rack-m6-floor', 0, 8, 'prod-9120117912803', 972, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m6-floor', 0, 8, 'prod-9120117912803', 972, '2027-05-31', 'CAŁA PALETA', { firstToExit: true });
   addProd('rack-m6-floor', 0, 9, 'prod-9120117912766', 614, '2028-09-30', 'CAŁA PALETA');
-  addProd('rack-m6-floor', 0, 10, 'prod-9120117912759', 1224, '2028-04-30', 'CAŁA PALETA');
+  addProd('rack-m6-floor', 0, 10, 'prod-9120117912759', 1224, '2028-04-30', 'CAŁA PALETA', { firstToExit: true });
   // Pola 11, 12: wolne
 
   return slots;

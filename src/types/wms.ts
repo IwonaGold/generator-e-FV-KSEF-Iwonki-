@@ -58,7 +58,8 @@ export interface StockAllocationBatch {
   looseUnitsInOpenCarton?: number;    // Ilość sztuk w kartonie otwartym / luzem (np. 5)
   lotNumber: string;                  // Numer serii LOT (np. 25E3475 lub '-' dla innych rzeczy)
   expiryDate: string;                 // Data ważności MHD w formacie YYYY-MM-DD (lub '' dla innych rzeczy)
-  dedicatedForPartnerOnly?: boolean;  // Czy partia odłożona specjalnie dla Partnerów (> 12 msc)
+  dedicatedForPartnerOnly?: boolean;  // Etykieta PARTNER (różowy kolor, tylko dla dat >= 12 msc)
+  firstToExit?: boolean;              // Etykieta "Pierwsza do wyjścia" (żółty kolor)
   palletLabel?: string;               // Oznaczenie palety (np. Paleta #1, Dostawa PZ)
   notes?: string;
   updatedAt: string;
