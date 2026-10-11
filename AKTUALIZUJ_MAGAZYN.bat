@@ -11,6 +11,7 @@ echo.
 
 :: 1. Kopia bezpieczenstwa lokalnej bazy danych magazynu przed aktualizacja
 if not exist "data_backup" mkdir "data_backup"
+if exist "data\wms_state.json" copy /Y "data\wms_state.json" "data_backup\wms_state.json" >nul
 if exist "wms-state-backup.json" copy /Y "wms-state-backup.json" "data_backup\wms-state-backup.json" >nul
 echo [1/4] Zabezpieczono lokalna baze stanow magazynowych (folder data_backup).
 
@@ -29,6 +30,8 @@ if %errorlevel% equ 0 (
 )
 
 :: 3. Przywrocenie lokalnej bazy danych magazynu
+if not exist "data" mkdir "data"
+if exist "data_backup\wms_state.json" copy /Y "data_backup\wms_state.json" "data\wms_state.json" >nul
 if exist "data_backup\wms-state-backup.json" copy /Y "data_backup\wms-state-backup.json" "wms-state-backup.json" >nul
 echo [3/4] Przywrocono lokalna baze stanow magazynowych.
 
