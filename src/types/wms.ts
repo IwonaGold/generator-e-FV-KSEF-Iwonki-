@@ -113,6 +113,21 @@ export interface SpatialWarehouse {
 
 export type WarehouseDocType = 'WZ' | 'RW' | 'PZ' | 'PW';
 
+export interface PutAwayRecommendationOption {
+  slotId: string;
+  slotCode: string;
+  slotName: string;
+  warehouseId: string;
+  warehouseName: string;
+  rackName: string;
+  level: number;
+  position: number;
+  isEmpty: boolean;
+  score: number;
+  badge: string;
+  reason: string;
+}
+
 export interface AllocatedMovementRecord {
   slotId: string;
   slotCode: string;
@@ -121,6 +136,13 @@ export interface AllocatedMovementRecord {
   expiryDate: string;
   quantity: number;
   palletLabel?: string;
+  cartonsCount?: number;
+  unitsPerCarton?: number;
+  openCartonQty?: number;
+  dedicatedForPartnerOnly?: boolean;
+  firstToExit?: boolean;
+  recommendationReason?: string;
+  recommendationBadge?: string;
 }
 
 export interface WarehouseDocumentItem {

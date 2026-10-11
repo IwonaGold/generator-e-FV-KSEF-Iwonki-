@@ -409,3 +409,145 @@ export function parseWFirmaDocumentsText(
 
   return documents;
 }
+
+/**
+ * Uniwersalny parser Faktur (FV / Invoice / Rechnung), dokumentów dostawy (WZ / PZ / Lieferschein)
+ * oraz wklejonych tabel / list towarów do Planowania Przyjęcia Dostawy.
+ */
+export function parseUniversalDeliveryOrInvoiceText(
+  rawText: string,
+  catalog: ProductCatalogItem[],
+  forceAsDeliveryPlan: boolean = false
+): WarehouseDocument[] {
+  // 1. Najpierw sprawdź standardowy format dokumentów magazynowych z wFirma (PZ, WZ, PW, RW)
+  const standardDocs = parseWFirmaDocumentsText(rawText, catalog);
+  if (standardDocs.length > 0) {
+    if (!forceAsDeliveryPlan) return standardDocs;
+    return standardDocs.map((d) => ({
+      ...d,
+      id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      docType: 'PZ',
+      docNumber: d.docType === 'PZ' ? d.docNumber : `DOSTAWA (${d.docNumber})`,
+      notes: d.notes
+        ? `${d.notes} [Zaplanowano z dokumentu ${d.docNumber}]`
+        : `Zaplanowano przyjęcie dostawy na podstawie dokumentu ${d.docNumber}`,
+    }));
+  }
+
+  // 2. Jeśli to Faktura VAT (FV), Faktura Zakupu, Lieferschein, WZ w innym formacie lub wklejona lista pozycji:
+  const cleaned = (rawText || '').replace(/\r\n/g, '\n');
+  const lines = cleaned
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return [];
+
+  let docNumber = `FV/DOSTAWA ${new Date().toLocaleDateString('pl-PL')}`;
+  let issueDate = new Date().toISOString().slice(0, 10);
+  let counterparty = 'Institut AllergoSan / Dostawca';
+
+  for (let i = 0; i < Math.min(lines.length, 40); i++) {
+    const l = lines[i];
+    const fvMatch = l.match(
+      /(?:Faktura(?:\s+VAT)?(?:\s+nr)?|FV|WZ|PZ|Invoice|Lieferschein|Rechnung)\s*[:#-]?\s*([A-Z0-9/-]{3,25})/i
+    );
+    if (fvMatch && /\d/.test(fvMatch[1])) {
+      docNumber = `DOSTAWA (${fvMatch[0].trim()})`;
+    }
+    const dateIso = l.match(/\b(202\d-\d{2}-\d{2})\b/);
+    if (dateIso) {
+      issueDate = dateIso[1];
+    } else {
+      const datePl = l.match(/\b(\d{2})[.-](\d{2})[.-](202\d)\b/);
+      if (datePl) {
+        issueDate = `${datePl[3]}-${datePl[2]}-${datePl[1]}`;
+      }
+    }
+    if (/AllergoSan/i.test(l)) {
+      counterparty = 'Institut AllergoSan Pharmazeutische Produkte';
+    }
+  }
+
+  const parsedItems: WarehouseDocumentItem[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (
+      /^(Razem|Suma|Wartość|Podatek|Słownie|Do zapłaty|Sprzedawca|Nabywca|Bank|IBAN)/i.test(line)
+    ) {
+      continue;
+    }
+
+    // Spróbuj dopasować produkt z katalogu na podstawie kodu EAN lub nazwy w linii
+    const eanMatch = line.match(/(?:EAN(?:PL)?)?(\d{11,14})/i);
+    const rawSku = eanMatch ? eanMatch[0] : '';
+    const matchedProd = matchProductFromCatalog(rawSku, line, catalog);
+
+    if (!matchedProd) continue;
+
+    // Wyciągnij ilość z tej linii lub sąsiedniej linii
+    let quantity = 0;
+    const qtyWithUnit = line.match(
+      /\b(\d{1,5}(?:[.,]\d+)?)\s*(?:szt\.?|op\.?|kpl\.?|stk\.?|pcs|kart\.?)\b/i
+    );
+    if (qtyWithUnit) {
+      quantity = Math.round(parsePolishNumber(qtyWithUnit[1]));
+    } else {
+      // Usuń kod EAN i liczby z nazwy produktu (np. "6", "10", "28", "60", "300", "5", "9", "1000"), aby znaleźć właściwą ilość
+      const lineWithoutEan = line
+        .replace(/(?:EAN(?:PL)?)?\d{10,14}/gi, ' ')
+        .replace(/\b(202\d[-./]\d{2}(?:[-./]\d{2})?)\b/g, ' ')
+        .replace(/\b\d+[.,]\d{2}\b/g, ' '); // Usuń ceny z groszami (np. 124,50)
+
+      const standaloneInts = Array.from(lineWithoutEan.matchAll(/\b(\d{1,5})\b/g)).map((m) =>
+        parseInt(m[1], 10)
+      );
+      // Odfiltruj liczby będące częścią wariantu (np. 7, 10, 14, 20, 28, 30, 40, 60, 180, 300, 450, 500, 1000) o ile jest inna liczba
+      const nonVariantCandidates = standaloneInts.filter(
+        (n) => ![1, 5, 6, 7, 9, 10, 14, 20, 28, 30, 40, 60, 180, 300, 450, 500, 1000].includes(n)
+      );
+      if (nonVariantCandidates.length > 0) {
+        quantity = nonVariantCandidates[nonVariantCandidates.length - 1];
+      } else if (standaloneInts.length >= 2) {
+        quantity = standaloneInts[standaloneInts.length - 1];
+      }
+    }
+
+    if (quantity <= 0) continue;
+
+    const isPartnerChannel = /PARTNER/i.test(line) || /^EAN\d/i.test(rawSku);
+
+    parsedItems.push({
+      id: `uni-item-${Date.now()}-${parsedItems.length}`,
+      lp: parsedItems.length + 1,
+      rawSku: rawSku || matchedProd.skuRegular,
+      rawName: line.length > 95 ? `${matchedProd.name} (${line.slice(0, 50)}...)` : line,
+      matchedProductId: matchedProd.id,
+      isPartnerChannel,
+      quantity,
+      unit: 'szt.',
+      unitPrice: matchedProd.avgPurchasePriceNet || 0,
+      totalValue: Math.round((matchedProd.avgPurchasePriceNet || 0) * quantity * 100) / 100,
+      allocatedMovements: [],
+    });
+  }
+
+  if (parsedItems.length === 0) return [];
+
+  return [
+    {
+      id: `doc-plan-${Date.now()}`,
+      docType: 'PZ',
+      docNumber,
+      issueDate,
+      warehouseName: 'Główny Magazyn (Magazyn 4, 5, 6)',
+      counterparty,
+      notes: 'Odczytano automatycznie przez Asystenta Planowania Dostawy',
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      items: parsedItems,
+    },
+  ];
+}
+

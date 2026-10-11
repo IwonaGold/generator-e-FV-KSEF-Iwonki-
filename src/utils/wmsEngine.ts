@@ -5,6 +5,8 @@ import {
   StockAllocationBatch,
   AllocatedMovementRecord,
   WarehouseDocument,
+  WarehouseDocumentItem,
+  PutAwayRecommendationOption,
 } from '../types/wms';
 import { getMonthsUntilExpiry, isEligibleForPartner12Months } from './wfirmaParser';
 
@@ -582,11 +584,15 @@ export function executeWarehouseDocument(
           const targetSlot = nextSlots.find((s) => s.id === alloc.slotId) || nextSlots[0];
           const lot = (alloc.lotNumber || `DOST-${doc.issueDate.replace(/-/g, '')}`).trim();
           const exp = (alloc.expiryDate || '2028-09-30').trim();
+          const wantPartner =
+            Boolean(alloc.dedicatedForPartnerOnly) ||
+            Boolean(item.isPartnerChannel) ||
+            targetSlot.slotType === 'picking_partner_12m';
 
-          if (targetSlot.slotType === 'picking_partner_12m' && !isEligibleForPartner12Months(exp)) {
+          if (wantPartner && !isEligibleForPartner12Months(exp)) {
             return {
               nextState: state,
-              error: `Zablokowano alokację na ${targetSlot.code}: gniazda PARTNER przyjmują wyłącznie towar z datą ważności powyżej 12 miesięcy (podano: ${exp}).`,
+              error: `Zablokowano alokację na ${targetSlot.code}: miejsca z etykietą PARTNER (różowe) nie mogą mieć daty ważności poniżej 12 miesięcy (podano: ${exp}).`,
               warnings,
             };
           }
@@ -597,19 +603,32 @@ export function executeWarehouseDocument(
 
           if (existingBatch) {
             existingBatch.quantity += alloc.quantity;
+            if (alloc.unitsPerCarton && alloc.unitsPerCarton > 0) {
+              existingBatch.unitsPerCarton = alloc.unitsPerCarton;
+            }
+            if (wantPartner) existingBatch.dedicatedForPartnerOnly = true;
+            if (alloc.firstToExit) existingBatch.firstToExit = true;
             syncBatchCartonBreakdown(existingBatch);
             existingBatch.updatedAt = nowIso;
           } else {
-            targetSlot.allocations.push({
+            const upc = alloc.unitsPerCarton || catalogProduct.defaultUnitsPerCarton || undefined;
+            const newBatch: StockAllocationBatch = syncBatchCartonBreakdown({
               id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               productId: catalogProduct.id,
               quantity: alloc.quantity,
               lotNumber: lot,
               expiryDate: exp,
-              dedicatedForPartnerOnly: targetSlot.slotType === 'picking_partner_12m',
-              palletLabel: alloc.palletLabel || (doc.docType === 'PZ' ? `Dostawa ${doc.docNumber}` : 'Przyjęcie PW'),
+              unitsPerCarton: upc,
+              fullCartonsCount: alloc.cartonsCount,
+              looseUnitsInOpenCarton: alloc.openCartonQty,
+              dedicatedForPartnerOnly: wantPartner,
+              firstToExit: Boolean(alloc.firstToExit),
+              palletLabel:
+                alloc.palletLabel ||
+                (doc.docType === 'PZ' ? `Dostawa ${doc.docNumber}` : 'Przyjęcie PW'),
               updatedAt: nowIso,
             });
+            targetSlot.allocations.push(newBatch);
           }
 
           item.allocatedMovements.push({
@@ -619,6 +638,13 @@ export function executeWarehouseDocument(
             expiryDate: exp,
             quantity: alloc.quantity,
             palletLabel: alloc.palletLabel,
+            cartonsCount: alloc.cartonsCount,
+            unitsPerCarton: alloc.unitsPerCarton,
+            openCartonQty: alloc.openCartonQty,
+            dedicatedForPartnerOnly: wantPartner,
+            firstToExit: Boolean(alloc.firstToExit),
+            recommendationReason: alloc.recommendationReason,
+            recommendationBadge: alloc.recommendationBadge,
           });
 
           nextHistory.unshift({
@@ -937,4 +963,279 @@ export function executeSlotDragAndDrop(
     summary: `Przesunięto paletę (${labelSummary}) z ${fromSlot.code} na ${toSlot.code}`,
   };
 }
+
+/**
+ * Zwraca standardową ilość sztuk w 1 kartonie zbiorczym dla danego produktu
+ * (na podstawie istniejących palet w magazynie lub katalogu produktów).
+ */
+export function getDefaultUnitsPerCarton(state: WMSFullState, productId: string | null): number {
+  if (!productId) return 54;
+  for (const s of state.slots) {
+    for (const a of s.allocations) {
+      if (a.productId === productId && a.unitsPerCarton && a.unitsPerCarton > 0) {
+        return a.unitsPerCarton;
+      }
+    }
+  }
+  const prod = state.products.find((p) => p.id === productId);
+  if (prod?.defaultUnitsPerCarton && prod.defaultUnitsPerCarton > 0) return prod.defaultUnitsPerCarton;
+  const name = `${prod?.shortName || ''} ${prod?.name || ''}`.toLowerCase();
+  if (name.includes('1000ml') || name.includes('mikrosan')) return 12;
+  if (name.includes('logic') || name.includes('300g') || name.includes('450g') || name.includes('500g')) return 24;
+  if (name.includes('60g')) return 72;
+  if (name.includes('10 sasz')) return 108;
+  if (name.includes('20 sasz') || name.includes('panda')) return 72;
+  if (name.includes('14 sasz') || name.includes('flora') || name.includes('travel')) return 50;
+  if (name.includes('7 sasz')) return 80;
+  return 54;
+}
+
+/**
+ * Oblicza inteligentny ranking miejsc docelowych w Magazynie 4, 5 i 6 dla przyjmowanej pozycji z Faktury / WZ / PZ.
+ */
+export function getPutAwayRecommendationsForItem(
+  state: WMSFullState,
+  productId: string | null,
+  quantity: number,
+  isPartnerChannel: boolean,
+  claimedSlotIds: Set<string> = new Set()
+): PutAwayRecommendationOption[] {
+  const prod = productId ? state.products.find((p) => p.id === productId) : undefined;
+  const whMap = new Map(state.warehouses.map((w) => [w.id, w]));
+  const rackMap = new Map(state.racks.map((r) => [r.id, r]));
+
+  // Znajdź wszystkie miejsca, na których już leży ten sam produkt
+  const sameProdSlots = productId
+    ? state.slots.filter((s) =>
+        s.allocations.some((a) => a.productId === productId && a.quantity > 0)
+      )
+    : [];
+
+  const sameProdRackIds = new Set(sameProdSlots.map((s) => s.rackId));
+  const sameProdWhIds = new Set(sameProdSlots.map((s) => s.warehouseId));
+
+  // Sprawdź, czy produkt jest obecny na Poziomie 0 (Kompletacja na dole regału)
+  const hasLevel0Stock = sameProdSlots.some((s) => s.level === 0 && s.slotType !== 'floor_pallet');
+
+  // Jeśli produktu nie ma obecnie nigdzie na stanie, określ domyślną halę docelową po kategorii / rodzinie
+  let preferredWhId = 'wh-mag-5';
+  let preferredRackHint = '';
+  if (prod) {
+    const n = `${prod.shortName} ${prod.name}`.toLowerCase();
+    if (prod.category === 'sample' || /\bsf\b|sample/i.test(n)) {
+      preferredWhId = 'wh-mag-4';
+      preferredRackHint = 'rack-m4-r5';
+    } else if (prod.category === 'accessory') {
+      preferredWhId = 'wh-mag-4';
+      preferredRackHint = 'rack-m4-r6';
+    } else if (
+      /stress|het|metabolic|migraene|power|active|cat|dog/i.test(n)
+    ) {
+      preferredWhId = 'wh-mag-4';
+    } else if (/panda|travel|uro|akut|sr-9|caricol/i.test(n)) {
+      preferredWhId = 'wh-mag-6';
+    } else {
+      preferredWhId = 'wh-mag-5';
+    }
+  }
+
+  const options: PutAwayRecommendationOption[] = [];
+
+  for (const slot of state.slots) {
+    const activeAllocs = slot.allocations.filter((a) => a.quantity > 0);
+    const hasCustomText = Boolean(slot.customDescription && slot.customDescription.trim());
+    const isEmpty = activeAllocs.length === 0 && !hasCustomText;
+    const hasSameProdHere =
+      Boolean(productId) && activeAllocs.some((a) => a.productId === productId);
+
+    // Rozważamy wszystkie wolne miejsca ORAZ miejsca, na których już leży ten sam produkt (jako opcję dokładki)
+    if (!isEmpty && !hasSameProdHere) continue;
+
+    const wh = whMap.get(slot.warehouseId);
+    const rack = rackMap.get(slot.rackId);
+    const whShort = wh?.name.split('—')[0].trim() || slot.warehouseId;
+    const rackShort = rack?.name.split('(')[0].trim() || slot.rackId;
+    const currentQtyHere = activeAllocs.reduce((sum, a) => sum + a.quantity, 0);
+
+    let score = 0;
+    let badge = '💡 Wolne miejsce';
+    let reason = `Wolne miejsce w ${whShort} (${rackShort}, Poziom ${slot.level}).`;
+
+    if (!isEmpty && hasSameProdHere) {
+      // Opcja dokładki do istniejącej palety tego samego produktu
+      if (quantity <= 160 && currentQtyHere <= 250) {
+        score = 92;
+        badge = '⚡ Dokładka do niepełnej palety';
+        reason = `Na tym miejscu leży już ten sam produkt (${currentQtyHere} szt.) — przy mniejszej dostawie (${quantity} szt.) najlepiej dołożyć tutaj bez zajmowania nowego miejsca.`;
+      } else if (slot.level === 0 && currentQtyHere < 100) {
+        score = 88;
+        badge = '⚡ Uzupełnienie Poziomu 0';
+        reason = `Niski stan tego produktu na Poziomie 0 (${currentQtyHere} szt.) — warto dołożyć do bieżącego miejsca kompletacji.`;
+      } else {
+        score = 45;
+        badge = '➕ Połącz z istniejącą paletą';
+        reason = `Na tym miejscu znajduje się już ${currentQtyHere} szt. tego produktu — możliwość konsolidacji na jednej palecie.`;
+      }
+    } else if (isEmpty) {
+      // Punktacja wolnego miejsca
+      if (sameProdRackIds.has(slot.rackId)) {
+        score += 75;
+        badge = '⭐ Ten sam regał (Optymalne)';
+        reason = `Wolne miejsce na tym samym regale (${rackShort} w ${whShort}), na którym składowane są już pozostałe palety tego produktu.`;
+      } else if (sameProdWhIds.has(slot.warehouseId)) {
+        score += 50;
+        badge = '⭐ Ta sama hala';
+        reason = `Wolne miejsce w tej samej hali (${whShort}), w której znajduje się już ten produkt.`;
+      } else if (preferredRackHint && slot.rackId === preferredRackHint) {
+        score += 65;
+        badge = '⭐ Dedykowany regał';
+        reason = `Wolne miejsce na dedykowanym regale (${rackShort} w ${whShort}) dla tej grupy asortymentowej.`;
+      } else if (slot.warehouseId === preferredWhId) {
+        score += 40;
+        badge = '👍 Zalecana hala';
+        reason = `Wolne miejsce w zalecanej hali (${whShort}) dla tej rodziny produktów.`;
+      } else {
+        score += 15;
+      }
+
+      // Zasada FEFO przy wyborze poziomu regału:
+      if (slot.slotType === 'floor_pallet') {
+        if (quantity >= 500) {
+          score += 12;
+          reason += ' Duża dostawa całopaletowa — wygodny rozładunek na miejsce podłogowe.';
+        } else {
+          score -= 8;
+        }
+      } else if (hasLevel0Stock) {
+        // Jeśli na dole (Poziom 0) jest już zapas do bieżącego wydawania, nowa dostawa (dłuższa data) powinna trafić wyżej (Poziom 1 lub 2)
+        if (slot.level >= 1) {
+          score += 18;
+          reason += ` Zgodnie z FEFO nowa dostawa trafia wyżej (Poziom ${slot.level}) jako zapas, a starsza partia na dole wychodzi pierwsza.`;
+        } else {
+          score += 6;
+        }
+      } else {
+        // Jeśli na Poziomie 0 nie ma tego produktu, warto postawić na Poziomie 0 lub 1
+        if (slot.level === 0) {
+          score += 22;
+          badge = '⭐ Poziom 0 (Brak na dole!)';
+          reason = `Brak tego produktu na Poziomie 0 — umieść tutaj, aby zapewnić łatwy dostęp do bieżących wydań!`;
+        } else if (slot.level === 1) {
+          score += 14;
+        }
+      }
+
+      if (isPartnerChannel) {
+        reason += ' Paleta otrzyma różową etykietę 🩷 PARTNER (data ≥ 12 msc).';
+      }
+    }
+
+    if (claimedSlotIds.has(slot.id)) {
+      score -= 80;
+    }
+
+    options.push({
+      slotId: slot.id,
+      slotCode: slot.code,
+      slotName: slot.name,
+      warehouseId: slot.warehouseId,
+      warehouseName: whShort,
+      rackName: rackShort,
+      level: slot.level,
+      position: slot.position,
+      isEmpty,
+      score,
+      badge,
+      reason,
+    });
+  }
+
+  options.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.slotCode.localeCompare(b.slotCode);
+  });
+
+  return options;
+}
+
+/**
+ * Generuje kompletny, inteligentny plan rozmieszczenia wszystkich pozycji z dokumentu dostawy (Faktura / WZ / PZ),
+ * automatycznie dzieląc duże ilości na osobne palety, przeliczając kartony i rezerwując kolejne wolne miejsca.
+ */
+export function buildSmartDeliveryAllocationsForDoc(
+  state: WMSFullState,
+  doc: WarehouseDocument,
+  defaultExpiryDate: string = '2028-09-30'
+): Record<string, AllocatedMovementRecord[]> {
+  const claimedSlotIds = new Set<string>();
+  const result: Record<string, AllocatedMovementRecord[]> = {};
+
+  for (const item of doc.items) {
+    const upc = getDefaultUnitsPerCarton(state, item.matchedProductId);
+    // Pojemność pojedynczej palety (ok. 10 kartonów lub min. 600 szt., dla płynów 1000ml ok. 24 kartony = 288 szt.)
+    const maxCartonsPerPallet = upc <= 15 ? 24 : upc <= 30 ? 18 : 10;
+    const maxUnitsPerPallet = Math.max(240, upc * maxCartonsPerPallet);
+
+    const numPallets =
+      item.quantity > maxUnitsPerPallet ? Math.ceil(item.quantity / maxUnitsPerPallet) : 1;
+
+    let remainingQty = item.quantity;
+    const rows: AllocatedMovementRecord[] = [];
+
+    for (let pIdx = 0; pIdx < numPallets; pIdx++) {
+      const isLast = pIdx === numPallets - 1;
+      let palletQty = isLast
+        ? remainingQty
+        : Math.min(
+            remainingQty,
+            upc > 0
+              ? Math.round(item.quantity / numPallets / upc) * upc || Math.ceil(item.quantity / numPallets)
+              : Math.ceil(item.quantity / numPallets)
+          );
+      if (palletQty <= 0) palletQty = remainingQty;
+      remainingQty -= palletQty;
+
+      const recommendations = getPutAwayRecommendationsForItem(
+        state,
+        item.matchedProductId,
+        palletQty,
+        item.isPartnerChannel,
+        claimedSlotIds
+      );
+
+      const best = recommendations[0];
+      if (best && best.isEmpty) {
+        claimedSlotIds.add(best.slotId);
+      }
+
+      const fullCartons = upc > 0 ? Math.floor(palletQty / upc) : 0;
+      const openUnits = upc > 0 ? palletQty % upc : 0;
+
+      rows.push({
+        slotId: best?.slotId || state.slots[0]?.id || '',
+        slotCode: best?.slotCode || state.slots[0]?.code || '',
+        lotNumber: `DOST-${doc.issueDate.replace(/-/g, '')}`,
+        expiryDate: defaultExpiryDate,
+        quantity: palletQty,
+        cartonsCount: fullCartons,
+        unitsPerCarton: upc,
+        openCartonQty: openUnits,
+        dedicatedForPartnerOnly: item.isPartnerChannel,
+        firstToExit: best?.badge.includes('Poziom 0 (Brak na dole!)') || false,
+        palletLabel:
+          numPallets > 1
+            ? `Paleta ${pIdx + 1}/${numPallets} (${doc.docNumber})`
+            : `Dostawa ${doc.docNumber}`,
+        recommendationBadge: best?.badge || '💡 Sugerowane miejsce',
+        recommendationReason:
+          best?.reason || 'Wybrano pierwsze dostępne miejsce w magazynie.',
+      });
+    }
+
+    result[item.id] = rows;
+  }
+
+  return result;
+}
+
 

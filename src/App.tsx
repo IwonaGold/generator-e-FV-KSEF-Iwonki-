@@ -200,8 +200,8 @@ export function App() {
     },
     {
       id: 'documents',
-      label: 'Dokumenty WZ / RW / PZ / PW',
-      shortLabel: 'Dokumenty',
+      label: '📥 Planowanie Dostawy & Dokumenty (FV / WZ / PZ)',
+      shortLabel: 'Dostawy & Dok.',
       icon: <FileText className="w-4 h-4" />,
       badge: pendingDocsCount > 0 ? pendingDocsCount : undefined,
     },
