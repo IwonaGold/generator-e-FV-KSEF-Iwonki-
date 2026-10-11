@@ -40,6 +40,9 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 }) => {
   const [hoveredRackId, setHoveredRackId] = useState<string | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<string | null>(null);
+  const [activeColorFilter, setActiveColorFilter] = useState<
+    'ALL' | 'partner_pink' | 'first_yellow' | 'red_short_6m' | 'product_green' | 'sf' | 'materials'
+  >('ALL');
 
   /**
    * 6-kolorowy system oznaczeń palet:
@@ -206,6 +209,23 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
     0
   );
 
+  // Liczniki palet w każdym z 6 kolorów w aktualnie wybranym magazynie
+  const colorCounts = occupiedWhSlots.reduce(
+    (acc, slot) => {
+      const info = getSlotColorAndBadge(slot);
+      acc[info.category] = (acc[info.category] || 0) + 1;
+      return acc;
+    },
+    {
+      partner_pink: 0,
+      first_yellow: 0,
+      red_short_6m: 0,
+      product_green: 0,
+      sf: 0,
+      materials: 0,
+    }
+  );
+
   // Obsługa Drag & Drop kafelka
   const handleSlotDragStart = (e: React.DragEvent, slot: WarehouseLocationSlot) => {
     e.dataTransfer.setData('text/plain', slot.id);
@@ -358,6 +378,10 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                       })
                       .join(' + ');
 
+                    const matchesColorFilter =
+                      activeColorFilter === 'ALL' ||
+                      (!isEmpty && visualInfo?.category === activeColorFilter);
+
                     return (
                       <button
                         key={slot.id}
@@ -381,7 +405,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         }
                         className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] select-none ${
                           !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                        } ${
+                        } ${!matchesColorFilter ? 'opacity-20 scale-95' : ''} ${
                           isDropTarget
                             ? 'bg-cyan-400 text-slate-950 border-white ring-4 ring-cyan-300 scale-105 z-20 shadow-xl'
                             : isBeingDragged
@@ -523,57 +547,203 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
           </div>
         </div>
 
-        {/* Szybkie liczniki dla tej hali + Legenda 6 kolorów */}
-        <div className="mt-4 pt-3 border-t border-slate-700/80 flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex flex-wrap items-center gap-5">
-            <span>
-              Miejsca na regałach (Regał 1–6):{' '}
-              <strong className="text-teal-300 font-mono">{rackSlotsCount}</strong>
-            </span>
-            <span>
-              Miejsca paletowe na podłodze:{' '}
-              <strong className="text-amber-300 font-mono">{floorSlotsCount}</strong>
-            </span>
-            <span>
-              Zajęte łącznie:{' '}
-              <strong className="text-emerald-300 font-mono">
-                {occupiedWhSlots.length} / {whSlots.length}
-              </strong>{' '}
-              ({whSlots.length - occupiedWhSlots.length} wolnych)
-            </span>
-            <span>
-              Suma jednostek w hali:{' '}
-              <strong className="text-amber-300 font-mono">
-                {totalUnitsInWh.toLocaleString('pl-PL')} jedn.
-              </strong>
-            </span>
+        {/* Szybkie liczniki dla tej hali + Interaktywna Legenda 6 kolorów na karcie */}
+        <div className="mt-4 pt-3 border-t border-slate-700/80 space-y-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-5">
+              <span>
+                Miejsca na regałach (Regał 1–6):{' '}
+                <strong className="text-teal-300 font-mono">{rackSlotsCount}</strong>
+              </span>
+              <span>
+                Miejsca paletowe na podłodze:{' '}
+                <strong className="text-amber-300 font-mono">{floorSlotsCount}</strong>
+              </span>
+              <span>
+                Zajęte łącznie:{' '}
+                <strong className="text-emerald-300 font-mono">
+                  {occupiedWhSlots.length} / {whSlots.length}
+                </strong>{' '}
+                ({whSlots.length - occupiedWhSlots.length} wolnych)
+              </span>
+              <span>
+                Suma jednostek w hali:{' '}
+                <strong className="text-amber-300 font-mono">
+                  {totalUnitsInWh.toLocaleString('pl-PL')} jedn.
+                </strong>
+              </span>
+            </div>
+
+            {activeColorFilter !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => setActiveColorFilter('ALL')}
+                className="px-3 py-1 rounded-lg bg-teal-500 text-slate-950 font-extrabold text-[11px] hover:bg-teal-400 cursor-pointer"
+              >
+                ✕ Pokaż wszystkie kolory ({occupiedWhSlots.length} palet)
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold">
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-xs bg-pink-500 inline-block border border-pink-200" />
-              <span>🩷 PARTNER (&ge;12 msc)</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-xs bg-yellow-400 inline-block border border-yellow-100" />
-              <span>🟨 Pierwsza do wyjścia</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-xs bg-red-600 inline-block border border-red-200" />
-              <span>🟥 Data &lt; 6 msc</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-xs bg-emerald-600 inline-block border border-emerald-200" />
-              <span>🟩 Pozostałe produkty</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-xs bg-violet-600 inline-block border border-violet-200" />
-              <span>🟪 SF (Próbki)</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-xs bg-blue-600 inline-block border border-blue-200" />
-              <span>🟦 Kartony / Torby / Materiały</span>
-            </span>
+          {/* KARTA LEGENDY KOLORÓW PALET W TYM MAGAZYNIE (KLIKNIJ ABY PODŚWIETLIĆ) */}
+          <div className="bg-slate-950/75 rounded-2xl p-3 border border-slate-700/90">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span className="text-[11px] font-mono font-black uppercase tracking-wider text-teal-300">
+                🎨 Legenda Kolorów Palet — {warehouse.name} (Kliknij wybrany kolor, aby podświetlić palety na planie):
+              </span>
+              <span className="text-[11px] text-slate-400">
+                 puste = szara przerywana ramka
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveColorFilter((prev) =>
+                    prev === 'partner_pink' ? 'ALL' : 'partner_pink'
+                  )
+                }
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeColorFilter === 'partner_pink'
+                    ? 'bg-pink-500/40 border-white ring-2 ring-pink-300 scale-[1.02]'
+                    : 'bg-pink-500/20 border-pink-400/60 hover:bg-pink-500/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-pink-500 border border-pink-200 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="font-extrabold text-pink-200 text-[11px]">🩷 PARTNER</div>
+                    <div className="text-[10px] text-pink-100/80">Data &ge; 12 msc</div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-pink-950/90 text-pink-200 font-mono text-[11px] font-black border border-pink-400/50">
+                  {colorCounts.partner_pink}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveColorFilter((prev) =>
+                    prev === 'first_yellow' ? 'ALL' : 'first_yellow'
+                  )
+                }
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeColorFilter === 'first_yellow'
+                    ? 'bg-yellow-400/40 border-white ring-2 ring-yellow-300 scale-[1.02]'
+                    : 'bg-yellow-400/20 border-yellow-300/60 hover:bg-yellow-400/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-yellow-400 border border-yellow-100 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="font-extrabold text-yellow-200 text-[11px]">🟨 1. do wyjścia</div>
+                    <div className="text-[10px] text-yellow-100/80">Pierwsze do wydania</div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-yellow-950/90 text-yellow-200 font-mono text-[11px] font-black border border-yellow-400/50">
+                  {colorCounts.first_yellow}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveColorFilter((prev) =>
+                    prev === 'red_short_6m' ? 'ALL' : 'red_short_6m'
+                  )
+                }
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeColorFilter === 'red_short_6m'
+                    ? 'bg-red-600/45 border-white ring-2 ring-red-300 scale-[1.02]'
+                    : 'bg-red-600/25 border-red-400/60 hover:bg-red-600/35'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-red-600 border border-red-200 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="font-extrabold text-red-200 text-[11px]">🟥 Data &lt; 6 msc</div>
+                    <div className="text-[10px] text-red-100/80">Krótka data ważności</div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-red-950/90 text-red-200 font-mono text-[11px] font-black border border-red-400/50">
+                  {colorCounts.red_short_6m}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveColorFilter((prev) =>
+                    prev === 'product_green' ? 'ALL' : 'product_green'
+                  )
+                }
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeColorFilter === 'product_green'
+                    ? 'bg-emerald-600/45 border-white ring-2 ring-emerald-300 scale-[1.02]'
+                    : 'bg-emerald-600/25 border-emerald-400/60 hover:bg-emerald-600/35'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-emerald-500 border border-emerald-200 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="font-extrabold text-emerald-200 text-[11px]">🟩 Produkty</div>
+                    <div className="text-[10px] text-emerald-100/80">Pozostałe miejsca</div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-200 font-mono text-[11px] font-black border border-emerald-400/50">
+                  {colorCounts.product_green}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveColorFilter((prev) => (prev === 'sf' ? 'ALL' : 'sf'))
+                }
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeColorFilter === 'sf'
+                    ? 'bg-violet-600/45 border-white ring-2 ring-violet-300 scale-[1.02]'
+                    : 'bg-violet-600/25 border-violet-400/60 hover:bg-violet-600/35'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-violet-500 border border-violet-200 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="font-extrabold text-violet-200 text-[11px]">🟪 SF (Próbki)</div>
+                    <div className="text-[10px] text-violet-100/80">Sample Folders</div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-violet-950/90 text-violet-200 font-mono text-[11px] font-black border border-violet-400/50">
+                  {colorCounts.sf}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveColorFilter((prev) =>
+                    prev === 'materials' ? 'ALL' : 'materials'
+                  )
+                }
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeColorFilter === 'materials'
+                    ? 'bg-blue-600/45 border-white ring-2 ring-blue-300 scale-[1.02]'
+                    : 'bg-blue-600/25 border-blue-400/60 hover:bg-blue-600/35'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-blue-500 border border-blue-200 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="font-extrabold text-blue-200 text-[11px]">🟦 Materiały</div>
+                    <div className="text-[10px] text-blue-100/80">Kartony / Torby / Inne</div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-blue-950/90 text-blue-200 font-mono text-[11px] font-black border border-blue-400/50">
+                  {colorCounts.materials}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -738,6 +908,10 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               ? `${firstAlloc.expiryDate.slice(5, 7)}_${firstAlloc.expiryDate.slice(2, 4)}`
                               : '';
 
+                          const matchesColorFilter =
+                            activeColorFilter === 'ALL' ||
+                            (!isEmpty && visualInfo?.category === activeColorFilter);
+
                           return (
                             <button
                               key={slot.id}
@@ -761,7 +935,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               }
                               className={`rounded-xl p-2 border-2 text-left transition-all select-none ${
                                 !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                              } ${
+                              } ${!matchesColorFilter ? 'opacity-20 scale-95' : ''} ${
                                 isDropTarget
                                   ? 'bg-cyan-400 text-slate-950 border-white ring-4 ring-cyan-300 scale-105 z-20 shadow-xl'
                                   : isBeingDragged
