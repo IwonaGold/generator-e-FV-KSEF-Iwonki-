@@ -41,6 +41,9 @@ export interface ProductCatalogItem {
   wfirmaStockRegular: number; // Suma z wFirma dla indeksu PL (zwykłego)
   wfirmaStockPartner: number; // Suma z wFirma dla indeksu PL PARTNER
   wfirmaLastUpdated?: string;
+  defaultUnitsPerCarton?: number; // Domyślna ilość sztuk w kartonie zbiorczym z Cennika
+  cartonDimensions?: string;      // Wymiary kartonu zbiorczego (np. 40x40x30)
+  cartonsPerPallet?: number;      // Ilość kartonów na pełnej palecie
 }
 
 export interface StockAllocationBatch {

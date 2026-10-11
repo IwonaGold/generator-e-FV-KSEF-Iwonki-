@@ -1477,12 +1477,22 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         </label>
                         <select
                           value={allocProductId}
-                          onChange={(e) => setAllocProductId(e.target.value)}
+                          onChange={(e) => {
+                            const pid = e.target.value;
+                            setAllocProductId(pid);
+                            const selProd = productMap.get(pid);
+                            if (selProd?.defaultUnitsPerCarton) {
+                              const upc = selProd.defaultUnitsPerCarton;
+                              setAllocUnitsPerCarton(upc);
+                              setAllocQty(allocFullCartons * upc + allocLooseUnits);
+                            }
+                          }}
                           className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-xl"
                         >
                           {state.products.map((p) => (
                             <option key={p.id} value={p.id}>
-                              {p.shortName} — {p.name} ({p.baseEan || p.skuRegular})
+                              {p.shortName} — {p.name}
+                              {p.defaultUnitsPerCarton ? ` [Karton: ${p.defaultUnitsPerCarton} szt.]` : ''}
                             </option>
                           ))}
                         </select>

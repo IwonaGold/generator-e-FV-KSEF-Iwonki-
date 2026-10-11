@@ -154,8 +154,8 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
             return (
               <div key={lvl} className="flex items-center gap-2">
-                <span className="w-12 shrink-0 text-[10px] font-mono font-bold text-slate-300 bg-slate-900 px-1.5 py-1.5 rounded text-center border border-slate-700">
-                  Poz. P{lvl}
+                <span className="w-14 shrink-0 text-[10px] font-mono font-bold text-slate-300 bg-slate-900 px-1.5 py-1.5 rounded text-center border border-slate-700">
+                  {lvl === 2 ? 'POZ. II' : lvl === 1 ? 'POZ. I' : lvl === 0 ? 'POZ. 0' : `POZ. ${lvl}`}
                 </span>
                 <div
                   className="flex-1 grid gap-1.5"
@@ -205,15 +205,33 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                     const firstAlloc = activeAllocs[0];
                     const firstProd = firstAlloc ? productMap.get(firstAlloc.productId) : undefined;
                     const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
-                    const rawShortLabel = hasCustom
-                      ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
-                      : (firstProd?.shortName || 'Wolne')
-                          .replace(/omni[\s-]*biotic®?\s*/gi, '')
-                          .replace(/omni[\s-]*logic®?\s*/gi, '');
+                    const rawShortLabel =
+                      firstAlloc?.isCustomItem || firstAlloc?.productId === 'CUSTOM'
+                        ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
+                        : (firstProd?.shortName || slot.customDescription || 'Wolne')
+                            .replace(/omni[\s-]*biotic®?\s*/gi, '')
+                            .replace(/omni[\s-]*logic®?\s*/gi, '');
 
                     const parts = rawShortLabel.split('•').map((s) => s.trim());
                     const primaryType = parts[0] || rawShortLabel;
                     const variantLabel = parts[1] || '';
+                    const isCombinedPallet = activeAllocs.length > 1;
+                    const mhdShort =
+                      firstAlloc?.expiryDate && firstAlloc.expiryDate.length >= 7
+                        ? `${firstAlloc.expiryDate.slice(5, 7)}_${firstAlloc.expiryDate.slice(2, 4)}`
+                        : '';
+
+                    const allItemsTooltip = activeAllocs
+                      .map((a) => {
+                        const p = productMap.get(a.productId);
+                        const lbl = a.isCustomItem ? a.customName : p?.shortName || a.productId;
+                        const exp =
+                          a.expiryDate && a.expiryDate.length >= 7
+                            ? ` (${a.expiryDate.slice(5, 7)}_${a.expiryDate.slice(2, 4)})`
+                            : '';
+                        return `${lbl}: ${a.quantity} ${a.customUnit || 'szt.'}${exp}`;
+                      })
+                      .join(' + ');
 
                     return (
                       <button
@@ -232,11 +250,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         title={
                           isEmpty
                             ? `${slot.code}: Wolne miejsce (Upuść tutaj paletę lub kliknij, aby dodać)`
-                            : `${slot.code}: ${rawShortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'})${
+                            : `${slot.code}: ${allItemsTooltip}${
                                 cartonInfo?.hasCartons ? ` | ${cartonInfo.fullDescription}` : ''
                               } — Złap myszką i przeciągnij na inne miejsce!`
                         }
-                        className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[68px] select-none ${
+                        className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] select-none ${
                           !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                         } ${
                           isDropTarget
@@ -249,6 +267,8 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300 z-10'
                             : isEmpty
                             ? 'bg-slate-900/60 border-dashed border-slate-600 text-slate-500 hover:border-slate-400'
+                            : isCombinedPallet
+                            ? 'bg-amber-500/25 border-amber-400/80 text-amber-100 hover:bg-amber-500/40'
                             : hasCustom || hasShort
                             ? 'bg-amber-500/25 border-amber-400/80 text-amber-100 hover:bg-amber-500/40'
                             : slot.slotType === 'picking_partner_12m'
@@ -263,10 +283,14 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             {!isEmpty && (
                               <GripVertical className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 shrink-0" />
                             )}
-                            <span>M.{String(slot.position).padStart(2, '0')}</span>
+                            <span>{slot.position} PAL.</span>
                           </span>
                           {!isEmpty && (
-                            <span className="font-black">{totalQty.toLocaleString('pl-PL')}</span>
+                            <span className="font-black">
+                              {isCombinedPallet
+                                ? `${firstAlloc.quantity.toLocaleString('pl-PL')} (${totalQty.toLocaleString('pl-PL')})`
+                                : totalQty.toLocaleString('pl-PL')}
+                            </span>
                           )}
                         </div>
                         <div className="mt-0.5 leading-tight">
@@ -281,9 +305,39 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               <div className="text-[11px] font-extrabold leading-tight break-words">
                                 {primaryType}
                               </div>
-                              {variantLabel && (
-                                <div className="text-[10px] font-mono font-bold opacity-90 leading-tight mt-0.5">
-                                  {variantLabel}
+                              <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                {variantLabel && (
+                                  <span className="text-[10px] font-mono font-bold opacity-90 leading-tight">
+                                    {variantLabel}
+                                  </span>
+                                )}
+                                {mhdShort && (
+                                  <span className="text-[9px] font-mono font-bold bg-slate-950/40 px-1 rounded">
+                                    {mhdShort}
+                                  </span>
+                                )}
+                              </div>
+                              {isCombinedPallet && (
+                                <div className="mt-0.5 pt-0.5 border-t border-white/15 space-y-0.5">
+                                  {activeAllocs.slice(1).map((extra) => {
+                                    const ep = productMap.get(extra.productId);
+                                    const elbl = extra.isCustomItem
+                                      ? extra.customName || 'Inne'
+                                      : ep?.shortName || extra.productId;
+                                    const emhd =
+                                      extra.expiryDate && extra.expiryDate.length >= 7
+                                        ? ` (${extra.expiryDate.slice(5, 7)}_${extra.expiryDate.slice(2, 4)})`
+                                        : '';
+                                    return (
+                                      <div
+                                        key={extra.id}
+                                        className="text-[9px] font-mono font-bold leading-tight opacity-95 truncate"
+                                      >
+                                        + {elbl}: {extra.quantity}
+                                        {emhd}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                               {cartonInfo?.hasCartons && (
@@ -440,16 +494,16 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
             {/* WNĘTRZE PROSTOKĄTNEJ HALI: 3 PASY POZIOME */}
             <div className="flex-1 flex flex-col justify-between gap-4">
-              {/* 1. BOK GÓRNY HALI (REGAŁ 1, REGAŁ 2, REGAŁ 3 OD LEWEJ STRONY) */}
+              {/* 1. BOK GÓRNY HALI (1–4 REGAŁ OD LEWEJ STRONY) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-2">
                   <span className="text-[11px] font-mono font-extrabold uppercase tracking-wider text-teal-300">
-                    ⬆️ BOK GÓRNY OD LEWEJ STRONY (Regał 1, Regał 2, Regał 3 — po 12 miejsc paletowych)
+                    ⬆️ BOK GÓRNY OD LEWEJ STRONY ({topWallRacks.map((r) => r.name.split('(')[0].trim()).join(', ')})
                   </span>
                 </div>
                 {topWallRacks.length > 0 ? (
                   <div
-                    className="grid gap-4"
+                    className="grid gap-3.5"
                     style={{
                       gridTemplateColumns: `repeat(${Math.max(1, topWallRacks.length)}, minmax(0, 1fr))`,
                     }}
@@ -503,7 +557,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           </span>
                         </div>
                         <span className="text-[11px] font-mono text-amber-300 font-bold">
-                          {floorSlots.length} miejsc paletowych na podłodze (P0)
+                          {floorSlots.length} miejsc paletowych na podłodze (1–12 PALETA)
                         </span>
                       </div>
 
@@ -540,6 +594,10 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           const parts = rawShortLabel.split('•').map((s) => s.trim());
                           const primaryType = parts[0] || rawShortLabel;
                           const variantLabel = parts[1] || '';
+                          const mhdShort =
+                            firstAlloc?.expiryDate && firstAlloc.expiryDate.length >= 7
+                              ? `${firstAlloc.expiryDate.slice(5, 7)}_${firstAlloc.expiryDate.slice(2, 4)}`
+                              : '';
 
                           return (
                             <button
@@ -581,9 +639,13 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               <div className="flex items-center justify-between gap-1 text-[10px] font-mono font-black">
                                 <span className="flex items-center gap-0.5">
                                   {!isEmpty && <GripVertical className="w-3 h-3 opacity-70" />}
-                                  <span>POLE #{String(slot.position).padStart(2, '0')}</span>
+                                  <span>{slot.position} PALETA</span>
                                 </span>
-                                <span className="opacity-85">{slot.code}</span>
+                                {mhdShort && (
+                                  <span className="bg-slate-950/50 px-1 rounded text-amber-200">
+                                    {mhdShort}
+                                  </span>
+                                )}
                               </div>
                               {isDropTarget ? (
                                 <div className="text-xs font-black uppercase mt-1 text-slate-950">
@@ -616,7 +678,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                     {totalQty.toLocaleString('pl-PL')}{' '}
                                     {firstAlloc?.customUnit || 'szt.'}
                                   </span>
-                                  <span>🟫 Paleta EURO</span>
+                                  <span>🟫 {firstAlloc?.palletLabel || 'Paleta EURO'}</span>
                                 </div>
                               )}
                             </button>
@@ -628,16 +690,16 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 })}
               </div>
 
-              {/* 3. BOK DOLNY HALI (REGAŁ 4, REGAŁ 5, REGAŁ 6 OD LEWEJ STRONY) */}
+              {/* 3. BOK DOLNY HALI (5–7 / 5–8 REGAŁ OD LEWEJ STRONY) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-2">
                   <span className="text-[11px] font-mono font-extrabold uppercase tracking-wider text-teal-300">
-                    ⬇️ BOK DOLNY OD LEWEJ STRONY (Regał 4, Regał 5, Regał 6 — po 12 miejsc paletowych)
+                    ⬇️ BOK DOLNY OD LEWEJ STRONY ({bottomWallRacks.map((r) => r.name.split('(')[0].trim()).join(', ')})
                   </span>
                 </div>
                 {bottomWallRacks.length > 0 ? (
                   <div
-                    className="grid gap-4"
+                    className="grid gap-3.5"
                     style={{
                       gridTemplateColumns: `repeat(${Math.max(1, bottomWallRacks.length)}, minmax(0, 1fr))`,
                     }}

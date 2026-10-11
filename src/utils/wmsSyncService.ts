@@ -1,7 +1,7 @@
 import { WMSFullState, WorkstationRole } from '../types/wms';
 import { createInitialWMSState, DEFAULT_PRODUCTS_CATALOG } from './defaultWmsData';
 
-const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v5';
+const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v7_oct_inv_cennik';
 const WORKSTATION_ROLE_KEY = 'eubiosis_wms_workstation_role_v1';
 const WORKSTATION_NAME_KEY = 'eubiosis_wms_workstation_name_v1';
 const BROADCAST_CHANNEL_NAME = 'eubiosis_wms_realtime_channel_v2';
@@ -16,6 +16,9 @@ function applyCleanProductNames(state: WMSFullState): WMSFullState {
         ...prod,
         name: def.name,
         shortName: def.shortName,
+        defaultUnitsPerCarton: def.defaultUnitsPerCarton ?? prod.defaultUnitsPerCarton,
+        cartonDimensions: def.cartonDimensions ?? prod.cartonDimensions,
+        cartonsPerPallet: def.cartonsPerPallet ?? prod.cartonsPerPallet,
       };
     }
     return prod;
@@ -41,21 +44,18 @@ function applyCleanProductNames(state: WMSFullState): WMSFullState {
     : state.racks;
 
   const prodById = new Map(updatedProducts.map((p) => [p.id, p]));
-  let updatedSlots = Array.isArray(state.slots)
+  const updatedSlots = Array.isArray(state.slots)
     ? state.slots
         .filter((s) => s.rackId !== 'rack-m4-floor' && !(s.warehouseId === 'wh-mag-4' && s.slotType === 'floor_pallet'))
         .map((slot) => ({
           ...slot,
           allocations: (slot.allocations || []).map((batch) => {
             if (batch.isCustomItem || batch.productId === 'CUSTOM') return batch;
-            if (batch.unitsPerCarton && batch.unitsPerCarton > 0) return batch;
             const p = prodById.get(batch.productId);
             const defaultUpc =
-              p?.category === 'mikrosan'
-                ? 12
-                : p?.category === 'sample'
-                ? 100
-                : 24;
+              p?.defaultUnitsPerCarton ||
+              batch.unitsPerCarton ||
+              (p?.category === 'mikrosan' ? 12 : 24);
             return {
               ...batch,
               unitsPerCarton: defaultUpc,
@@ -65,31 +65,6 @@ function applyCleanProductNames(state: WMSFullState): WMSFullState {
           }),
         }))
     : state.slots;
-
-  // Dopilnuj aby w Magazynie 5 i Magazynie 6 było po 12 miejsc paletowych na podłodze (Pole #01..#12)
-  for (const floorConf of [
-    { rackId: 'rack-m5-floor', whId: 'wh-mag-5', codePrefix: 'M5-PODLOGA' },
-    { rackId: 'rack-m6-floor', whId: 'wh-mag-6', codePrefix: 'M6-PODLOGA' },
-  ]) {
-    for (let pos = 1; pos <= 12; pos++) {
-      const slotId = `slot-${floorConf.rackId}-0-${pos}`;
-      if (!updatedSlots.some((s) => s.id === slotId)) {
-        const posStr = String(pos).padStart(2, '0');
-        updatedSlots.push({
-          id: slotId,
-          warehouseId: floorConf.whId,
-          rackId: floorConf.rackId,
-          code: `${floorConf.codePrefix}-P0-${posStr}`,
-          name: `Miejsce Paletowe na Podłodze ${floorConf.codePrefix} (Pole #${posStr})`,
-          level: 0,
-          position: pos,
-          slotType: 'floor_pallet',
-          maxCapacityUnits: 2500,
-          allocations: [],
-        });
-      }
-    }
-  }
 
   return {
     ...state,
@@ -139,7 +114,8 @@ export function loadLocalWMSState(): WMSFullState {
         Array.isArray(parsed.racks) &&
         Array.isArray(parsed.slots) &&
         parsed.warehouses.some((w: any) => w.id === 'wh-mag-4') &&
-        parsed.racks.some((r: any) => r.id === 'rack-m5-r1')
+        parsed.racks.some((r: any) => r.id === 'rack-m4-r7') &&
+        parsed.racks.some((r: any) => r.id === 'rack-m5-r8')
       ) {
         return applyCleanProductNames(parsed);
       }
@@ -169,13 +145,14 @@ export async function fetchServerWMSState(): Promise<WMSFullState | null> {
       if (
         !data.state.warehouses.some((w: any) => w.id === 'wh-mag-4') ||
         !Array.isArray(data.state.racks) ||
-        !data.state.racks.some((r: any) => r.id === 'rack-m5-r1')
+        !data.state.racks.some((r: any) => r.id === 'rack-m4-r7') ||
+        !data.state.racks.some((r: any) => r.id === 'rack-m5-r8')
       ) {
         const upgraded = createInitialWMSState();
         upgraded.revision = (data.state.revision || 1) + 1;
         await pushServerWMSState(
           upgraded,
-          'Aktualizacja układu hal i nazw produktów (od razu rodzaj i wariant)'
+          'Odtworzenie Inwentaryzacji Października (Magazyn 4, 5, 6) + Cennik kartonów'
         );
         return upgraded;
       }

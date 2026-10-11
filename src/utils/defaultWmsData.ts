@@ -7,6 +7,7 @@ import {
   SuspendedItemRecord,
   StockMovementHistoryEntry,
   WMSFullState,
+  StockAllocationBatch,
 } from '../types/wms';
 
 export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
@@ -17,18 +18,21 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     skuRegular: '9120117912933',
     skuPartner: 'EAN9120117912933',
     name: 'MikroSan — 1000ml butelka PET',
-    shortName: 'MikroSan 1000ml',
+    shortName: 'MikroSan • 1000ml',
     category: 'mikrosan',
     unit: 'szt.',
-    avgPurchasePriceNet: 70.27,
+    avgPurchasePriceNet: 156.62,
     minPickingStock: 40,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 677,   // 1 + 255 + 293 + 95 + 6 + 27
-    wfirmaStockPartner: 308,   // 2 + 306
+    wfirmaStockRegular: 1066, // 689 + 377 w zestawach promocyjnych (Suma wFirma w Inwentaryzacji Października = 1379)
+    wfirmaStockPartner: 313,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 12,
+    cartonDimensions: '28x37x27',
+    cartonsPerPallet: 48,
   },
 
-  // === 2. PROBIOTYKI GŁÓWNE (Bez przedrostka OMNi-BiOTiC — od razu Rodzaj i Wariant) ===
+  // === 2. PROBIOTYKI GŁÓWNE (Od razu Rodzaj i Wariant + pakowanie zbiorcze z Cennika) ===
   {
     id: 'prod-9120117912797',
     baseEan: '9120117912797',
@@ -38,12 +42,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Pro-Vi 5 • 14 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 30.89,
-    minPickingStock: 60,
+    avgPurchasePriceNet: 77.92,
+    minPickingStock: 81,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4085,  // 90 + 2893 + 576 + 526
-    wfirmaStockPartner: 1338,  // 3 + 1335
+    wfirmaStockRegular: 4396, // 4250 + 2×73 w zestawie (Suma wFirma = 5860)
+    wfirmaStockPartner: 1464,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 81,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912803',
@@ -54,12 +61,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Pro-Vi 5 • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 64.95,
-    minPickingStock: 80,
+    avgPurchasePriceNet: 148.75,
+    minPickingStock: 108,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 13204, // 3 + 2760 + 4 + 4056 + 6381
-    wfirmaStockPartner: 392,   // poz. 162
+    wfirmaStockRegular: 13235,
+    wfirmaStockPartner: 660,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 54,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912766',
@@ -70,12 +80,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Stress Repair • 56 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 119.50,
-    minPickingStock: 60,
+    avgPurchasePriceNet: 290.42,
+    minPickingStock: 54,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4721,  // 183 + 2160 + 1080 + 1298
-    wfirmaStockPartner: 1726,  // 1725 + 1
+    wfirmaStockRegular: 4748,
+    wfirmaStockPartner: 1877,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 27,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912759',
@@ -86,12 +99,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Stress Repair • 28 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 69.15,
-    minPickingStock: 80,
+    avgPurchasePriceNet: 156.62,
+    minPickingStock: 102,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 11002, // 1 + 3856 + 5059 + 2086
-    wfirmaStockPartner: 858,
+    wfirmaStockRegular: 12023,
+    wfirmaStockPartner: 205,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117913138',
@@ -102,12 +118,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Stress Repair • 7 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 21.15,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 43.29,
+    minPickingStock: 80,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4356,  // 1002 + 730 + 1093 + 1458 + 73
-    wfirmaStockPartner: 528,   // 28 + 500
+    wfirmaStockRegular: 4859,
+    wfirmaStockPartner: 51,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 80,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117915651',
@@ -118,12 +137,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Stress Kids • 28 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 57.10,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 106.25,
+    minPickingStock: 72,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 5791,  // 2 + 1 + 1 + 1161 + 4626
-    wfirmaStockPartner: 1148,  // 148 + 1000
+    wfirmaStockRegular: 6829,
+    wfirmaStockPartner: 208,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 72,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120001435692',
@@ -134,12 +156,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Travel • 28 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 64.80,
-    minPickingStock: 40,
+    avgPurchasePriceNet: 148.75,
+    minPickingStock: 51,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 3725,  // 27 + 1117 + 2272 + 309
-    wfirmaStockPartner: 63,
+    wfirmaStockRegular: 3742,
+    wfirmaStockPartner: 71,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117914470',
@@ -150,12 +175,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Travel • 14 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 41.95,
-    minPickingStock: 40,
+    avgPurchasePriceNet: 77.92,
+    minPickingStock: 81,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1705,  // 11 + 315 + 1216 + 163
-    wfirmaStockPartner: 466,   // 4 + 1 + 49 + 7 + 405
+    wfirmaStockRegular: 1708,
+    wfirmaStockPartner: 482,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 81,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117914692',
@@ -166,12 +194,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: '6 • 300g słoik',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 230.60,
-    minPickingStock: 25,
+    avgPurchasePriceNet: 589.49,
+    minPickingStock: 32,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 800,   // 3 + 440 + 157 + 200
+    wfirmaStockRegular: 802,
     wfirmaStockPartner: 184,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 16,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912681',
@@ -182,12 +213,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: '6 • 60g słoik',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 63.75,
-    minPickingStock: 60,
+    avgPurchasePriceNet: 156.62,
+    minPickingStock: 72,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 7056,  // 28 + 524 + 1215 + 1215 + 1827 + 2247
-    wfirmaStockPartner: 576,
+    wfirmaStockRegular: 7080,
+    wfirmaStockPartner: 603,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 72,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912704',
@@ -198,12 +232,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: '6 • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 81.05,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 219.58,
+    minPickingStock: 51,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4709,  // 235 + 1080 + 1087 + 1083 + 1224
-    wfirmaStockPartner: 190,
+    wfirmaStockRegular: 4715,
+    wfirmaStockPartner: 228,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912711',
@@ -214,12 +251,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: '6 • 60 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 147.10,
-    minPickingStock: 40,
+    avgPurchasePriceNet: 392.73,
+    minPickingStock: 54,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 2654,  // 18 + 366 + 540 + 540 + 542 + 648
-    wfirmaStockPartner: 220,
+    wfirmaStockRegular: 2661,
+    wfirmaStockPartner: 236,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 27,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912728',
@@ -230,12 +270,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: '6 • 7 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 25.42,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 54.31,
+    minPickingStock: 80,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4197,  // 11 + 225 + 1350 + 1890 + 498 + 223
-    wfirmaStockPartner: 1941,
+    wfirmaStockRegular: 4200,
+    wfirmaStockPartner: 1949,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 80,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912667',
@@ -246,12 +289,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'AAD10 • 10 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 30.95,
-    minPickingStock: 60,
+    avgPurchasePriceNet: 62.18,
+    minPickingStock: 135,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4232,  // 179 + 900 + 1350 + 1803
-    wfirmaStockPartner: 2410,
+    wfirmaStockRegular: 4370,
+    wfirmaStockPartner: 2453,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 135,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912674',
@@ -262,12 +308,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'AAD10 • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 68.50,
-    minPickingStock: 80,
+    avgPurchasePriceNet: 156.62,
+    minPickingStock: 90,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 13730, // 442 + 5100 + 4080 + 4108
-    wfirmaStockPartner: 708,
+    wfirmaStockRegular: 13788,
+    wfirmaStockPartner: 902,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 45,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117911370',
@@ -278,12 +327,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'AAD10 Kids • 20 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 31.33,
-    minPickingStock: 60,
+    avgPurchasePriceNet: 66.90,
+    minPickingStock: 63,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 9653,  // 44 + 1416 + 3150 + 1260 + 3783
-    wfirmaStockPartner: 1662,
+    wfirmaStockRegular: 9667,
+    wfirmaStockPartner: 1741,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 63,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912773',
@@ -294,12 +346,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Active • 60g słoik',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 63.55,
-    minPickingStock: 30,
+    avgPurchasePriceNet: 156.62,
+    minPickingStock: 72,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1333,  // 2 + 1 + 12 + 1001 + 317
-    wfirmaStockPartner: 350,   // 349 + 1
+    wfirmaStockRegular: 1332,
+    wfirmaStockPartner: 357,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 72,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912872',
@@ -310,12 +365,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Cat&Dog • 60g słoik',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 55.15,
-    minPickingStock: 20,
+    avgPurchasePriceNet: 117.27,
+    minPickingStock: 36,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 100,
-    wfirmaStockPartner: 32,    // 20 + 11 + 1
+    wfirmaStockRegular: 107,
+    wfirmaStockPartner: 55,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 72,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117914906',
@@ -326,12 +384,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Colonize • 28 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 67.75,
-    minPickingStock: 30,
+    avgPurchasePriceNet: 156.62,
+    minPickingStock: 51,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 623,   // 12 + 151 + 460
-    wfirmaStockPartner: 477,
+    wfirmaStockRegular: 629,
+    wfirmaStockPartner: 486,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912858',
@@ -342,12 +403,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'FLORA plus+ • 14 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 31.61,
+    avgPurchasePriceNet: 77.92,
     minPickingStock: 50,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1995,  // 1515 + 50 + 430
-    wfirmaStockPartner: 527,   // 25 + 2 + 500
+    wfirmaStockRegular: 3010, // 2630 + 2×190 w zestawie Flora B2C (Suma wFirma = 3052)
+    wfirmaStockPartner: 42,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 50,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912865',
@@ -358,12 +422,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'FLORA plus+ • 28 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 61.71,
-    minPickingStock: 60,
+    avgPurchasePriceNet: 148.75,
+    minPickingStock: 54,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 4279,  // 94 + 2526 + 406 + 1 + 1 + 1251
-    wfirmaStockPartner: 184,   // 2 + 182
+    wfirmaStockRegular: 4310,
+    wfirmaStockPartner: 434,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 27,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912827',
@@ -374,12 +441,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Hetox • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 117.80,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 306.16,
+    minPickingStock: 40,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 2468,  // 92 + 1320 + 1056
-    wfirmaStockPartner: 202,
+    wfirmaStockRegular: 2476,
+    wfirmaStockPartner: 220,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 40,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912810',
@@ -390,12 +460,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Metabolic • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 67.35,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 156.62,
+    minPickingStock: 51,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 2238,  // 776 + 223 + 1 + 13 + 1 + 1224
-    wfirmaStockPartner: 1367,  // 1 + 20 + 1277 + 69
+    wfirmaStockRegular: 2274, // 2256 + 18 Promocja -30% (Suma wFirma = 3670)
+    wfirmaStockPartner: 1396,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912834',
@@ -406,12 +479,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'METAtox • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 67.00,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 164.49,
+    minPickingStock: 51,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1531,  // 1 + 46 + 255 + 1229
-    wfirmaStockPartner: 1521,
+    wfirmaStockRegular: 1535,
+    wfirmaStockPartner: 1565,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912742',
@@ -422,12 +498,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Panda • 30 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 63.93,
-    minPickingStock: 100,
+    avgPurchasePriceNet: 148.75,
+    minPickingStock: 102,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 15501, // 4482 + 6120 + 4899
-    wfirmaStockPartner: 589,
+    wfirmaStockRegular: 15542,
+    wfirmaStockPartner: 731,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 51,
+    cartonDimensions: '40x40x30',
+    cartonsPerPallet: 30,
   },
   {
     id: 'prod-9120117912735',
@@ -438,12 +517,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Panda • 7 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 20.48,
-    minPickingStock: 50,
+    avgPurchasePriceNet: 38.56,
+    minPickingStock: 80,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 2800,  // 372 + 1012 + 1364 + 52
-    wfirmaStockPartner: 271,   // 270 + 1
+    wfirmaStockRegular: 2810,
+    wfirmaStockPartner: 280,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 80,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912841',
@@ -454,15 +536,18 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'POWER • 28 sasz.',
     category: 'probiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 70.10,
-    minPickingStock: 40,
+    avgPurchasePriceNet: 148.75,
+    minPickingStock: 54,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1205,  // 10 + 183 + 225 + 337 + 450
-    wfirmaStockPartner: 408,
+    wfirmaStockRegular: 1205,
+    wfirmaStockPartner: 409,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 27,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
 
-  // === 3. PREBIOTYKI (Bez przedrostka OMNi-LOGiC — od razu Rodzaj i Wariant) ===
+  // === 3. PREBIOTYKI ===
   {
     id: 'prod-9120117912926',
     baseEan: '9120117912926',
@@ -472,12 +557,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'ApplePectin • 84 kaps.',
     category: 'prebiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 40.40,
-    minPickingStock: 35,
+    avgPurchasePriceNet: 85.79,
+    minPickingStock: 45,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 748,   // 250 + 2 + 168 + 328
-    wfirmaStockPartner: 257,
+    wfirmaStockRegular: 749,
+    wfirmaStockPartner: 263,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 45,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912919',
@@ -488,12 +576,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'ApplePectin • 180 kaps.',
     category: 'prebiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 66.75,
-    minPickingStock: 35,
+    avgPurchasePriceNet: 140.88,
+    minPickingStock: 36,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1024,  // 1 + 101 + 250 + 120 + 9 + 168 + 225 + 52 + 90 + 8
+    wfirmaStockRegular: 1026,
     wfirmaStockPartner: 122,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 36,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912889',
@@ -504,12 +595,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Fibre • 250g słoik',
     category: 'prebiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 36.72,
-    minPickingStock: 30,
+    avgPurchasePriceNet: 77.92,
+    minPickingStock: 24,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 428,   // 427 + 1
-    wfirmaStockPartner: 263,   // 262 + 1
+    wfirmaStockRegular: 857,
+    wfirmaStockPartner: 38,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 12,
+    cartonDimensions: '35x35x22',
+    cartonsPerPallet: 42,
   },
   {
     id: 'prod-9120117912896',
@@ -520,12 +614,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Immune • 450g słoik',
     category: 'prebiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 68.58,
-    minPickingStock: 30,
+    avgPurchasePriceNet: 172.36,
+    minPickingStock: 27,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1078,  // 308 + 397 + 373
-    wfirmaStockPartner: 167,   // 7 + 160
+    wfirmaStockRegular: 1079,
+    wfirmaStockPartner: 169,
     wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 9,
+    cartonDimensions: '33x33x20',
+    cartonsPerPallet: 48,
   },
   {
     id: 'prod-9120117912902',
@@ -536,455 +633,15 @@ export const DEFAULT_PRODUCTS_CATALOG: ProductCatalogItem[] = [
     shortName: 'Plus • 450g słoik',
     category: 'prebiotic',
     unit: 'szt.',
-    avgPurchasePriceNet: 68.98,
-    minPickingStock: 30,
+    avgPurchasePriceNet: 172.36,
+    minPickingStock: 27,
     kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 607,   // 538 + 23 + 1 + 4 + 40 + 1
-    wfirmaStockPartner: 101,   // 9 + 92
+    wfirmaStockRegular: 622, // 608 + 14 w promocjach/zestawach (Suma wFirma = 723)
+    wfirmaStockPartner: 101,
     wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-humin-20',
-    baseEan: '',
-    skuRegular: 'OMNI-LOGIC-HUMIN-20',
-    name: 'HUMIN — 20 kaps.',
-    shortName: 'HUMIN • 20 kaps.',
-    category: 'prebiotic',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 10,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 60,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-skin-fussbad',
-    baseEan: '',
-    skuRegular: 'OMNI-SKIN-FUSSBAD',
-    name: 'SKiN — Intensiv-Fußbad',
-    shortName: 'SKiN • Fußbad',
-    category: 'probiotic',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 5,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-skin-hautbad',
-    baseEan: '',
-    skuRegular: 'OMNI-SKIN-HAUTBAD',
-    name: 'SKiN — Intensiv-Hautbad 125g',
-    shortName: 'SKiN • Hautbad 125g',
-    category: 'probiotic',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 5,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-skin-pflegesalbe',
-    baseEan: '',
-    skuRegular: 'OMNI-SKIN-PFLEGESALBE',
-    name: 'SKiN — Intensiv-Pflegesalbe 100ml',
-    shortName: 'SKiN • Pflegesalbe 100ml',
-    category: 'probiotic',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 5,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-
-  // === 4. ZESTAWY I PROMOCJE ===
-  {
-    id: 'prod-9120117912934',
-    baseEan: '9120117912934',
-    skuRegular: '9120117912934',
-    name: 'MikroSan — promocja 11/2026',
-    shortName: 'MikroSan • PROMO 11/26',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 69.34,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912933', quantityPerKit: 1 }],
-    wfirmaStockRegular: 5,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-9120117912935',
-    baseEan: '9120117912935',
-    skuRegular: '9120117912935',
-    name: 'MikroSan — PROMOCJA MAGENTOWICZE',
-    shortName: 'MikroSan • Magentowicze',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 69.34,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912933', quantityPerKit: 1 }],
-    wfirmaStockRegular: 2,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-9120117912813',
-    baseEan: '9120117912813',
-    skuRegular: '9120117912813',
-    name: 'Metabolic — 30 sasz. PROMOCJA -30%',
-    shortName: 'Metabolic • PROMO -30%',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 66.84,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912810', quantityPerKit: 1 }],
-    wfirmaStockRegular: 2,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-9120117912903',
-    baseEan: '9120117912903',
-    skuRegular: '9120117912903',
-    name: 'Plus — promocja 10/2026',
-    shortName: 'Plus • PROMO 10/26',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 69.41,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912902', quantityPerKit: 1 }],
-    wfirmaStockRegular: 5,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-9120117912904',
-    baseEan: '9120117912904',
-    skuRegular: '9120117912904',
-    name: 'Plus — PROMOCJA MAGENTOWICZE',
-    shortName: 'Plus • Magentowicze',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 69.34,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912902', quantityPerKit: 1 }],
-    wfirmaStockRegular: 3,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-9120117912798',
-    baseEan: '9120117912798',
-    skuRegular: '9120117912798',
-    name: 'Zestaw 2× Pro-Vi 5 — 14 sasz.',
-    shortName: 'Zestaw • 2× Pro-Vi 5 (14s)',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 61.94,
-    minPickingStock: 20,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912797', quantityPerKit: 2 }],
-    wfirmaStockRegular: 98,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-12365478970348',
-    baseEan: '12365478970348',
-    skuRegular: '12365478970348',
-    name: 'Zestaw 2× Plus 10/26 + 1× MikroSan 11/26',
-    shortName: 'Zestaw • 2×Plus + MikroSan',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 208.45,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [
-      { productId: 'prod-9120117912903', quantityPerKit: 2 },
-      { productId: 'prod-9120117912934', quantityPerKit: 1 },
-    ],
-    wfirmaStockRegular: 4,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-12365478970347',
-    baseEan: '12365478970347',
-    skuRegular: '12365478970347',
-    name: 'Zestaw Flora B2C',
-    shortName: 'Zestaw • Flora B2C',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 63.32,
-    minPickingStock: 25,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912858', quantityPerKit: 2 }],
-    wfirmaStockRegular: 177,   // 176 + 1
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-1254856325414',
-    baseEan: '1254856325414',
-    skuRegular: '1254856325414',
-    name: 'Zestaw MikroSan 2+1',
-    shortName: 'Zestaw • MikroSan 2+1',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 210.45,
-    minPickingStock: 20,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912933', quantityPerKit: 3 }],
-    wfirmaStockRegular: 92,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-1254856325412',
-    baseEan: '1254856325412',
-    skuRegular: '1254856325412',
-    name: 'Zestaw MikroSan B2C 12/2026',
-    shortName: 'Zestaw • MikroSan B2C 12/26',
-    category: 'promo_kit',
-    unit: 'szt.',
-    avgPurchasePriceNet: 140.30,
-    minPickingStock: 15,
-    kitHandlingMode: 'separate_slot',
-    kitComponents: [{ productId: 'prod-9120117912933', quantityPerKit: 2 }],
-    wfirmaStockRegular: 34,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-
-  // === 5. PRÓBKI Z ULOTKĄ ===
-  {
-    id: 'prod-sample-10aad',
-    baseEan: '3216549877420',
-    skuRegular: '3216549877420',
-    name: 'Próbka z ulotką — 10AAD',
-    shortName: 'Próbka • 10AAD',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.58,
-    minPickingStock: 200,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 3449,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-sample-catdog',
-    baseEan: '9120117912875',
-    skuRegular: '9120117912875',
-    name: 'Próbka z ulotką — Cat&Dog',
-    shortName: 'Próbka • Cat&Dog',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 200,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 3583,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-sample-olfibre',
-    baseEan: '',
-    skuRegular: 'PROBKA-OL-FIBRE',
-    name: 'Próbka z ulotką — Fibre',
-    shortName: 'Próbka • Fibre',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.54,
-    minPickingStock: 100,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 225,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-sample-panda',
-    baseEan: '7412589633697',
-    skuRegular: 'PROBKA-PANDA',
-    skuPartner: '7412589633697',
-    name: 'Próbka z ulotką — Panda (w tym B2C)',
-    shortName: 'Próbka • Panda',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.15,
-    minPickingStock: 300,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 3400,
-    wfirmaStockPartner: 657,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-sample-provi',
-    baseEan: '7412589633698',
-    skuRegular: 'PROBKA-PRO-VI',
-    skuPartner: '7412589633698',
-    name: 'Próbka z ulotką — Pro-Vi 5 (w tym B2C)',
-    shortName: 'Próbka • Pro-Vi 5',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.15,
-    minPickingStock: 300,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1500,
-    wfirmaStockPartner: 281,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-sample-stress',
-    baseEan: '7412589633700',
-    skuRegular: '3216549877502',
-    skuPartner: '7412589633700',
-    name: 'Próbka z ulotką — Stress Repair (w tym B2C)',
-    shortName: 'Próbka • Stress Repair',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.15,
-    minPickingStock: 300,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1755,
-    wfirmaStockPartner: 432,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-sample-stress-kids',
-    baseEan: '7412589633701',
-    skuRegular: '7412589633701',
-    skuPartner: '7412589633703',
-    name: 'Próbka z ulotką — Stress Kids (w tym B2C)',
-    shortName: 'Próbka • Stress Kids',
-    category: 'sample',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.12,
-    minPickingStock: 100,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 188,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-
-  // === 6. GADŻETY, TORBY I MATERIAŁY REKLAMOWE ===
-  {
-    id: 'prod-acc-torba-kwiaty',
-    baseEan: '',
-    skuRegular: 'TORBA-TERMICZNA-KWIATY',
-    name: 'Torba Termiczna — motyw kwiatów',
-    shortName: 'Torba Term. • Kwiaty',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.35,
-    minPickingStock: 200,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 9379,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-acc-torba-mikrosan',
-    baseEan: '',
-    skuRegular: 'TORBA-TERMICZNA-MIKROSAN',
-    name: 'Torba Termiczna — MikroSan',
-    shortName: 'Torba Term. • MikroSan',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 2.05,
-    minPickingStock: 200,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 7000,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-acc-notes',
-    baseEan: '',
-    skuRegular: 'OMNI-NOTES',
-    name: 'Notes reklamowy',
-    shortName: 'Notes reklamowy',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 30,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 200,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-acc-smycz',
-    baseEan: '',
-    skuRegular: 'OMNI-SMYCZ',
-    name: 'Smycz reklamowa',
-    shortName: 'Smycz reklamowa',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 0.01,
-    minPickingStock: 30,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 200,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-acc-parasol',
-    baseEan: '',
-    skuRegular: 'PARASOL-ROZOWY',
-    name: 'Parasol różowy',
-    shortName: 'Parasol różowy',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 27.65,
-    minPickingStock: 15,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 154,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-acc-termofor',
-    baseEan: '24322156755',
-    skuRegular: '24322156755',
-    name: 'Termofor PANDA',
-    shortName: 'Termofor PANDA',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 30.72,
-    minPickingStock: 10,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 18,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
-  },
-  {
-    id: 'prod-acc-torba-sklep',
-    baseEan: '9120001433922',
-    skuRegular: '9120001433922',
-    name: 'Torba materiałowa (Sklep)',
-    shortName: 'Torba • Sklep',
-    category: 'accessory',
-    unit: 'szt.',
-    avgPurchasePriceNet: 24.38,
-    minPickingStock: 5,
-    kitHandlingMode: 'separate_slot',
-    wfirmaStockRegular: 1,
-    wfirmaStockPartner: 0,
-    wfirmaLastUpdated: '2026-10-11',
+    defaultUnitsPerCarton: 9,
+    cartonDimensions: '33x33x20',
+    cartonsPerPallet: 48,
   },
 ];
 
@@ -992,174 +649,202 @@ export const DEFAULT_WAREHOUSES: SpatialWarehouse[] = [
   {
     id: 'wh-mag-4',
     code: 'MAG-4',
-    name: 'Magazyn 4 — Kompletacja',
+    name: 'Magazyn 4 — Lokal nr 4 (Kompletacja)',
     description:
-      'Prostokątna hala kompletacji: po lewej stronie Brama, na środku Strefa Przemieszczania się i Pakowania, a po bokach regały kompletacyjne 1–6 (Główne, PARTNER >12m, Próbki, Zestawy).',
+      'Lokal nr 4 (Inwentaryzacja Października): po lewej stronie Brama, po bokach 7 regałów (Góra: 1–4 REGAŁ, Dół: 5–7 REGAŁ), 3 poziomy (POZIOM II, I, 0). Brak miejsc paletowych na podłodze.',
     hasPickingZone: true,
   },
   {
     id: 'wh-mag-5',
     code: 'MAG-5',
-    name: 'Magazyn 5 — Składowanie',
+    name: 'Magazyn 5 — Lokal nr 5 (Składowanie)',
     description:
-      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się oraz 12 miejsc paletowych na podłodze, po obu bokach regały paletowe 1–6.',
+      'Lokal nr 5 (Inwentaryzacja Października): po lewej stronie Brama, po bokach 8 regałów (Góra: 1–4 REGAŁ, Dół: 5–8 REGAŁ) oraz 12 miejsc paletowych na podłodze (1–12 PALETA).',
     hasPickingZone: false,
   },
   {
     id: 'wh-mag-6',
     code: 'MAG-6',
-    name: 'Magazyn 6 — Składowanie',
+    name: 'Magazyn 6 — Lokal nr 6 (Składowanie)',
     description:
-      'Prostokątna hala składowania: po lewej stronie Brama wjazdowa, na środku Strefa Przemieszczania się oraz 12 miejsc paletowych na podłodze, po obu bokach regały paletowe 1–6.',
+      'Lokal nr 6 (Inwentaryzacja Października): po lewej stronie Brama, po bokach 8 regałów (Góra: 1–4 REGAŁ, Dół: 5–8 REGAŁ) oraz 12 miejsc paletowych na podłodze (1–12 PALETA).',
     hasPickingZone: false,
   },
 ];
 
 export const DEFAULT_RACKS: WarehouseRack[] = [
   // ============================================================================
-  // MAGAZYN 4 — KOMPLETACJA (Po 3 regały 12-paletowe na stronę — bez miejsc podłogowych)
+  // MAGAZYN 4 (LOKAL NR 4) — 7 REGAŁÓW (Góra: 1–4 REGAŁ, Dół: 5–7 REGAŁ), BRAK PODŁOGI
   // ============================================================================
-  // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
     id: 'rack-m4-r1',
     warehouseId: 'wh-mag-4',
     code: 'M4-R1',
-    name: 'Regał 1 (Kompletacja Główna)',
+    name: '1 REGAŁ (Lokal nr 4)',
     zoneType: 'picking',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 4 poziomy × 3 miejsca = 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'emerald',
   },
   {
     id: 'rack-m4-r2',
     warehouseId: 'wh-mag-4',
     code: 'M4-R2',
-    name: 'Regał 2 (Kompletacja Główna)',
+    name: '2 REGAŁ (Lokal nr 4)',
     zoneType: 'picking',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'emerald',
   },
   {
     id: 'rack-m4-r3',
     warehouseId: 'wh-mag-4',
     code: 'M4-R3',
-    name: 'Regał 3 (Kompletacja PARTNER >12 msc)',
+    name: '3 REGAŁ (Lokal nr 4)',
     zoneType: 'picking',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
-    colorTheme: 'violet',
+    levelsCount: 3,
+    slotsPerLevel: 2,
+    colorTheme: 'emerald',
   },
-  // Bok Dolny (od lewej strony od bramy: Regał 4, Regał 5, Regał 6)
   {
     id: 'rack-m4-r4',
     warehouseId: 'wh-mag-4',
     code: 'M4-R4',
-    name: 'Regał 4 (Próbki z Ulotką i B2C)',
-    zoneType: 'samples_kits',
-    hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
-    colorTheme: 'rose',
+    name: '4 REGAŁ (Lokal nr 4)',
+    zoneType: 'picking',
+    hallPlacement: 'top_wall',
+    levelsCount: 3,
+    slotsPerLevel: 3,
+    colorTheme: 'emerald',
   },
   {
     id: 'rack-m4-r5',
     warehouseId: 'wh-mag-4',
     code: 'M4-R5',
-    name: 'Regał 5 (Zestawy Promocyjne i Akcesoria)',
-    zoneType: 'samples_kits',
+    name: '5 REGAŁ (Lokal nr 4)',
+    zoneType: 'picking',
     hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
-    colorTheme: 'amber',
+    levelsCount: 3,
+    slotsPerLevel: 3,
+    colorTheme: 'emerald',
   },
   {
     id: 'rack-m4-r6',
     warehouseId: 'wh-mag-4',
     code: 'M4-R6',
-    name: 'Regał 6 (Kompletacja Rezerwowa)',
+    name: '6 REGAŁ (Lokal nr 4)',
     zoneType: 'picking',
     hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
+    colorTheme: 'emerald',
+  },
+  {
+    id: 'rack-m4-r7',
+    warehouseId: 'wh-mag-4',
+    code: 'M4-R7',
+    name: '7 REGAŁ (Lokal nr 4)',
+    zoneType: 'picking',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'emerald',
   },
 
   // ============================================================================
-  // MAGAZYN 5 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + 12 miejsc na podłodze)
+  // MAGAZYN 5 (LOKAL NR 5) — 8 REGAŁÓW (Góra: 1–4, Dół: 5–8) + 12 MIEJSC NA PODŁODZE
   // ============================================================================
-  // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
     id: 'rack-m5-r1',
     warehouseId: 'wh-mag-5',
     code: 'M5-R1',
-    name: 'Regał 1 (12-paletowy)',
+    name: '1 REGAŁ (Lokal nr 5)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 2,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m5-r2',
     warehouseId: 'wh-mag-5',
     code: 'M5-R2',
-    name: 'Regał 2 (12-paletowy)',
+    name: '2 REGAŁ (Lokal nr 5)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m5-r3',
     warehouseId: 'wh-mag-5',
     code: 'M5-R3',
-    name: 'Regał 3 (12-paletowy)',
+    name: '3 REGAŁ (Lokal nr 5)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
-  // Bok Dolny (od lewej strony od bramy: Regał 4, Regał 5, Regał 6)
   {
     id: 'rack-m5-r4',
     warehouseId: 'wh-mag-5',
     code: 'M5-R4',
-    name: 'Regał 4 (12-paletowy)',
+    name: '4 REGAŁ (Lokal nr 5)',
     zoneType: 'pallet',
-    hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    hallPlacement: 'top_wall',
+    levelsCount: 3,
+    slotsPerLevel: 2,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m5-r5',
     warehouseId: 'wh-mag-5',
     code: 'M5-R5',
-    name: 'Regał 5 (12-paletowy)',
+    name: '5 REGAŁ (Lokal nr 5)',
     zoneType: 'pallet',
     hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 2,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m5-r6',
     warehouseId: 'wh-mag-5',
     code: 'M5-R6',
-    name: 'Regał 6 (12-paletowy)',
+    name: '6 REGAŁ (Lokal nr 5)',
     zoneType: 'pallet',
     hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
-  // 12 miejsc paletowych na podłodze w Magazynie 5
+  {
+    id: 'rack-m5-r7',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-R7',
+    name: '7 REGAŁ (Lokal nr 5)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 3,
+    slotsPerLevel: 2,
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m5-r8',
+    warehouseId: 'wh-mag-5',
+    code: 'M5-R8',
+    name: '8 REGAŁ (Lokal nr 5)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 3,
+    slotsPerLevel: 3,
+    colorTheme: 'blue',
+  },
   {
     id: 'rack-m5-floor',
     warehouseId: 'wh-mag-5',
@@ -1173,77 +858,96 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
   },
 
   // ============================================================================
-  // MAGAZYN 6 — SKŁADOWANIE (Po 3 regały 12-paletowe na stronę + 12 miejsc na podłodze)
+  // MAGAZYN 6 (LOKAL NR 6) — 8 REGAŁÓW (Góra: 1–4, Dół: 5–8) + 12 MIEJSC NA PODŁODZE
   // ============================================================================
-  // Bok Górny (od lewej strony od bramy: Regał 1, Regał 2, Regał 3)
   {
     id: 'rack-m6-r1',
     warehouseId: 'wh-mag-6',
     code: 'M6-R1',
-    name: 'Regał 1 (12-paletowy)',
+    name: '1 REGAŁ (Lokal nr 6)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m6-r2',
     warehouseId: 'wh-mag-6',
     code: 'M6-R2',
-    name: 'Regał 2 (12-paletowy)',
+    name: '2 REGAŁ (Lokal nr 6)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m6-r3',
     warehouseId: 'wh-mag-6',
     code: 'M6-R3',
-    name: 'Regał 3 (12-paletowy)',
+    name: '3 REGAŁ (Lokal nr 6)',
     zoneType: 'pallet',
     hallPlacement: 'top_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
-  // Bok Dolny (od lewej strony od bramy: Regał 4, Regał 5, Regał 6)
   {
     id: 'rack-m6-r4',
     warehouseId: 'wh-mag-6',
     code: 'M6-R4',
-    name: 'Regał 4 (12-paletowy)',
+    name: '4 REGAŁ (Lokal nr 6)',
     zoneType: 'pallet',
-    hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    hallPlacement: 'top_wall',
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m6-r5',
     warehouseId: 'wh-mag-6',
     code: 'M6-R5',
-    name: 'Regał 5 (12-paletowy)',
+    name: '5 REGAŁ (Lokal nr 6)',
     zoneType: 'pallet',
     hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 2,
     colorTheme: 'blue',
   },
   {
     id: 'rack-m6-r6',
     warehouseId: 'wh-mag-6',
     code: 'M6-R6',
-    name: 'Regał 6 (12-paletowy)',
+    name: '6 REGAŁ (Lokal nr 6)',
     zoneType: 'pallet',
     hallPlacement: 'bottom_wall',
-    levelsCount: 4,
-    slotsPerLevel: 3, // 12 miejsc paletowych
+    levelsCount: 3,
+    slotsPerLevel: 3,
     colorTheme: 'blue',
   },
-  // 12 miejsc paletowych na podłodze w Magazynie 6
+  {
+    id: 'rack-m6-r7',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-R7',
+    name: '7 REGAŁ (Lokal nr 6)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 3,
+    slotsPerLevel: 3,
+    colorTheme: 'blue',
+  },
+  {
+    id: 'rack-m6-r8',
+    warehouseId: 'wh-mag-6',
+    code: 'M6-R8',
+    name: '8 REGAŁ (Lokal nr 6)',
+    zoneType: 'pallet',
+    hallPlacement: 'bottom_wall',
+    levelsCount: 3,
+    slotsPerLevel: 3,
+    colorTheme: 'blue',
+  },
   {
     id: 'rack-m6-floor',
     warehouseId: 'wh-mag-6',
@@ -1257,302 +961,417 @@ export const DEFAULT_RACKS: WarehouseRack[] = [
   },
 ];
 
+function levelCodeLabel(level: number): string {
+  if (level === 2) return 'POZ.II';
+  if (level === 1) return 'POZ.I';
+  return 'POZ.0';
+}
+
 /**
- * Buduje kompletną siatkę miejsc magazynowych (Magazyn 4, 5, 6 — po 3 regały 12-paletowe na stronę + miejsca na podłodze)
- * wraz z początkową alokacją stanów z zestawienia wFirma na dzień 11-10-2026.
+ * Odtwarza 1:1 stan fizyczny Magazynu 4, Magazynu 5 i Magazynu 6 z arkusza Inwentaryzacji Października
+ * wraz z przeliczeniem na pełne kartony + karton otwarty wg Cennika.
  */
 export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[]): WarehouseLocationSlot[] {
   const slots: WarehouseLocationSlot[] = [];
   const nowIso = '2026-10-11T08:00:00.000Z';
+  const prodById = new Map(products.map((p) => [p.id, p]));
 
   for (const rack of DEFAULT_RACKS) {
     for (let level = 0; level < rack.levelsCount; level++) {
       for (let pos = 1; pos <= rack.slotsPerLevel; pos++) {
         const posStr = String(pos).padStart(2, '0');
-        const slotCode = `${rack.code}-P${level}-${posStr}`;
-        let slotType: WarehouseLocationSlot['slotType'] = 'pallet_storage';
-        let maxCap = 2000;
-
-        if (rack.id === 'rack-m4-r1' || rack.id === 'rack-m4-r2' || rack.id === 'rack-m4-r6') {
-          slotType = 'picking_standard';
-          maxCap = 300;
-        } else if (rack.id === 'rack-m4-r3') {
-          slotType = 'picking_partner_12m';
-          maxCap = 250;
-        } else if (rack.zoneType === 'floor_pallet' || rack.hallPlacement === 'floor_zone') {
-          slotType = 'floor_pallet';
-          maxCap = 2500;
-        } else if (rack.zoneType === 'samples_kits') {
-          slotType = 'shelf_storage';
-          maxCap = 5000;
-        }
+        const isFloor = rack.zoneType === 'floor_pallet' || rack.hallPlacement === 'floor_zone';
+        const lvlLbl = levelCodeLabel(level);
+        const slotCode = isFloor ? `${rack.code}-${posStr}` : `${rack.code}-${lvlLbl}-${pos}PAL`;
+        const slotType: WarehouseLocationSlot['slotType'] = isFloor
+          ? 'floor_pallet'
+          : rack.warehouseId === 'wh-mag-4'
+          ? 'picking_standard'
+          : 'pallet_storage';
 
         slots.push({
           id: `slot-${rack.id}-${level}-${pos}`,
           warehouseId: rack.warehouseId,
           rackId: rack.id,
           code: slotCode,
-          name:
-            slotType === 'picking_standard'
-              ? `${rack.name} — P${level}-${posStr}`
-              : slotType === 'picking_partner_12m'
-              ? `${rack.name} — P${level}-${posStr}`
-              : slotType === 'floor_pallet'
-              ? `Miejsce Paletowe na Podłodze ${rack.code} (Pole #${posStr})`
-              : `${rack.name} — Poziom P${level}, Miejsce ${posStr}`,
+          name: isFloor
+            ? `Podłoga ${rack.code} — ${pos} PALETA`
+            : `${rack.name.split('(')[0].trim()} — ${lvlLbl.replace('.', ' ')}, ${pos} PALETA`,
           level,
           position: pos,
           slotType,
-          maxCapacityUnits: maxCap,
+          maxCapacityUnits: isFloor ? 3500 : 3500,
           allocations: [],
         });
       }
     }
   }
 
-  // Rozmieść produkty z katalogu na Magazynie 4 (Kompletacja) oraz Magazynach 5 i 6 (Regały 1-6 + Podłoga)
-  const pickingMainSlots = slots.filter(
-    (s) => s.rackId === 'rack-m4-r1' || s.rackId === 'rack-m4-r2' || s.rackId === 'rack-m4-r6'
+  const slotMap = new Map(slots.map((s) => [s.id, s]));
+  let batchSeq = 1;
+
+  const addProd = (
+    rackId: string,
+    level: number,
+    pos: number,
+    productId: string,
+    quantity: number,
+    expiryDate: string,
+    palletLabel?: string,
+    notes?: string
+  ) => {
+    const slot = slotMap.get(`slot-${rackId}-${level}-${pos}`);
+    if (!slot) return;
+    const p = prodById.get(productId);
+    const upc = p?.defaultUnitsPerCarton || 24;
+    const batch: StockAllocationBatch = {
+      id: `oct-batch-${batchSeq++}`,
+      productId,
+      quantity,
+      unitsPerCarton: upc,
+      fullCartonsCount: Math.floor(quantity / upc),
+      looseUnitsInOpenCarton: quantity % upc,
+      lotNumber: expiryDate ? `MHD-${expiryDate.slice(5, 7)}/${expiryDate.slice(2, 4)}` : '-',
+      expiryDate,
+      palletLabel: palletLabel || 'Inwentaryzacja Październik',
+      notes,
+      updatedAt: nowIso,
+    };
+    slot.allocations.push(batch);
+  };
+
+  const addCustom = (
+    rackId: string,
+    level: number,
+    pos: number,
+    customName: string,
+    quantity: number,
+    customUnit: string,
+    palletLabel?: string,
+    slotDesc?: string
+  ) => {
+    const slot = slotMap.get(`slot-${rackId}-${level}-${pos}`);
+    if (!slot) return;
+    if (slotDesc) slot.customDescription = slotDesc;
+    slot.allocations.push({
+      id: `oct-custom-${batchSeq++}`,
+      productId: 'CUSTOM',
+      isCustomItem: true,
+      customName,
+      customUnit,
+      quantity,
+      lotNumber: '-',
+      expiryDate: '',
+      palletLabel: palletLabel || 'Materiały / Opakowania',
+      updatedAt: nowIso,
+    });
+  };
+
+  // ==========================================================================
+  // 1. LOKAL NR 4 (MAGAZYN 4) — 7 REGAŁÓW
+  // ==========================================================================
+  // --- 1 REGAŁ (rack-m4-r1) ---
+  addCustom('rack-m4-r1', 2, 1, 'Papier Miodowy + Papier Uzupełniający', 1, 'paleta', 'Paleta łączona (Opakowania)');
+  addCustom('rack-m4-r1', 2, 2, 'KARTON M', 1760, 'szt.', 'CAŁA PALETA');
+  // 1 Regał Poz II Pal 3: wolne
+  addProd('rack-m4-r1', 1, 1, 'prod-9120117912728', 15, '2028-03-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r1', 1, 1, 'prod-9120117912896', 153, '2028-04-30', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r1', 1, 2, 'prod-9120117912803', 375, '2027-12-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r1', 1, 2, 'prod-9120117913138', 211, '2028-02-29', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r1', 1, 3, 'prod-9120117912858', 35, '2027-05-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r1', 1, 3, 'prod-9120117912902', 86, '2028-01-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r1', 0, 1, 'prod-9120117912933', 298, '2027-03-31', 'Poziom 0 (03_27)');
+  addProd('rack-m4-r1', 0, 1, 'prod-9120117912933', 275, '2026-12-31', 'CAŁA PALETA (12_26)');
+  addProd('rack-m4-r1', 0, 1, 'prod-9120117912933', 32, '2026-11-30', 'Krótka data (11_26)');
+  addProd('rack-m4-r1', 0, 1, 'prod-9120117912919', 10, '2028-01-31', 'Paleta łączona (Pectin 180)');
+  addProd('rack-m4-r1', 0, 2, 'prod-9120117912773', 365, '2027-12-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r1', 0, 2, 'prod-9120117914692', 57, '2027-12-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r1', 0, 3, 'prod-9120117914470', 1617, '2027-11-30', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r1', 0, 3, 'prod-9120117912667', 96, '2027-12-31', 'Paleta łączona (2/2)');
+
+  // --- 2 REGAŁ (rack-m4-r2) ---
+  addProd('rack-m4-r2', 2, 1, 'prod-9120117912667', 3240, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m4-r2', 2, 2, 'prod-9120117912858', 946, '2027-05-31', 'CAŁA PALETA');
+  // 2 Regał Poz II Pal 3: wolne
+  addProd('rack-m4-r2', 1, 1, 'prod-9120117912797', 1368, '2028-02-29', 'CAŁA PALETA');
+  addProd('rack-m4-r2', 1, 2, 'prod-9120117912810', 109, '2028-02-29', 'Paleta łączona (02_28)');
+  addProd('rack-m4-r2', 1, 2, 'prod-9120117912810', 29, '2026-11-30', 'Paleta łączona (11_26)');
+  // 2 Regał Poz I Pal 3: wolne
+  addProd('rack-m4-r2', 0, 1, 'prod-9120117912865', 135, '2027-11-30', 'CAŁA PALETA');
+  addProd('rack-m4-r2', 0, 2, 'prod-9120117915651', 102, '2028-08-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r2', 0, 2, 'prod-9120001435692', 73, '2027-11-30', 'Paleta łączona (2/2)');
+
+  // --- 3 REGAŁ (rack-m4-r3, 2 kolumny) ---
+  addProd('rack-m4-r3', 2, 1, 'prod-9120117912797', 1863, '2027-03-31', 'CAŁA PALETA');
+  addCustom('rack-m4-r3', 2, 2, 'KARTON M LONG', 1760, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m4-r3', 1, 1, 'prod-9120117912834', 647, '2028-04-30', 'CAŁA PALETA');
+  // 3 Regał Poz I Pal 2: wolne
+  addProd('rack-m4-r3', 0, 1, 'prod-9120117912773', 837, '2027-09-30', 'Paleta łączona (09_27)');
+  addProd('rack-m4-r3', 0, 1, 'prod-9120117912773', 490, '2027-05-31', 'Paleta łączona (05_27)');
+  addProd('rack-m4-r3', 0, 2, 'prod-9120117912872', 157, '2027-10-31', 'CAŁA PALETA');
+
+  // --- 4 REGAŁ (rack-m4-r4) ---
+  addCustom('rack-m4-r4', 2, 1, 'KARTON 40x40x30', 200, 'szt.', 'Opakowania');
+  addProd('rack-m4-r4', 2, 2, 'prod-9120117912865', 1134, '2027-05-31', 'CAŁA PALETA');
+  addCustom('rack-m4-r4', 2, 3, 'Karton 60x40x30', 120, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 1, 1, 'prod-9120117912841', 826, '2027-10-31', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 1, 2, 'prod-9120117912902', 60, '2027-02-28', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 1, 3, 'prod-9120117912896', 153, '2027-02-28', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 0, 1, 'prod-9120117912889', 96, '2027-10-31', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 0, 2, 'prod-9120117914906', 143, '2027-11-30', 'CAŁA PALETA');
+  addProd('rack-m4-r4', 0, 3, 'prod-9120117912919', 151, '2027-09-30', 'Paleta łączona (09_27)');
+  addProd('rack-m4-r4', 0, 3, 'prod-9120117912919', 217, '2028-01-31', 'Paleta łączona (01_28)');
+  addProd('rack-m4-r4', 0, 3, 'prod-9120117912926', 42, '2028-02-29', 'Paleta łączona (Pectin 84)');
+
+  // --- 5 REGAŁ (rack-m4-r5) ---
+  addProd('rack-m4-r5', 2, 1, 'prod-9120117914470', 77, '2027-09-30', 'Paleta łączona (+ Karton 60x40x40: 120 szt.)');
+  addCustom('rack-m4-r5', 2, 1, 'Karton 60x40x40', 120, 'szt.', 'CAŁA PALETA (na palecie z Travel 14)');
+  addCustom('rack-m4-r5', 2, 2, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
+  addCustom('rack-m4-r5', 2, 3, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m4-r5', 1, 1, 'prod-9120117914470', 500, '2027-03-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r5', 1, 1, 'prod-9120117912858', 228, '2027-03-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r5', 1, 2, 'prod-9120117912858', 828, '2027-04-30', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r5', 1, 2, 'prod-9120117912865', 169, '2027-05-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r5', 1, 3, 'prod-9120117912711', 416, '2028-03-31', 'CAŁA PALETA');
+  addProd('rack-m4-r5', 0, 1, 'prod-9120001435692', 1157, '2027-08-31', 'CAŁA PALETA');
+  addProd('rack-m4-r5', 0, 2, 'prod-9120117912858', 1018, '2027-01-31', 'CAŁA PALETA');
+  addProd('rack-m4-r5', 0, 3, 'prod-9120117912681', 1191, '2028-03-31', 'CAŁA PALETA (+ Flora 28 i Hetox)');
+  addProd('rack-m4-r5', 0, 3, 'prod-9120117912865', 15, '2027-04-30', 'Paleta łączona');
+  addProd('rack-m4-r5', 0, 3, 'prod-9120117912827', 183, '2028-01-31', 'Paleta łączona');
+
+  // --- 6 REGAŁ (rack-m4-r6) ---
+  addCustom('rack-m4-r6', 2, 1, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
+  addCustom('rack-m4-r6', 2, 2, 'KARTON S', 3200, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 2, 3, 'prod-9120117912667', 1620, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 1, 1, 'prod-9120117912704', 475, '2028-05-31', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 1, 2, 'prod-9120117912667', 1871, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 1, 3, 'prod-9120117912728', 735, '2027-09-30', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r6', 1, 3, 'prod-9120117913138', 111, '2027-08-31', 'Paleta łączona (2/2)');
+  addProd('rack-m4-r6', 0, 1, 'prod-9120117914692', 359, '2027-09-30', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 0, 2, 'prod-9120117911370', 1482, '2028-03-31', 'CAŁA PALETA');
+  addProd('rack-m4-r6', 0, 3, 'prod-9120117912674', 993, '2028-07-31', 'CAŁA PALETA');
+
+  // --- 7 REGAŁ (rack-m4-r7) ---
+  addCustom('rack-m4-r7', 2, 1, 'KARTON XL', 640, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m4-r7', 2, 2, 'prod-9120117912797', 2154, '2027-05-31', 'CAŁA PALETA');
+  addCustom('rack-m4-r7', 2, 3, 'KARTON XL', 640, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m4-r7', 1, 1, 'prod-9120117915651', 459, '2027-03-31', 'CAŁA PALETA');
+  addProd('rack-m4-r7', 1, 2, 'prod-9120117912797', 439, '2027-01-31', 'CAŁA PALETA');
+  // 7 Regał Poz I Pal 3: wolne
+  addProd('rack-m4-r7', 0, 1, 'prod-9120117912759', 1049, '2028-04-30', 'CAŁA PALETA (1/2)');
+  addProd('rack-m4-r7', 0, 1, 'prod-9120117912766', 302, '2028-08-31', 'CAŁA PALETA (2/2)');
+  addProd('rack-m4-r7', 0, 2, 'prod-9120117912803', 332, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m4-r7', 0, 3, 'prod-9120117912742', 347, '2028-08-31', 'Paleta łączona (1/2)');
+  addProd('rack-m4-r7', 0, 3, 'prod-9120117912735', 57, '2027-12-31', 'Paleta łączona (2/2)');
+
+  // ==========================================================================
+  // 2. LOKAL NR 5 (MAGAZYN 5) — 8 REGAŁÓW + 12 MIEJSC NA PODŁODZE
+  // ==========================================================================
+  // --- 1 REGAŁ (rack-m5-r1, 2 kolumny) ---
+  addProd('rack-m5-r1', 2, 1, 'prod-9120117913138', 3240, '2028-02-29', 'CAŁA PALETA');
+  addCustom('rack-m5-r1', 2, 2, 'Palety EURO (zapas)', 1, 'paleta', 'Palety');
+  addProd('rack-m5-r1', 1, 1, 'prod-9120117912902', 182, '2027-04-30', 'Paleta');
+  addProd('rack-m5-r1', 1, 2, 'prod-9120117912902', 393, '2027-04-30', 'CAŁA PALETA');
+  addCustom('rack-m5-r1', 0, 1, 'MARKETING — materiały reklamowe', 1, 'paleta', 'Marketing');
+  addProd('rack-m5-r1', 0, 2, 'prod-9120117912926', 475, '2028-03-31', 'Paleta łączona + MARKETING (03_28)');
+  addProd('rack-m5-r1', 0, 2, 'prod-9120117912926', 495, '2028-02-29', 'Paleta łączona + MARKETING (02_28)');
+
+  // --- 2 REGAŁ (rack-m5-r2, 3 kolumny) ---
+  addProd('rack-m5-r2', 2, 1, 'prod-9120117912889', 436, '2028-05-31', 'CAŁA PALETA');
+  addProd('rack-m5-r2', 2, 2, 'prod-9120117912834', 1224, '2028-04-30', 'CAŁA PALETA');
+  addProd('rack-m5-r2', 2, 3, 'prod-9120117912834', 1224, '2028-04-30', 'CAŁA PALETA');
+  addProd('rack-m5-r2', 1, 1, 'prod-9120117913138', 1350, '2028-02-29', 'Paleta łączona (1/2)');
+  addProd('rack-m5-r2', 1, 1, 'prod-9120117912896', 171, '2027-03-31', 'Paleta łączona (2/2)');
+  addProd('rack-m5-r2', 1, 2, 'prod-9120117912889', 360, '2028-05-31', 'CAŁA PALETA');
+  addProd('rack-m5-r2', 1, 3, 'prod-9120117912735', 3037, '2028-02-29', 'CAŁA PALETA');
+  addProd('rack-m5-r2', 0, 1, 'prod-9120117912919', 393, '2028-03-31', 'Paleta łączona (1/2)');
+  addProd('rack-m5-r2', 0, 1, 'prod-9120117912919', 376, '2028-03-31', 'Paleta łączona (2/2)');
+  addProd('rack-m5-r2', 0, 2, 'prod-9120117912896', 377, '2027-07-31', 'CAŁA PALETA');
+  addProd('rack-m5-r2', 0, 3, 'prod-9120117914692', 329, '2028-05-31', 'CAŁA PALETA');
+
+  // --- 3 REGAŁ (rack-m5-r3, 3 kolumny) ---
+  addProd('rack-m5-r3', 2, 1, 'prod-9120001435692', 1360, '2027-09-30', 'CAŁA PALETA');
+  addProd('rack-m5-r3', 2, 2, 'prod-9120001435692', 1224, '2027-09-30', 'CAŁA PALETA');
+  addProd('rack-m5-r3', 2, 3, 'prod-9120117912841', 787, '2028-04-30', 'CAŁA PALETA');
+  addProd('rack-m5-r3', 1, 1, 'prod-9120117911370', 756, '2028-09-30', 'Paleta łączona (1/2)');
+  addProd('rack-m5-r3', 1, 1, 'prod-9120117912827', 497, '2028-04-30', 'Paleta łączona (2/2)');
+  addProd('rack-m5-r3', 1, 2, 'prod-9120117912827', 960, '2028-04-30', 'CAŁA PALETA');
+  addProd('rack-m5-r3', 1, 3, 'prod-9120117912827', 703, '2028-04-30', 'CAŁA PALETA');
+  addCustom('rack-m5-r3', 0, 1, 'KARTON XL', 100, 'szt.', 'CAŁA PALETA');
+  addProd('rack-m5-r3', 0, 2, 'prod-9120117912827', 353, '2028-10-31', 'Paleta');
+  // 3 Regał Poz 0 Pal 3: wolne
+
+  // --- 4 REGAŁ (rack-m5-r4, 2 kolumny) ---
+  addProd('rack-m5-r4', 2, 1, 'prod-9120117912810', 1080, '2028-02-29', 'CAŁA PALETA');
+  addProd('rack-m5-r4', 2, 2, 'prod-9120117912810', 1224, '2028-02-29', 'CAŁA PALETA');
+  addProd('rack-m5-r4', 1, 1, 'prod-9120117912810', 1224, '2028-02-29', 'CAŁA PALETA');
+  addProd('rack-m5-r4', 1, 2, 'prod-9120117912896', 395, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m5-r4', 0, 1, 'prod-9120117912933', 384, '2026-12-31', 'CAŁA PALETA');
+  addProd('rack-m5-r4', 0, 2, 'prod-9120117912933', 384, '2026-12-31', 'CAŁA PALETA');
+
+  // --- 5 REGAŁ (rack-m5-r5, 2 kolumny) ---
+  addProd('rack-m5-r5', 2, 1, 'prod-9120117912711', 540, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m5-r5', 2, 2, 'prod-9120117912711', 437, '2028-05-31', 'Paleta łączona (05_28)');
+  addProd('rack-m5-r5', 2, 2, 'prod-9120117912711', 209, '2028-09-30', 'Paleta łączona (09_28)');
+  addProd('rack-m5-r5', 1, 1, 'prod-9120117912711', 648, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m5-r5', 1, 2, 'prod-9120117912728', 2160, '2028-03-31', 'CAŁA PALETA');
+  addProd('rack-m5-r5', 0, 1, 'prod-9120117912704', 1095, '2028-08-31', 'Paleta łączona (08_28)');
+  addProd('rack-m5-r5', 0, 1, 'prod-9120117912704', 129, '2028-10-31', 'Paleta łączona (10_28)');
+  addProd('rack-m5-r5', 0, 2, 'prod-9120117912681', 2160, '2028-08-31', 'CAŁA PALETA');
+
+  // --- 6 REGAŁ (rack-m5-r6, 3 kolumny) ---
+  addProd('rack-m5-r6', 2, 1, 'prod-9120117912711', 648, '2028-05-31', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 2, 2, 'prod-9120117912704', 1080, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 2, 3, 'prod-9120117912704', 1080, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 1, 1, 'prod-9120117912728', 2277, '2028-03-31', 'Paleta łączona (03_28)');
+  addProd('rack-m5-r6', 1, 1, 'prod-9120117912728', 963, '2028-05-31', 'Paleta łączona (05_28)');
+  addProd('rack-m5-r6', 1, 2, 'prod-9120117912704', 1080, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 1, 3, 'prod-9120117914906', 972, '2027-11-30', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 0, 1, 'prod-9120117912681', 2160, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 0, 2, 'prod-9120117914692', 240, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m5-r6', 0, 3, 'prod-9120117912681', 2174, '2028-08-31', 'CAŁA PALETA');
+
+  // --- 7 REGAŁ (rack-m5-r7, 2 kolumny) ---
+  addProd('rack-m5-r7', 2, 1, 'prod-9120117911370', 1512, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m5-r7', 2, 2, 'prod-9120117911370', 1890, '2028-03-31', 'CAŁA PALETA');
+  addProd('rack-m5-r7', 1, 1, 'prod-9120117911370', 1512, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m5-r7', 1, 2, 'prod-9120117911370', 1485, '2028-09-30', 'CAŁA PALETA');
+  // 7 Regał Poz 0 Pal 1: wolne
+  addProd('rack-m5-r7', 0, 2, 'prod-9120117911370', 1512, '2028-03-31', 'CAŁA PALETA');
+
+  // --- 8 REGAŁ (rack-m5-r8, 3 kolumny) ---
+  // Poz II Pal 1, 2: wolne
+  addProd('rack-m5-r8', 2, 3, 'prod-9120117915651', 2160, '2028-03-31', 'CAŁA PALETA');
+  addProd('rack-m5-r8', 1, 1, 'prod-9120117911370', 1260, '2028-09-30', 'CAŁA PALETA');
+  // Poz I Pal 2: wolne
+  addProd('rack-m5-r8', 1, 3, 'prod-9120117915651', 2160, '2027-03-31', 'CAŁA PALETA');
+  addCustom('rack-m5-r8', 0, 1, 'SF PRO-VI (3000 szt., 12_27) + SF STRESS (3000 szt., 08_27)', 6000, 'szt.', 'Sample Folders');
+  addCustom('rack-m5-r8', 0, 2, 'SF PANDA (5250 szt., 11_28) + SF AAD10 (4000 szt., 07_28)', 9250, 'szt.', 'Sample Folders');
+  addProd('rack-m5-r8', 0, 3, 'prod-9120117915651', 2160, '2027-03-31', 'CAŁA PALETA');
+
+  // --- PODŁOGA MAGAZYN 5 (rack-m5-floor, 12 miejsc) ---
+  addCustom('rack-m5-floor', 0, 1, 'Torba Termiczna (2029)', 9000, 'szt.', 'CAŁA PALETA');
+  addCustom(
+    'rack-m5-floor',
+    0,
+    2,
+    'SF FIBRE (600 szt. 05_28) + SF Stress Kids (250 szt. 09_27) + SF Cat&Dog (3900 szt. 07_26)',
+    4750,
+    'szt.',
+    'Sample Folders'
   );
-  const pickingPartnerSlots = slots.filter((s) => s.rackId === 'rack-m4-r3');
-  const palletSlots = slots.filter(
-    (s) => s.warehouseId === 'wh-mag-5' || s.warehouseId === 'wh-mag-6'
-  );
-  const sampleSlots = slots.filter((s) => s.rackId === 'rack-m4-r4');
-  const kitBagSlots = slots.filter((s) => s.rackId === 'rack-m4-r5');
+  // Pola 3, 4, 5: wolne
+  addCustom('rack-m5-floor', 0, 6, 'KARTON M', 1000, 'szt.', 'Opakowania');
+  addCustom('rack-m5-floor', 0, 7, 'KARTON S', 2000, 'szt.', 'Opakowania');
+  addCustom('rack-m5-floor', 0, 8, 'KARTON M LONG (1260 + 300)', 1560, 'szt.', 'CAŁA PALETA');
+  addCustom('rack-m5-floor', 0, 9, 'KARTON L', 1600, 'szt.', 'CAŁA PALETA');
+  // Pola 10, 11, 12: wolne
 
-  let mainPickIdx = 0;
-  let partnerPickIdx = 0;
-  let palletIdx = 0;
-  let sampleIdx = 0;
-  let kitIdx = 0;
+  // ==========================================================================
+  // 3. LOKAL NR 6 (MAGAZYN 6) — 8 REGAŁÓW + 12 MIEJSC NA PODŁODZE
+  // ==========================================================================
+  // --- 1 REGAŁ (rack-m6-r1, 3 kolumny) ---
+  addProd('rack-m6-r1', 2, 1, 'prod-9120117912803', 1200, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 2, 2, 'prod-9120117912803', 1620, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 2, 3, 'prod-9120117912803', 1620, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 1, 1, 'prod-9120117912803', 1296, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 1, 2, 'prod-9120117912803', 1296, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 1, 3, 'prod-9120117912803', 1296, '2027-12-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 0, 1, 'prod-9120117912803', 1296, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 0, 2, 'prod-9120117912803', 1296, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m6-r1', 0, 3, 'prod-9120117912803', 1296, '2027-05-31', 'CAŁA PALETA');
 
-  for (let i = 0; i < products.length; i++) {
-    const prod = products[i];
-    const totalWfirma = prod.wfirmaStockRegular + prod.wfirmaStockPartner;
-    if (totalWfirma <= 0) continue;
+  // --- 2 REGAŁ (rack-m6-r2, 3 kolumny) ---
+  addProd('rack-m6-r2', 2, 1, 'prod-9120117912742', 1224, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r2', 2, 2, 'prod-9120117912742', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r2', 2, 3, 'prod-9120117912742', 678, '2028-09-30', 'Paleta łączona (1/3)');
+  addProd('rack-m6-r2', 2, 3, 'prod-9120117912742', 357, '2028-09-30', 'Paleta łączona (2/3)');
+  addProd('rack-m6-r2', 2, 3, 'prod-9120117912742', 205, '2028-11-30', 'Paleta łączona (3/3)');
+  addProd('rack-m6-r2', 1, 1, 'prod-9120117912742', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r2', 1, 2, 'prod-9120117912742', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r2', 1, 3, 'prod-9120117912742', 1224, '2028-09-30', 'CAŁA PALETA');
+  // 2 Regał Poz 0 Pal 1, 2, 3: wolne
 
-    if (prod.category === 'probiotic' || prod.category === 'prebiotic' || prod.category === 'mikrosan') {
-      const pickSlot = pickingMainSlots[mainPickIdx % pickingMainSlots.length];
-      mainPickIdx++;
+  // --- 3 REGAŁ (rack-m6-r3, 3 kolumny) ---
+  addProd('rack-m6-r3', 2, 1, 'prod-9120117912742', 918, '2028-08-31', 'Paleta łączona (08_28)');
+  addProd('rack-m6-r3', 2, 1, 'prod-9120117912742', 306, '2028-09-30', 'Paleta łączona (09_28)');
+  addProd('rack-m6-r3', 2, 2, 'prod-9120117912742', 1224, '2029-04-30', 'CAŁA PALETA');
+  addProd('rack-m6-r3', 2, 3, 'prod-9120117912742', 1224, '2029-04-30', 'CAŁA PALETA');
+  addProd('rack-m6-r3', 1, 1, 'prod-9120117912742', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r3', 1, 2, 'prod-9120117912742', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r3', 1, 3, 'prod-9120117912742', 643, '2029-04-30', 'Paleta łączona (04_29)');
+  addProd('rack-m6-r3', 1, 3, 'prod-9120117912742', 581, '2028-11-30', 'Paleta łączona (11_28)');
+  // 3 Regał Poz 0 Pal 1: wolne
+  addProd('rack-m6-r3', 0, 2, 'prod-9120117912766', 648, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r3', 0, 3, 'prod-9120117912742', 1224, '2029-04-30', 'CAŁA PALETA');
 
-      const hasShortBatchDemo = prod.id === 'prod-9120117912933' || prod.id === 'prod-9120117914470';
+  // --- 4 REGAŁ (rack-m6-r4, 3 kolumny) ---
+  addProd('rack-m6-r4', 2, 1, 'prod-9120117912865', 505, '2028-01-31', 'Paleta łączona (1/2)');
+  addProd('rack-m6-r4', 2, 1, 'prod-9120117912865', 356, '2028-01-31', 'Paleta łączona (2/2)');
+  // 4 Regał Poz II Pal 2: wolne
+  addProd('rack-m6-r4', 2, 3, 'prod-9120117912865', 810, '2027-11-30', 'CAŁA PALETA');
+  // 4 Regał Poz I Pal 1, 2, 3: wolne
+  addProd('rack-m6-r4', 0, 1, 'prod-9120117912865', 810, '2027-11-30', 'CAŁA PALETA');
+  addProd('rack-m6-r4', 0, 2, 'prod-9120117912865', 810, '2027-11-30', 'CAŁA PALETA');
+  // 4 Regał Poz 0 Pal 3: wolne
 
-      if (hasShortBatchDemo && prod.wfirmaStockPartner > 0) {
-        const stdPickQty = Math.min(80, prod.wfirmaStockRegular);
-        const partnerPickQty = Math.min(60, prod.wfirmaStockPartner);
-        const remainingQty = totalWfirma - stdPickQty - partnerPickQty;
+  // --- 5 REGAŁ (rack-m6-r5, 2 kolumny) ---
+  addProd('rack-m6-r5', 2, 1, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r5', 2, 2, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
+  // 5 Regał Poz I Pal 1: wolne
+  addProd('rack-m6-r5', 1, 2, 'prod-9120117912674', 1350, '2028-07-31', 'CAŁA PALETA');
+  addProd('rack-m6-r5', 0, 1, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r5', 0, 2, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
 
-        pickSlot.allocations.push({
-          id: `batch-pick-std-${prod.id}`,
-          productId: prod.id,
-          quantity: stdPickQty,
-          lotNumber: `LOT-25A${100 + i}`,
-          expiryDate: '2027-05-31',
-          dedicatedForPartnerOnly: false,
-          palletLabel: 'Karton Kompletacyjny (Krótka data <12m)',
-          notes: 'Partia poniżej 12 msc — tylko dla zamówień standardowych/sklepu. Partnerzy pobierają z Regału 3 (PARTNER)!',
-          updatedAt: nowIso,
-        });
+  // --- 6 REGAŁ (rack-m6-r6, 3 kolumny) ---
+  addProd('rack-m6-r6', 2, 1, 'prod-9120117912674', 933, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r6', 2, 2, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
+  // 6 Regał Poz II Pal 3: wolne
+  addProd('rack-m6-r6', 1, 1, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r6', 1, 2, 'prod-9120117912674', 987, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r6', 1, 3, 'prod-9120117912674', 519, '2028-08-31', 'Paleta łączona (1/2)');
+  addProd('rack-m6-r6', 1, 3, 'prod-9120117912674', 419, '2028-08-31', 'Paleta łączona (2/2)');
+  addProd('rack-m6-r6', 0, 1, 'prod-9120117912674', 556, '2028-08-31', 'Paleta łączona (1/2)');
+  addProd('rack-m6-r6', 0, 1, 'prod-9120117912674', 395, '2028-08-31', 'Paleta łączona (2/2)');
+  addProd('rack-m6-r6', 0, 2, 'prod-9120117912674', 966, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r6', 0, 3, 'prod-9120117912674', 1080, '2028-08-31', 'CAŁA PALETA');
 
-        const partSlot = pickingPartnerSlots[partnerPickIdx % pickingPartnerSlots.length];
-        partnerPickIdx++;
-        partSlot.allocations.push({
-          id: `batch-pick-part-${prod.id}`,
-          productId: prod.id,
-          quantity: partnerPickQty,
-          lotNumber: `LOT-26P${200 + i}`,
-          expiryDate: '2028-04-30',
-          dedicatedForPartnerOnly: true,
-          palletLabel: 'Regał 3 — Gniazdo PARTNER (>12 msc)',
-          notes: 'Wydzielona partia dla Partnerów (powyżej 12 miesięcy ważności)',
-          updatedAt: nowIso,
-        });
+  // --- 7 REGAŁ (rack-m6-r7, 3 kolumny) ---
+  addProd('rack-m6-r7', 2, 1, 'prod-9120117912759', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 2, 2, 'prod-9120117912759', 979, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 2, 3, 'prod-9120117912759', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 1, 1, 'prod-9120117912759', 915, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 1, 2, 'prod-9120117912759', 1224, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 1, 3, 'prod-9120117912759', 1224, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 0, 1, 'prod-9120117912759', 1224, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 0, 2, 'prod-9120117912759', 1224, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r7', 0, 3, 'prod-9120117912766', 578, '2028-08-31', 'CAŁA PALETA');
 
-        if (remainingQty > 0) {
-          const pSlot = palletSlots[palletIdx % palletSlots.length];
-          palletIdx++;
-          pSlot.allocations.push({
-            id: `batch-pal-${prod.id}-1`,
-            productId: prod.id,
-            quantity: remainingQty,
-            lotNumber: `LOT-26P${200 + i}`,
-            expiryDate: '2028-04-30',
-            palletLabel: `Paleta #${palletIdx} (Zapas składowania)`,
-            updatedAt: nowIso,
-          });
-        }
-      } else {
-        const pickQty = Math.min(120, totalWfirma);
-        const remainingQty = totalWfirma - pickQty;
+  // --- 8 REGAŁ (rack-m6-r8, 3 kolumny) ---
+  addProd('rack-m6-r8', 2, 1, 'prod-9120117912766', 423, '2028-08-31', 'Paleta łączona (1/2)');
+  addProd('rack-m6-r8', 2, 1, 'prod-9120117912759', 360, '2028-08-31', 'Paleta łączona (2/2)');
+  addProd('rack-m6-r8', 2, 2, 'prod-9120117912766', 648, '2028-09-30', 'CAŁA PALETA');
+  // 8 Regał Poz II Pal 3: wolne
+  addProd('rack-m6-r8', 1, 1, 'prod-9120117912766', 648, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r8', 1, 2, 'prod-9120117912766', 648, '2028-08-31', 'CAŁA PALETA');
+  // 8 Regał Poz I Pal 3: wolne
+  addProd('rack-m6-r8', 0, 1, 'prod-9120117912766', 349, '2028-08-31', 'Paleta łączona (1/2)');
+  addProd('rack-m6-r8', 0, 1, 'prod-9120117912759', 350, '2028-08-31', 'Paleta łączona (2/2)');
+  addProd('rack-m6-r8', 0, 2, 'prod-9120117912766', 648, '2028-08-31', 'CAŁA PALETA');
+  addProd('rack-m6-r8', 0, 3, 'prod-9120117912766', 432, '2028-09-30', 'CAŁA PALETA');
 
-        pickSlot.allocations.push({
-          id: `batch-pick-${prod.id}`,
-          productId: prod.id,
-          quantity: pickQty,
-          lotNumber: `LOT-26B${300 + i}`,
-          expiryDate: '2028-06-30',
-          dedicatedForPartnerOnly: false,
-          palletLabel: 'Magazyn 4 Kompletacja (Wspólna >12 msc)',
-          updatedAt: nowIso,
-        });
-
-        if (remainingQty > 0) {
-          if (remainingQty > 2500) {
-            const half1 = Math.floor(remainingQty / 2);
-            const half2 = remainingQty - half1;
-
-            const pSlot1 = palletSlots[palletIdx % palletSlots.length];
-            palletIdx++;
-            pSlot1.allocations.push({
-              id: `batch-pal-${prod.id}-1`,
-              productId: prod.id,
-              quantity: half1,
-              lotNumber: `LOT-25F${400 + i}`,
-              expiryDate: '2027-12-31',
-              palletLabel: `Paleta #${palletIdx} (FEFO #1)`,
-              updatedAt: nowIso,
-            });
-
-            const pSlot2 = palletSlots[palletIdx % palletSlots.length];
-            palletIdx++;
-            pSlot2.allocations.push({
-              id: `batch-pal-${prod.id}-2`,
-              productId: prod.id,
-              quantity: half2,
-              lotNumber: `LOT-26N${500 + i}`,
-              expiryDate: '2028-09-30',
-              palletLabel: `Paleta #${palletIdx} (FEFO #2 — nowsza dostawa)`,
-              updatedAt: nowIso,
-            });
-          } else {
-            const pSlot = palletSlots[palletIdx % palletSlots.length];
-            palletIdx++;
-            pSlot.allocations.push({
-              id: `batch-pal-${prod.id}-1`,
-              productId: prod.id,
-              quantity: remainingQty,
-              lotNumber: `LOT-26B${300 + i}`,
-              expiryDate: '2028-06-30',
-              palletLabel: `Paleta #${palletIdx}`,
-              updatedAt: nowIso,
-            });
-          }
-        }
-      }
-    } else if (prod.category === 'sample') {
-      const sSlot = sampleSlots[sampleIdx % sampleSlots.length];
-      sampleIdx++;
-      sSlot.allocations.push({
-        id: `batch-sample-${prod.id}`,
-        productId: prod.id,
-        quantity: totalWfirma,
-        lotNumber: `PROB-2026-${i}`,
-        expiryDate: '2028-03-31',
-        palletLabel: 'Karton próbek z ulotką',
-        updatedAt: nowIso,
-      });
-    } else {
-      const kSlot = kitBagSlots[kitIdx % kitBagSlots.length];
-      kitIdx++;
-      let expDate = '2028-12-31';
-      if (/10[\/\s]2026|10\/26/.test(prod.name)) expDate = '2026-10-31';
-      else if (/11[\/\s]2026|11\/26/.test(prod.name)) expDate = '2026-11-30';
-      else if (/12[\/\s]2026/.test(prod.name)) expDate = '2026-12-31';
-
-      kSlot.allocations.push({
-        id: `batch-kit-${prod.id}`,
-        productId: prod.id,
-        quantity: totalWfirma,
-        lotNumber: `SERIA-${2026}-${i}`,
-        expiryDate: expDate,
-        palletLabel: prod.category === 'promo_kit' ? 'Strefa Zestawów / Promocji' : 'Regał Materiałów',
-        updatedAt: nowIso,
-      });
-    }
-  }
-
-  // Przykładowe pozycje na miejscach paletowych na podłodze w Magazynie 5 i 6 (w tym opis ręczny)
-  const m5FloorSlots = slots.filter((s) => s.rackId === 'rack-m5-floor');
-  if (m5FloorSlots.length >= 1) {
-    const targetFloorSlot =
-      m5FloorSlots.find((s) => s.allocations.length === 0) || m5FloorSlots[m5FloorSlots.length - 1];
-    targetFloorSlot.customDescription = 'Paleta z kartonami zbiorczymi i wypełniaczem';
-    targetFloorSlot.allocations.push({
-      id: 'batch-custom-m5-floor-1',
-      productId: 'CUSTOM',
-      isCustomItem: true,
-      customName: 'Kartony wysyłkowe B2C + rolki folii bąbelkowej i taśmy',
-      customUnit: 'paleta',
-      quantity: 1,
-      lotNumber: '-',
-      expiryDate: '',
-      palletLabel: 'Paleta podłogowa (Magazyn 5)',
-      notes: 'Zapas materiałów do pakowania na podłodze w Magazynie 5',
-      updatedAt: nowIso,
-    });
-  }
-
-  const m6FloorSlots = slots.filter((s) => s.rackId === 'rack-m6-floor');
-  if (m6FloorSlots.length >= 2) {
-    const customSlot1 = m6FloorSlots[0];
-    customSlot1.customDescription = 'Materiały do pakowania przesyłek kurierskich i paletowych';
-    customSlot1.allocations.push({
-      id: 'batch-custom-packaging-1',
-      productId: 'CUSTOM',
-      isCustomItem: true,
-      customName: 'Kartony wysyłkowe zbiorcze + taśmy pakowe Eubiosis + wypełniacz',
-      customUnit: 'paleta',
-      quantity: 2,
-      lotNumber: '-',
-      expiryDate: '',
-      palletLabel: 'Paleta na podłodze — Opakowania',
-      notes: 'Zapas kartonów do wysyłek B2C oraz aptecznych',
-      updatedAt: nowIso,
-    });
-
-    const customSlot2 = m6FloorSlots[1];
-    customSlot2.customDescription = 'Wyposażenie targowe i konferencyjne na podłodze';
-    customSlot2.allocations.push({
-      id: 'batch-custom-conference-stand',
-      productId: 'CUSTOM',
-      isCustomItem: true,
-      customName: 'Stoisko targowe: Roll-upy OMNi-BiOTiC (4 szt.), lada konferencyjna, obrusy i ekspozytory',
-      customUnit: 'kpl.',
-      quantity: 1,
-      lotNumber: '-',
-      expiryDate: '',
-      palletLabel: 'Paleta na podłodze — Konferencje',
-      notes: 'Zwrócone po ostatniej konferencji — gotowe do kolejnego wyjazdu',
-      updatedAt: nowIso,
-    });
-  }
-
-  // Uzupełnij domyślne przeliczenie na pełne kartony + otwarty karton dla pozycji katalogowych
-  const prodById = new Map(products.map((p) => [p.id, p]));
-  for (const slot of slots) {
-    for (const batch of slot.allocations) {
-      if (batch.isCustomItem || batch.productId === 'CUSTOM') continue;
-      const p = prodById.get(batch.productId);
-      const defaultUpc =
-        p?.category === 'mikrosan'
-          ? 12
-          : p?.category === 'sample'
-          ? 100
-          : 24;
-      batch.unitsPerCarton = defaultUpc;
-      batch.fullCartonsCount = Math.floor(batch.quantity / defaultUpc);
-      batch.looseUnitsInOpenCarton = batch.quantity % defaultUpc;
-    }
-  }
+  // --- PODŁOGA MAGAZYN 6 (rack-m6-floor, 12 miejsc) ---
+  addCustom('rack-m6-floor', 0, 1, 'Mikrosan Torba', 5600, 'szt.', 'Materiały');
+  // Pola 2, 3, 4, 5, 6: wolne
+  addProd('rack-m6-floor', 0, 7, 'prod-9120117912766', 682, '2028-10-31', 'CAŁA PALETA');
+  addProd('rack-m6-floor', 0, 8, 'prod-9120117912803', 972, '2027-05-31', 'CAŁA PALETA');
+  addProd('rack-m6-floor', 0, 9, 'prod-9120117912766', 614, '2028-09-30', 'CAŁA PALETA');
+  addProd('rack-m6-floor', 0, 10, 'prod-9120117912759', 1224, '2028-04-30', 'CAŁA PALETA');
+  // Pola 11, 12: wolne
 
   return slots;
 }
 
-/**
- * 4 autentyczne dokumenty z przesłanego przez użytkownika pliku PDF z wFirma (w statusie wersji roboczej "draft",
- * gotowe do przetestowania zatwierdzenia 1 kliknięciem!)
- */
 export const DEFAULT_SAMPLE_DOCUMENTS: WarehouseDocument[] = [
   {
     id: 'doc-pz-18-10-2026',
@@ -1561,7 +1380,7 @@ export const DEFAULT_SAMPLE_DOCUMENTS: WarehouseDocument[] = [
     issueDate: '2026-10-09',
     warehouseName: 'Główny Magazyn',
     counterparty: 'JOLANTA STASZCZAK APTEKI FANTAZJA (NIP: 6790025172)',
-    notes: 'Dostawa zewnętrzna z wFirma.pl — do alokacji na wybrane miejsce paletowe lub Strefę Kompletacji PARTNER (>12 msc).',
+    notes: 'Dostawa zewnętrzna z wFirma.pl — do alokacji na wybrane miejsce paletowe.',
     status: 'draft',
     createdAt: '2026-10-11T08:00:00.000Z',
     items: [
@@ -1569,7 +1388,7 @@ export const DEFAULT_SAMPLE_DOCUMENTS: WarehouseDocument[] = [
         id: 'item-pz-1',
         lp: 1,
         rawSku: 'EAN9120117914470',
-        rawName: 'OMNI-BIOTIC® Travel - 14 sasz.*5g PL PARTNER',
+        rawName: 'Travel — 14 sasz. × 5g PL PARTNER',
         matchedProductId: 'prod-9120117914470',
         isPartnerChannel: true,
         quantity: 3,
@@ -1581,52 +1400,13 @@ export const DEFAULT_SAMPLE_DOCUMENTS: WarehouseDocument[] = [
     ],
   },
   {
-    id: 'doc-wz-906-10-2026',
-    docType: 'WZ',
-    docNumber: 'WZ 906/10/2026',
-    issueDate: '2026-10-09',
-    warehouseName: 'Główny Magazyn',
-    counterparty: 'weronika kalwat (al. ks. Jerzego Popiełuszki 40, 25-394 Kielce)',
-    notes: 'Wydanie zewnętrzne B2C — ściąga ilości ze Strefy Kompletacji.',
-    status: 'draft',
-    createdAt: '2026-10-11T08:00:00.000Z',
-    items: [
-      {
-        id: 'item-wz-1',
-        lp: 1,
-        rawSku: '9120117912934',
-        rawName: 'MikroSan promocja 11 2026',
-        matchedProductId: 'prod-9120117912934',
-        isPartnerChannel: false,
-        quantity: 3,
-        unit: 'szt.',
-        unitPrice: 139.30,
-        totalValue: 417.90,
-        allocatedMovements: [],
-      },
-      {
-        id: 'item-wz-2',
-        lp: 2,
-        rawSku: '7412589633700',
-        rawName: 'SKLEP B2C - PRÓBKA Z ULOTKĄ - OMNi BiOTiC® STRESS REPAIR 9',
-        matchedProductId: 'prod-sample-stress',
-        isPartnerChannel: false,
-        quantity: 1,
-        unit: 'szt.',
-        unitPrice: 0.01,
-        totalValue: 0.01,
-        allocatedMovements: [],
-      },
-    ],
-  },
-  {
     id: 'doc-pw-30-10-2026',
     docType: 'PW',
     docNumber: 'PW 30/10/2026',
     issueDate: '2026-10-09',
     warehouseName: 'Główny Magazyn',
     counterparty: 'Eubiosis sp. z o.o.',
-    notes: 'Częściowy zwrot zamówienia. Protokół anulacji e-paragonu nr 20/10/2026. (Dodaje na Strefę Kompletacji).',
+    notes: 'Częściowy zwrot zamówienia. Protokół anulacji e-paragonu nr 20/10/2026.',
     status: 'draft',
     createdAt: '2026-10-11T08:00:00.000Z',
     items: [
@@ -1634,7 +1414,7 @@ export const DEFAULT_SAMPLE_DOCUMENTS: WarehouseDocument[] = [
         id: 'item-pw-1',
         lp: 1,
         rawSku: '9120117912674',
-        rawName: 'OMNi-BiOTiC® AAD10 - 30sasz.*5g PL',
+        rawName: 'AAD10 — 30 sasz. × 5g PL',
         matchedProductId: 'prod-9120117912674',
         isPartnerChannel: false,
         quantity: 1,
@@ -1645,63 +1425,275 @@ export const DEFAULT_SAMPLE_DOCUMENTS: WarehouseDocument[] = [
       },
     ],
   },
+];
+
+export const DEFAULT_SUSPENDED_RECORDS: SuspendedItemRecord[] = [
   {
-    id: 'doc-rw-14-10-2026',
-    docType: 'RW',
-    docNumber: 'RW 14/10/2026',
-    issueDate: '2026-10-08',
-    warehouseName: 'Główny Magazyn',
-    counterparty: 'Eubiosis sp. z o.o.',
-    notes: 'Przesunięcie wewnątrzmagazynowe + PW 20/10/2026 (Ściąga ze Strefy Kompletacji / Próbek).',
-    status: 'draft',
-    createdAt: '2026-10-11T08:00:00.000Z',
+    id: 'susp-oct-konferencje',
+    issuedAt: '2026-10-11T08:00:00.000Z',
+    eventName: 'Wydane na konferencje / niespisane RW (Inwentaryzacja Października)',
+    takenBy: 'Zespół Konferencyjny / Targi',
+    expectedReturnDate: '2026-10-25',
+    status: 'suspended',
+    notes: 'Pozycje z kolumny „WYDANE NA KONFERENCJE / NIESPISANE RW" w arkuszu INWENTARYZACJA.',
     items: [
       {
-        id: 'item-rw-1',
-        lp: 1,
-        rawSku: 'PROBKA-PRO-VI',
-        rawName: 'PRÓBKA Z ULOTKĄ PRO-VI',
-        matchedProductId: 'prod-sample-provi',
-        isPartnerChannel: false,
-        quantity: 280,
-        unit: 'szt.',
-        unitPrice: 2.15,
-        totalValue: 602.00,
-        allocatedMovements: [],
+        id: 'susp-item-1',
+        productId: 'prod-9120117912797',
+        productName: 'Pro-Vi 5 — 14 sasz. × 2g',
+        lotNumber: 'MHD-03/27',
+        expiryDate: '2027-03-31',
+        sourceSlotId: 'slot-rack-m4-r3-2-1',
+        sourceSlotCode: 'M4-R3-POZ.II-1PAL',
+        quantityIssued: 40,
+        quantityReturned: 0,
+        quantitySettled: 0,
       },
       {
-        id: 'item-rw-2',
-        lp: 2,
-        rawSku: '7412589633703',
-        rawName: 'SKLEP B2C - PRÓBKA Z ULOTKĄ - OMNi BiOTiC® STRESS REPAIR KIDS',
-        matchedProductId: 'prod-sample-stress-kids',
-        isPartnerChannel: false,
-        quantity: 38,
-        unit: 'szt.',
-        unitPrice: 2.11,
-        totalValue: 80.20,
-        allocatedMovements: [],
+        id: 'susp-item-2',
+        productId: 'prod-9120117912766',
+        productName: 'Stress Repair — 56 sasz. × 3g',
+        lotNumber: 'MHD-08/28',
+        expiryDate: '2028-08-31',
+        sourceSlotId: 'slot-rack-m4-r7-0-1',
+        sourceSlotCode: 'M4-R7-POZ.0-1PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-3',
+        productId: 'prod-9120117912759',
+        productName: 'Stress Repair — 28 sasz. × 3g',
+        lotNumber: 'MHD-04/28',
+        expiryDate: '2028-04-30',
+        sourceSlotId: 'slot-rack-m4-r7-0-1',
+        sourceSlotCode: 'M4-R7-POZ.0-1PAL',
+        quantityIssued: 2,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-4',
+        productId: 'prod-9120117915651',
+        productName: 'Stress Repair Kids — 28 sasz. × 1,2g',
+        lotNumber: 'MHD-03/27',
+        expiryDate: '2027-03-31',
+        sourceSlotId: 'slot-rack-m4-r7-1-1',
+        sourceSlotCode: 'M4-R7-POZ.I-1PAL',
+        quantityIssued: 2,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-5',
+        productId: 'prod-9120001435692',
+        productName: 'Travel — 28 sasz. × 5g',
+        lotNumber: 'MHD-08/27',
+        expiryDate: '2027-08-31',
+        sourceSlotId: 'slot-rack-m4-r5-0-1',
+        sourceSlotCode: 'M4-R5-POZ.0-1PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-6',
+        productId: 'prod-9120117912674',
+        productName: 'AAD10 — 30 sasz. × 5g',
+        lotNumber: 'MHD-07/28',
+        expiryDate: '2028-07-31',
+        sourceSlotId: 'slot-rack-m4-r6-0-3',
+        sourceSlotCode: 'M4-R6-POZ.0-3PAL',
+        quantityIssued: 2,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-7',
+        productId: 'prod-9120117911370',
+        productName: 'AAD10 Kids — 20 sasz. × 2,5g',
+        lotNumber: 'MHD-03/28',
+        expiryDate: '2028-03-31',
+        sourceSlotId: 'slot-rack-m4-r6-0-2',
+        sourceSlotCode: 'M4-R6-POZ.0-2PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-8',
+        productId: 'prod-9120117912858',
+        productName: 'FLORA plus+ — 14 sasz. × 2g',
+        lotNumber: 'MHD-01/27',
+        expiryDate: '2027-01-31',
+        sourceSlotId: 'slot-rack-m4-r5-0-2',
+        sourceSlotCode: 'M4-R5-POZ.0-2PAL',
+        quantityIssued: 2,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-9',
+        productId: 'prod-9120117912810',
+        productName: 'Metabolic — 30 sasz. × 3g',
+        lotNumber: 'MHD-02/28',
+        expiryDate: '2028-02-29',
+        sourceSlotId: 'slot-rack-m4-r2-1-2',
+        sourceSlotCode: 'M4-R2-POZ.I-2PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-10',
+        productId: 'prod-9120117912742',
+        productName: 'Panda — 30 sasz. × 3g',
+        lotNumber: 'MHD-08/28',
+        expiryDate: '2028-08-31',
+        sourceSlotId: 'slot-rack-m4-r7-0-3',
+        sourceSlotCode: 'M4-R7-POZ.0-3PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-item-11',
+        productId: 'prod-9120117912735',
+        productName: 'Panda — 7 sasz. × 3g',
+        lotNumber: 'MHD-12/27',
+        expiryDate: '2027-12-31',
+        sourceSlotId: 'slot-rack-m4-r7-0-3',
+        sourceSlotCode: 'M4-R7-POZ.0-3PAL',
+        quantityIssued: 10,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+    ],
+  },
+  {
+    id: 'susp-oct-pracownicy',
+    issuedAt: '2026-10-11T08:00:00.000Z',
+    eventName: 'Nierozliczone zamówienia pracowników (4 zamówienia — Inwentaryzacja Października)',
+    takenBy: 'Zamówienia pracownicze',
+    expectedReturnDate: '2026-10-20',
+    status: 'suspended',
+    notes: 'Pozycje z kolumny „NIEROZLICZONE ZAMÓWIENIA PRACOWNIKÓW" w arkuszu INWENTARYZACJA.',
+    items: [
+      {
+        id: 'susp-emp-1',
+        productId: 'prod-9120117912803',
+        productName: 'Pro-Vi 5 — 30 sasz. × 2g',
+        lotNumber: 'MHD-05/27',
+        expiryDate: '2027-05-31',
+        sourceSlotId: 'slot-rack-m4-r7-0-2',
+        sourceSlotCode: 'M4-R7-POZ.0-2PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-2',
+        productId: 'prod-9120117912766',
+        productName: 'Stress Repair — 56 sasz. × 3g',
+        lotNumber: 'MHD-08/28',
+        expiryDate: '2028-08-31',
+        sourceSlotId: 'slot-rack-m4-r7-0-1',
+        sourceSlotCode: 'M4-R7-POZ.0-1PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-3',
+        productId: 'prod-9120117912759',
+        productName: 'Stress Repair — 28 sasz. × 3g',
+        lotNumber: 'MHD-04/28',
+        expiryDate: '2028-04-30',
+        sourceSlotId: 'slot-rack-m4-r7-0-1',
+        sourceSlotCode: 'M4-R7-POZ.0-1PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-4',
+        productId: 'prod-9120117912674',
+        productName: 'AAD10 — 30 sasz. × 5g',
+        lotNumber: 'MHD-07/28',
+        expiryDate: '2028-07-31',
+        sourceSlotId: 'slot-rack-m4-r6-0-3',
+        sourceSlotCode: 'M4-R6-POZ.0-3PAL',
+        quantityIssued: 3,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-5',
+        productId: 'prod-9120117912872',
+        productName: 'Cat&Dog — 60g słoik',
+        lotNumber: 'MHD-10/27',
+        expiryDate: '2027-10-31',
+        sourceSlotId: 'slot-rack-m4-r3-0-2',
+        sourceSlotCode: 'M4-R3-POZ.0-2PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-6',
+        productId: 'prod-9120117912827',
+        productName: 'Hetox — 30 sasz. × 6g',
+        lotNumber: 'MHD-01/28',
+        expiryDate: '2028-01-31',
+        sourceSlotId: 'slot-rack-m4-r5-0-3',
+        sourceSlotCode: 'M4-R5-POZ.0-3PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-7',
+        productId: 'prod-9120117912841',
+        productName: 'POWER — 28 sasz. × 4g',
+        lotNumber: 'MHD-10/27',
+        expiryDate: '2027-10-31',
+        sourceSlotId: 'slot-rack-m4-r4-1-1',
+        sourceSlotCode: 'M4-R4-POZ.I-1PAL',
+        quantityIssued: 1,
+        quantityReturned: 0,
+        quantitySettled: 0,
+      },
+      {
+        id: 'susp-emp-8',
+        productId: 'prod-9120117912889',
+        productName: 'Fibre — 250g słoik PET',
+        lotNumber: 'MHD-10/27',
+        expiryDate: '2027-10-31',
+        sourceSlotId: 'slot-rack-m4-r4-0-1',
+        sourceSlotCode: 'M4-R4-POZ.0-1PAL',
+        quantityIssued: 3,
+        quantityReturned: 0,
+        quantitySettled: 0,
       },
     ],
   },
 ];
 
-export const DEFAULT_SUSPENDED_RECORDS: SuspendedItemRecord[] = [];
-
 export const DEFAULT_MOVEMENTS_HISTORY: StockMovementHistoryEntry[] = [
   {
-    id: 'mov-init-1',
+    id: 'mov-init-oct-1',
     timestamp: '2026-10-11T08:00:00.000Z',
     type: 'INVENTORY_ADJUST',
     productId: 'ALL',
-    productName: 'Bilans otwarcia na podstawie Zestawienia Stanów wFirma z dn. 11-10-2026',
+    productName: 'Odtworzenie 1:1 Inwentaryzacji Października (Lokal nr 4, Lokal nr 5, Lokal nr 6) + Cennik Kartonów',
     quantity: 0,
     lotNumber: '-',
     expiryDate: '-',
-    toSlotCode: 'WSZYSTKIE MAGAZYNY',
-    referenceDoc: 'STANY MAGAZYNOWE 11-10-2026',
+    toSlotCode: 'MAGAZYN 4, 5, 6',
+    referenceDoc: 'INWENTARYZACJA PAŹDZIERNIK',
     performedBy: 'System WMS Eubiosis',
-    notes: 'Automatyczne rozmieszczenie 49 pozycji katalogowych (240 wierszy FIFO wFirma) na Strefę Kompletacji oraz Regały Paletowe.',
+    notes: 'Dokładne odwzorowanie regałów, poziomów (POZIOM II, I, 0), miejsc paletowych i dat ważności z pliku inwentaryzacyjnego.',
   },
 ];
 
@@ -1721,8 +1713,8 @@ export function createInitialWMSState(): WMSFullState {
     movementsHistory: DEFAULT_MOVEMENTS_HISTORY.map((m) => ({ ...m })),
     wfirmaSnapshot: {
       snapshotDate: '2026-10-11',
-      warehouseName: 'Główny Magazyn',
-      totalRowsParsed: 240,
+      warehouseName: 'Inwentaryzacja Października (Magazyn 4, 5, 6)',
+      totalRowsParsed: 32,
       totalValueNet: 9681955.72,
       importedAt: '2026-10-11T08:00:00.000Z',
       rows: [],
