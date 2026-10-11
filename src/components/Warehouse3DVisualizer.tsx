@@ -677,7 +677,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-sm bg-pink-500 border border-pink-200 shrink-0" />
                   <div className="leading-tight">
-                    <div className="font-extrabold text-pink-200 text-[11px]">🩷 PARTNER</div>
+                    <div className="font-extrabold text-pink-200 text-[11px]">PARTNER</div>
                     <div className="text-[10px] text-pink-100/80">Data &ge; 12 msc</div>
                   </div>
                 </div>
@@ -702,7 +702,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-sm bg-yellow-400 border border-yellow-100 shrink-0" />
                   <div className="leading-tight">
-                    <div className="font-extrabold text-yellow-200 text-[11px]">🟨 1. do wyjścia</div>
+                    <div className="font-extrabold text-yellow-200 text-[11px]">1. do wyjścia</div>
                     <div className="text-[10px] text-yellow-100/80">Pierwsze do wydania</div>
                   </div>
                 </div>
@@ -727,7 +727,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-sm bg-red-600 border border-red-200 shrink-0" />
                   <div className="leading-tight">
-                    <div className="font-extrabold text-red-200 text-[11px]">🟥 Data &lt; 6 msc</div>
+                    <div className="font-extrabold text-red-200 text-[11px]">Data &lt; 6 msc</div>
                     <div className="text-[10px] text-red-100/80">Krótka data ważności</div>
                   </div>
                 </div>
@@ -752,7 +752,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-sm bg-emerald-500 border border-emerald-200 shrink-0" />
                   <div className="leading-tight">
-                    <div className="font-extrabold text-emerald-200 text-[11px]">🟩 Produkty</div>
+                    <div className="font-extrabold text-emerald-200 text-[11px]">Produkty</div>
                     <div className="text-[10px] text-emerald-100/80">Pozostałe miejsca</div>
                   </div>
                 </div>
@@ -775,7 +775,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-sm bg-violet-500 border border-violet-200 shrink-0" />
                   <div className="leading-tight">
-                    <div className="font-extrabold text-violet-200 text-[11px]">🟪 SF (Próbki)</div>
+                    <div className="font-extrabold text-violet-200 text-[11px]">SF (Próbki)</div>
                     <div className="text-[10px] text-violet-100/80">Sample Folders</div>
                   </div>
                 </div>
@@ -800,7 +800,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-sm bg-blue-500 border border-blue-200 shrink-0" />
                   <div className="leading-tight">
-                    <div className="font-extrabold text-blue-200 text-[11px]">🟦 Materiały</div>
+                    <div className="font-extrabold text-blue-200 text-[11px]">Materiały</div>
                     <div className="text-[10px] text-blue-100/80">Kartony / Torby / Inne</div>
                   </div>
                 </div>

@@ -383,7 +383,7 @@ export function App() {
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-pink-500/20 border border-pink-400/60">
               <span className="w-4 h-4 rounded-md bg-pink-500 border border-pink-200 shrink-0 shadow-xs" />
               <div className="leading-tight">
-                <div className="font-extrabold text-pink-200">🩷 Różowy — PARTNER</div>
+                <div className="font-extrabold text-pink-200">Różowy — PARTNER</div>
                 <div className="text-[10px] text-pink-100/80">Etykieta PARTNER (&ge; 12 msc)</div>
               </div>
             </div>
@@ -391,7 +391,7 @@ export function App() {
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-yellow-400/20 border border-yellow-300/60">
               <span className="w-4 h-4 rounded-md bg-yellow-400 border border-yellow-100 shrink-0 shadow-xs" />
               <div className="leading-tight">
-                <div className="font-extrabold text-yellow-200">🟨 Żółty — 1. do wyjścia</div>
+                <div className="font-extrabold text-yellow-200">Żółty — 1. do wyjścia</div>
                 <div className="text-[10px] text-yellow-100/80">Palety pierwsze do wydania</div>
               </div>
             </div>
@@ -399,7 +399,7 @@ export function App() {
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-red-600/25 border border-red-400/60">
               <span className="w-4 h-4 rounded-md bg-red-600 border border-red-200 shrink-0 shadow-xs" />
               <div className="leading-tight">
-                <div className="font-extrabold text-red-200">🟥 Czerwony — Data &lt; 6 msc</div>
+                <div className="font-extrabold text-red-200">Czerwony — Data &lt; 6 msc</div>
                 <div className="text-[10px] text-red-100/80">Krótka data ważności (&lt; 6 msc)</div>
               </div>
             </div>
@@ -407,7 +407,7 @@ export function App() {
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-emerald-600/25 border border-emerald-400/60">
               <span className="w-4 h-4 rounded-md bg-emerald-500 border border-emerald-200 shrink-0 shadow-xs" />
               <div className="leading-tight">
-                <div className="font-extrabold text-emerald-200">🟩 Zielony — Produkty</div>
+                <div className="font-extrabold text-emerald-200">Zielony — Produkty</div>
                 <div className="text-[10px] text-emerald-100/80">Pozostałe miejsca na produkty</div>
               </div>
             </div>
@@ -415,7 +415,7 @@ export function App() {
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-violet-600/25 border border-violet-400/60">
               <span className="w-4 h-4 rounded-md bg-violet-500 border border-violet-200 shrink-0 shadow-xs" />
               <div className="leading-tight">
-                <div className="font-extrabold text-violet-200">🟪 Fioletowy — SF</div>
+                <div className="font-extrabold text-violet-200">Fioletowy — SF</div>
                 <div className="text-[10px] text-violet-100/80">Sample Folders / Próbki</div>
               </div>
             </div>
@@ -423,7 +423,7 @@ export function App() {
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-blue-600/25 border border-blue-400/60">
               <span className="w-4 h-4 rounded-md bg-blue-500 border border-blue-200 shrink-0 shadow-xs" />
               <div className="leading-tight">
-                <div className="font-extrabold text-blue-200">🟦 Niebieski — Materiały</div>
+                <div className="font-extrabold text-blue-200">Niebieski — Materiały</div>
                 <div className="text-[10px] text-blue-100/80">Kartony / Torby / Pozostałe</div>
               </div>
             </div>
