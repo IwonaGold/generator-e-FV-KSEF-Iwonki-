@@ -268,13 +268,13 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
         key={rack.id}
         onMouseEnter={() => setHoveredRackId(rack.id)}
         onMouseLeave={() => setHoveredRackId(null)}
-        className={`rounded-2xl p-3.5 transition-all border-2 relative ${
+        className={`rounded-2xl p-2.5 transition-all border-2 relative ${
           isHovered
             ? 'bg-slate-800/95 border-teal-400 shadow-lg'
             : 'bg-slate-800/85 border-slate-600'
         }`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b-2 border-orange-500/80">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b-2 border-orange-500/80">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-md bg-orange-500 text-slate-950 font-mono text-xs font-black">
               {rack.name.split('(')[0].trim().toUpperCase()}
@@ -297,9 +297,12 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
               .sort((a, b) => a.position - b.position);
 
             return (
-              <div key={lvl} className="flex items-center gap-2">
-                <span className="w-14 shrink-0 text-[10px] font-mono font-bold text-slate-300 bg-slate-900 px-1.5 py-1.5 rounded text-center border border-slate-700">
-                  {lvl === 2 ? 'POZ. II' : lvl === 1 ? 'POZ. I' : lvl === 0 ? 'POZ. 0' : `POZ. ${lvl}`}
+              <div key={lvl} className="flex items-center gap-1.5">
+                <span
+                  title={`Poziom ${lvl}`}
+                  className="w-5 shrink-0 text-[10px] font-mono font-black text-slate-300 bg-slate-900/90 py-1.5 rounded text-center border border-slate-700"
+                >
+                  {lvl}
                 </span>
                 <div
                   className="flex-1 grid gap-1.5"
@@ -420,14 +423,14 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1 text-[9px] font-mono font-extrabold">
-                          <span className="flex items-center gap-0.5 opacity-90">
+                          <span className="flex items-center gap-0.5 opacity-90 shrink-0">
                             {!isEmpty && (
                               <GripVertical className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 shrink-0" />
                             )}
-                            <span>{slot.position} PAL.</span>
+                            <span>{slot.position}.</span>
                           </span>
                           {!isEmpty && (
-                            <span className="font-black">
+                            <span className="font-black truncate">
                               {isCombinedPallet
                                 ? `${firstAlloc.quantity.toLocaleString('pl-PL')} (${totalQty.toLocaleString('pl-PL')})`
                                 : totalQty.toLocaleString('pl-PL')}
@@ -774,28 +777,28 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
         >
           <div className="min-w-[920px] flex items-stretch gap-4">
             {/* LEWA ŚCIANA PROSTOKĄTNEJ HALI: BRAMA WJAZDOWA / WYDAŃ PO LEWEJ STRONIE */}
-            <div className="w-44 shrink-0 flex flex-col justify-between rounded-xl border-2 border-slate-600 bg-slate-950/80 p-2.5 relative">
-              <div className="text-[10px] font-mono text-slate-400 text-center py-2 border-b border-slate-800">
+            <div className="w-28 shrink-0 flex flex-col justify-between rounded-xl border-2 border-slate-600 bg-slate-950/80 p-2 relative">
+              <div className="text-[9px] font-mono text-slate-400 text-center py-1.5 border-b border-slate-800">
                 ŚCIANA LEWA
               </div>
 
-              <div className="my-2 py-5 px-2.5 rounded-xl bg-gradient-to-r from-amber-500/30 via-amber-500/15 to-transparent border-l-8 border-y-2 border-r border-amber-400 flex flex-col items-center justify-center text-center shadow-lg">
-                <div className="text-2xl mb-1">🚛</div>
-                <div className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-mono text-[10px] font-black uppercase tracking-wider">
-                  BRAMA PO LEWEJ
+              <div className="my-2 py-4 px-1.5 rounded-xl bg-gradient-to-r from-amber-500/30 via-amber-500/15 to-transparent border-l-4 border-y-2 border-r border-amber-400 flex flex-col items-center justify-center text-center shadow-lg">
+                <div className="text-xl mb-1">🚛</div>
+                <div className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
+                  BRAMA
                 </div>
-                <div className="text-xs font-extrabold text-amber-200 mt-1.5 leading-snug">
+                <div className="text-[10px] font-extrabold text-amber-200 mt-1 leading-tight">
                   {warehouse.hasPickingZone
-                    ? 'Brama Wydań WZ / Kurierzy & Przyjęcia'
-                    : 'Brama Wjazdowa Dostaw Paletowych (PZ)'}
+                    ? 'Wydania WZ & Dostawy'
+                    : 'Dostawy Palet (PZ)'}
                 </div>
-                <div className="mt-2 flex items-center gap-1 text-[10px] font-mono font-bold text-amber-300">
-                  <span>WJAZD NA ŚRODEK</span>
-                  <ArrowRight className="w-3.5 h-3.5 animate-pulse" />
+                <div className="mt-1.5 flex items-center gap-0.5 text-[9px] font-mono font-bold text-amber-300">
+                  <span>WJAZD</span>
+                  <ArrowRight className="w-3 h-3 animate-pulse" />
                 </div>
               </div>
 
-              <div className="text-[10px] font-mono text-slate-400 text-center py-2 border-t border-slate-800">
+              <div className="text-[9px] font-mono text-slate-400 text-center py-1.5 border-t border-slate-800">
                 ŚCIANA LEWA
               </div>
             </div>
