@@ -41,8 +41,46 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
   const [hoveredRackId, setHoveredRackId] = useState<string | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<string | null>(null);
   const [activeColorFilter, setActiveColorFilter] = useState<
-    'ALL' | 'partner_pink' | 'first_yellow' | 'red_short_6m' | 'product_green' | 'sf' | 'materials'
+    | 'ALL'
+    | 'partner_pink'
+    | 'first_yellow'
+    | 'red_short_6m'
+    | 'product_green'
+    | 'sf'
+    | 'materials'
+    | 'label_kit'
+    | 'label_promo'
   >('ALL');
+
+  /**
+   * Sprawdza dodatkowe etykiety ZESTAW oraz PROMOCJA na miejscu paletowym.
+   * Etykiety te NIE zmieniają koloru tła palety, lecz nadają okienku palety wyróżniającą obramówkę
+   * (można dodać jedną lub obie jednocześnie).
+   */
+  const getSlotKitAndPromoInfo = (slot: WarehouseLocationSlot) => {
+    const activeAllocs = slot.allocations.filter((a) => a.quantity > 0);
+    const hasKit = Boolean(slot.isKitLabel || activeAllocs.some((a) => Boolean(a.isKitLabel)));
+    const hasPromo = Boolean(slot.isPromoLabel || activeAllocs.some((a) => Boolean(a.isPromoLabel)));
+
+    let specialBorderClass = '';
+    if (hasKit && hasPromo) {
+      specialBorderClass =
+        '!border-[2.5px] !border-dashed !border-amber-200 ring-2 ring-cyan-300 ring-offset-1 ring-offset-slate-900 shadow-[0_0_14px_rgba(251,191,36,0.5)]';
+    } else if (hasKit) {
+      specialBorderClass =
+        '!border-[2.5px] !border-dashed !border-cyan-200 ring-2 ring-cyan-400/90 ring-offset-1 ring-offset-slate-900 shadow-[0_0_12px_rgba(34,211,238,0.4)]';
+    } else if (hasPromo) {
+      specialBorderClass =
+        '!border-[2.5px] !border-dashed !border-amber-200 ring-2 ring-orange-400/90 ring-offset-1 ring-offset-slate-900 shadow-[0_0_12px_rgba(251,146,60,0.45)]';
+    }
+
+    return {
+      hasKit,
+      hasPromo,
+      hasAnySpecialBorder: hasKit || hasPromo,
+      specialBorderClass,
+    };
+  };
 
   /**
    * 6-kolorowy system oznaczeń palet:
@@ -209,11 +247,14 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
     0
   );
 
-  // Liczniki palet w każdym z 6 kolorów w aktualnie wybranym magazynie
+  // Liczniki palet w każdym z 6 kolorów + liczniki obramówek ZESTAW / PROMOCJA w aktualnie wybranym magazynie
   const colorCounts = occupiedWhSlots.reduce(
     (acc, slot) => {
       const info = getSlotColorAndBadge(slot);
       acc[info.category] = (acc[info.category] || 0) + 1;
+      const kp = getSlotKitAndPromoInfo(slot);
+      if (kp.hasKit) acc.label_kit += 1;
+      if (kp.hasPromo) acc.label_promo += 1;
       return acc;
     },
     {
@@ -223,6 +264,8 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
       product_green: 0,
       sf: 0,
       materials: 0,
+      label_kit: 0,
+      label_promo: 0,
     }
   );
 
@@ -353,6 +396,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                     const firstProd = firstAlloc ? productMap.get(firstAlloc.productId) : undefined;
                     const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
                     const visualInfo = !isEmpty ? getSlotColorAndBadge(slot) : null;
+                    const kitPromoInfo = !isEmpty ? getSlotKitAndPromoInfo(slot) : null;
                     const rawShortLabel =
                       firstAlloc?.isCustomItem || firstAlloc?.productId === 'CUSTOM'
                         ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
@@ -383,6 +427,8 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
                     const matchesColorFilter =
                       activeColorFilter === 'ALL' ||
+                      (activeColorFilter === 'label_kit' && Boolean(kitPromoInfo?.hasKit)) ||
+                      (activeColorFilter === 'label_promo' && Boolean(kitPromoInfo?.hasPromo)) ||
                       (!isEmpty && visualInfo?.category === activeColorFilter);
 
                     return (
@@ -404,7 +450,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             ? `${slot.code}: Wolne miejsce (Upuść tutaj paletę lub kliknij, aby dodać)`
                             : `${slot.code}: ${allItemsTooltip}${
                                 cartonInfo?.hasCartons ? ` | ${cartonInfo.fullDescription}` : ''
-                              } — Kliknij aby zmienić etykietę PARTNER / 1. do wyjścia lub przeciągnij myszką!`
+                              } — Kliknij aby dodać etykiety PARTNER / 1. do wyjścia / ZESTAW / PROMOCJA!`
                         }
                         className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] select-none ${
                           !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
@@ -419,7 +465,9 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300 z-10'
                             : isEmpty
                             ? 'bg-slate-900/60 border-dashed border-slate-600 text-slate-500 hover:border-slate-400'
-                            : visualInfo?.tileClass || 'bg-emerald-600/45 border-emerald-400 text-emerald-50'
+                            : `${visualInfo?.tileClass || 'bg-emerald-600/45 border-emerald-400 text-emerald-50'} ${
+                                kitPromoInfo?.specialBorderClass || ''
+                              }`
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1 text-[9px] font-mono font-extrabold">
@@ -446,13 +494,27 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             <div className="text-[10px] font-semibold opacity-60">Wolne</div>
                           ) : (
                             <>
-                              {visualInfo?.badgeText && (
-                                <div className="mb-0.5">
-                                  <span
-                                    className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight ${visualInfo.badgeClass}`}
-                                  >
-                                    {visualInfo.badgeText}
-                                  </span>
+                              {(visualInfo?.badgeText ||
+                                kitPromoInfo?.hasKit ||
+                                kitPromoInfo?.hasPromo) && (
+                                <div className="mb-0.5 flex flex-wrap items-center gap-0.5">
+                                  {visualInfo?.badgeText && (
+                                    <span
+                                      className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight ${visualInfo.badgeClass}`}
+                                    >
+                                      {visualInfo.badgeText}
+                                    </span>
+                                  )}
+                                  {kitPromoInfo?.hasKit && (
+                                    <span className="inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight bg-cyan-950/90 text-cyan-200 border border-cyan-300/90">
+                                      🎁 ZESTAW
+                                    </span>
+                                  )}
+                                  {kitPromoInfo?.hasPromo && (
+                                    <span className="inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight bg-orange-950/90 text-amber-200 border border-amber-300/90">
+                                      🏷️ PROMOCJA
+                                    </span>
+                                  )}
                                 </div>
                               )}
                               <div className="text-[11px] font-extrabold leading-tight break-words">
@@ -747,6 +809,58 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                 </span>
               </button>
             </div>
+
+            {/* DODATKOWE ETYKIETY OBRAMÓWKI (BEZ ZMIANY KOLORU TŁA): ZESTAW ORAZ PROMOCJA */}
+            <div className="mt-2 pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-bold text-slate-300">
+                ✨ Etykiety specjalnej obramówki (bez zmiany koloru palety — można dodać jedną lub obie):
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveColorFilter((prev) =>
+                      prev === 'label_kit' ? 'ALL' : 'label_kit'
+                    )
+                  }
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-dashed text-left transition-all cursor-pointer ${
+                    activeColorFilter === 'label_kit'
+                      ? 'bg-cyan-500/30 border-cyan-200 ring-2 ring-cyan-300 scale-[1.02]'
+                      : 'bg-slate-900/90 border-cyan-300/80 hover:bg-cyan-950/60'
+                  }`}
+                >
+                  <span className="w-3.5 h-3.5 rounded-sm border-2 border-dashed border-cyan-300 ring-1 ring-cyan-400 shrink-0" />
+                  <span className="font-extrabold text-cyan-200 text-[11px]">
+                    🎁 Etykieta: ZESTAW (Przerywana jasna ramka)
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full bg-cyan-950 text-cyan-200 font-mono text-[11px] font-black border border-cyan-400/60">
+                    {colorCounts.label_kit}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveColorFilter((prev) =>
+                      prev === 'label_promo' ? 'ALL' : 'label_promo'
+                    )
+                  }
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-dashed text-left transition-all cursor-pointer ${
+                    activeColorFilter === 'label_promo'
+                      ? 'bg-orange-500/30 border-amber-200 ring-2 ring-orange-300 scale-[1.02]'
+                      : 'bg-slate-900/90 border-amber-300/80 hover:bg-orange-950/60'
+                  }`}
+                >
+                  <span className="w-3.5 h-3.5 rounded-sm border-2 border-dashed border-amber-300 ring-1 ring-orange-400 shrink-0" />
+                  <span className="font-extrabold text-amber-200 text-[11px]">
+                    🏷️ Etykieta: PROMOCJA (Przerywana złota ramka)
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full bg-orange-950 text-amber-200 font-mono text-[11px] font-black border border-amber-400/60">
+                    {colorCounts.label_promo}
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -897,6 +1011,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                             : undefined;
                           const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
                           const visualInfo = !isEmpty ? getSlotColorAndBadge(slot) : null;
+                          const kitPromoInfo = !isEmpty ? getSlotKitAndPromoInfo(slot) : null;
                           const rawShortLabel = hasCustom
                             ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
                             : (firstProd?.shortName || 'Wolne pole na podłodze')
@@ -913,6 +1028,8 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
                           const matchesColorFilter =
                             activeColorFilter === 'ALL' ||
+                            (activeColorFilter === 'label_kit' && Boolean(kitPromoInfo?.hasKit)) ||
+                            (activeColorFilter === 'label_promo' && Boolean(kitPromoInfo?.hasPromo)) ||
                             (!isEmpty && visualInfo?.category === activeColorFilter);
 
                           return (
@@ -949,7 +1066,9 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                   ? 'bg-teal-500 text-slate-950 border-white ring-2 ring-teal-300'
                                   : isEmpty
                                   ? 'bg-slate-900/75 border-dashed border-amber-400/50 text-amber-200/70 hover:border-amber-300'
-                                  : visualInfo?.tileClass || 'bg-emerald-600/45 border-emerald-400 text-emerald-50'
+                                  : `${visualInfo?.tileClass || 'bg-emerald-600/45 border-emerald-400 text-emerald-50'} ${
+                                      kitPromoInfo?.specialBorderClass || ''
+                                    }`
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1 text-[10px] font-mono font-black">
@@ -973,13 +1092,27 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                 </div>
                               ) : (
                                 <div className="mt-1 leading-tight">
-                                  {visualInfo?.badgeText && (
-                                    <div className="mb-0.5">
-                                      <span
-                                        className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight ${visualInfo.badgeClass}`}
-                                      >
-                                        {visualInfo.badgeText}
-                                      </span>
+                                  {(visualInfo?.badgeText ||
+                                    kitPromoInfo?.hasKit ||
+                                    kitPromoInfo?.hasPromo) && (
+                                    <div className="mb-0.5 flex flex-wrap items-center gap-0.5">
+                                      {visualInfo?.badgeText && (
+                                        <span
+                                          className={`inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight ${visualInfo.badgeClass}`}
+                                        >
+                                          {visualInfo.badgeText}
+                                        </span>
+                                      )}
+                                      {kitPromoInfo?.hasKit && (
+                                        <span className="inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight bg-cyan-950/90 text-cyan-200 border border-cyan-300/90">
+                                          🎁 ZESTAW
+                                        </span>
+                                      )}
+                                      {kitPromoInfo?.hasPromo && (
+                                        <span className="inline-block px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-tight bg-orange-950/90 text-amber-200 border border-amber-300/90">
+                                          🏷️ PROMOCJA
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                   <div className="text-xs font-extrabold break-words">

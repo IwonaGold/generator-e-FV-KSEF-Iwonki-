@@ -100,6 +100,16 @@ export interface ProductSlotLocationInfo {
   palletLabel?: string;
 }
 
+export interface SuspendedBreakdownEntry {
+  recordId: string;
+  subItemId: string;
+  quantity: number;
+  reason: string;
+  eventName: string;
+  takenBy: string;
+  issuedAt: string;
+}
+
 export interface ProductSummaryMetrics {
   product: ProductCatalogItem;
   pickingStandardQty: number;
@@ -110,7 +120,8 @@ export interface ProductSummaryMetrics {
   eligibleForPartnerQty: number;      // Sztuki na magazynie z datą >= 12 msc
   shortExpiryUnder12mQty: number;     // Sztuki na magazynie z datą < 12 msc
   hasShortBatchOnMainPicking: boolean;// Czy na głównym miejscu kompletacji leży partia < 12 msc
-  suspendedQty: number;               // Sztuki wydane bez dokumentu (np. konferencje)
+  suspendedQty: number;               // Sztuki wydane bez dokumentu (np. konferencje, zam. pracownicze, niewystawione RW)
+  suspendedBreakdown: SuspendedBreakdownEntry[]; // Rozbicie na poszczególne uzasadnienia
   totalControlledStock: number;       // Fizycznie na regałach + W zawieszeniu
   wfirmaTotal: number;                // Suma wFirma (PL + PARTNER)
   inventoryDiff: number;              // Bilans: (Na regałach + W zawieszeniu) - wFirma
@@ -124,14 +135,27 @@ export function computeAllProductsSummary(state: WMSFullState): ProductSummaryMe
   const whMap = new Map(state.warehouses.map((w) => [w.id, w]));
   const rackMap = new Map(state.racks.map((r) => [r.id, r]));
 
-  // Oblicz ilości w zawieszeniu (konferencje) dla każdego produktu
+  // Oblicz ilości w zawieszeniu i listę uzasadnień dla każdego produktu
   const suspendedByProd = new Map<string, number>();
+  const suspendedBreakdownByProd = new Map<string, SuspendedBreakdownEntry[]>();
+
   for (const rec of state.suspendedRecords) {
     if (rec.status === 'returned' || rec.status === 'settled_by_doc') continue;
     for (const it of rec.items) {
       const activeSuspended = Math.max(0, it.quantityIssued - it.quantityReturned - it.quantitySettled);
       if (activeSuspended > 0) {
         suspendedByProd.set(it.productId, (suspendedByProd.get(it.productId) || 0) + activeSuspended);
+        const list = suspendedBreakdownByProd.get(it.productId) || [];
+        list.push({
+          recordId: rec.id,
+          subItemId: it.id,
+          quantity: activeSuspended,
+          reason: it.reason || rec.eventName || 'W zawieszeniu (bez dok.)',
+          eventName: rec.eventName,
+          takenBy: rec.takenBy,
+          issuedAt: rec.issuedAt,
+        });
+        suspendedBreakdownByProd.set(it.productId, list);
       }
     }
   }
@@ -206,6 +230,7 @@ export function computeAllProductsSummary(state: WMSFullState): ProductSummaryMe
     const totalPickingQty = pickingStandardQty + pickingPartnerQty;
     const totalPhysicalOnRacks = totalPickingQty + palletReserveQty;
     const suspendedQty = suspendedByProd.get(product.id) || 0;
+    const suspendedBreakdown = suspendedBreakdownByProd.get(product.id) || [];
     const totalControlledStock = totalPhysicalOnRacks + suspendedQty;
     const wfirmaTotal = product.wfirmaStockRegular + product.wfirmaStockPartner;
     const inventoryDiff = totalControlledStock - wfirmaTotal;
@@ -229,6 +254,7 @@ export function computeAllProductsSummary(state: WMSFullState): ProductSummaryMe
       shortExpiryUnder12mQty,
       hasShortBatchOnMainPicking,
       suspendedQty,
+      suspendedBreakdown,
       totalControlledStock,
       wfirmaTotal,
       inventoryDiff,

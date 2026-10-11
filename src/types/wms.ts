@@ -60,6 +60,8 @@ export interface StockAllocationBatch {
   expiryDate: string;                 // Data ważności MHD w formacie YYYY-MM-DD (lub '' dla innych rzeczy)
   dedicatedForPartnerOnly?: boolean;  // Etykieta PARTNER (różowy kolor, tylko dla dat >= 12 msc)
   firstToExit?: boolean;              // Etykieta "Pierwsza do wyjścia" (żółty kolor)
+  isKitLabel?: boolean;               // Etykieta "ZESTAW" (bez zmiany koloru tła — specjalna obramówka + znacznik 🎁 ZESTAW)
+  isPromoLabel?: boolean;             // Etykieta "PROMOCJA" (bez zmiany koloru tła — specjalna obramówka + znacznik 🏷️ PROMOCJA)
   palletLabel?: string;               // Oznaczenie palety (np. Paleta #1, Dostawa PZ)
   notes?: string;
   updatedAt: string;
@@ -80,6 +82,8 @@ export interface WarehouseLocationSlot {
   code: string;               // Np. M4-KOMP-P0-01, M5-PAL-A-P0-01, M5-PODLOGA-P0-01
   name: string;               // Opis gniazda / miejsca paletowego
   customDescription?: string; // Dodatkowy ręczny opis miejsca (np. co tu przechowujemy na stałe)
+  isKitLabel?: boolean;       // Etykieta ZESTAW przypisana do miejsca/palety
+  isPromoLabel?: boolean;     // Etykieta PROMOCJA przypisana do miejsca/palety
   level: number;              // Poziom regału (0 = posadzka/dół, 1 = poziom 1, 2 = poziom 2...)
   position: number;           // Kolumna / miejsce w rzędzie (1, 2, 3...)
   slotType: SlotType;
@@ -174,6 +178,15 @@ export interface WarehouseDocument {
   items: WarehouseDocumentItem[];
 }
 
+export type SuspendedReasonCategory =
+  | 'konferencja'
+  | 'zamowienie_pracownicze'
+  | 'niewystawione_rw'
+  | 'zwrot_bez_pw'
+  | 'wymiana_b2b'
+  | 'ponowna_wysylka'
+  | 'inne';
+
 export interface SuspendedSubItem {
   id: string;
   productId: string;
@@ -185,17 +198,20 @@ export interface SuspendedSubItem {
   expiryDate: string;
   sourceSlotId: string;
   sourceSlotCode: string;
+  reason?: string;            // Np. "Konferencja", "Zamówienie pracownicze bez dokumentu sprzedaży", "Niewystawione RW", "Zwrot bez PW", "Wymiana B2B w toku", "Ponowna wysyłka przed dostawą zwrotu"
+  category?: SuspendedReasonCategory;
 }
 
 export interface SuspendedItemRecord {
   id: string;
-  eventName: string;          // Np. Konferencja Medycyny Funkcjonalnej Warszawa
-  takenBy: string;            // Kto pobrał (np. Przedstawiciel / Marketing)
-  issuedAt: string;           // Data wydania z magazynu
+  eventName: string;          // Np. Konferencja / Zamówienie pracownicze / Niewystawione RW / Zwrot bez PW
+  takenBy: string;            // Kto pobrał lub opis kontrahenta/pracownika
+  issuedAt: string;           // Data wydania / wpisu
   expectedReturnDate?: string;
   status: 'suspended' | 'returned' | 'settled_by_doc';
   settledDocNumber?: string;
   notes: string;
+  category?: SuspendedReasonCategory;
   items: SuspendedSubItem[];
 }
 

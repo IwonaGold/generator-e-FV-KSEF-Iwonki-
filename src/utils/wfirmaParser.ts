@@ -5,6 +5,7 @@ import {
   WarehouseDocumentItem,
   WFirmaInventoryRow,
   WFirmaInventorySnapshot,
+  SuspendedReasonCategory,
 } from '../types/wms';
 
 /**
@@ -550,4 +551,262 @@ export function parseUniversalDeliveryOrInvoiceText(
     },
   ];
 }
+
+export const SUSPENDED_REASON_PRESETS: {
+  category: SuspendedReasonCategory;
+  label: string;
+  badge: string;
+}[] = [
+  {
+    category: 'konferencja',
+    label: 'Konferencja / Targi',
+    badge: '🎪 Konferencja',
+  },
+  {
+    category: 'zamowienie_pracownicze',
+    label: 'Zamówienie pracownicze bez dokumentu sprzedaży',
+    badge: '👤 Zam. pracownicze bez dok.',
+  },
+  {
+    category: 'niewystawione_rw',
+    label: 'Niewystawione RW',
+    badge: '📋 Niewystawione RW',
+  },
+  {
+    category: 'zwrot_bez_pw',
+    label: 'Zwrot bez PW',
+    badge: '↩️ Zwrot bez PW',
+  },
+  {
+    category: 'wymiana_b2b',
+    label: 'Wymiana B2B w toku',
+    badge: '🔄 Wymiana B2B w toku',
+  },
+  {
+    category: 'ponowna_wysylka',
+    label: 'Ponowna wysyłka przed dostawą zwrotu',
+    badge: '📦 Ponowna wysyłka przed zwrotem',
+  },
+  {
+    category: 'inne',
+    label: 'Inne uzasadnienie (własny opis)',
+    badge: '✏️ Inne wyjaśnienie',
+  },
+];
+
+export function detectSuspendedReasonCategory(text: string): {
+  category: SuspendedReasonCategory;
+  cleanReason: string;
+} {
+  const raw = (text || '').trim();
+  const lower = raw.toLowerCase();
+  if (/konferenc|targi|kongres|sympozjum|event/i.test(lower)) {
+    return { category: 'konferencja', cleanReason: raw || 'Konferencja' };
+  }
+  if (/pracownicz|bez\s*dok/i.test(lower)) {
+    return {
+      category: 'zamowienie_pracownicze',
+      cleanReason: raw || 'Zamówienie pracownicze bez dokumentu sprzedaży',
+    };
+  }
+  if (/niewystawion[ey]\s*rw|\brw\b/i.test(lower)) {
+    return { category: 'niewystawione_rw', cleanReason: raw || 'Niewystawione RW' };
+  }
+  if (/zwrot\s*bez\s*pw|\bpw\b/i.test(lower)) {
+    return { category: 'zwrot_bez_pw', cleanReason: raw || 'Zwrot bez PW' };
+  }
+  if (/wymian[ay]\s*b2b|\bb2b\b/i.test(lower)) {
+    return { category: 'wymiana_b2b', cleanReason: raw || 'Wymiana B2B w toku' };
+  }
+  if (/ponown[ae]\s*wysy[łl]k|przed\s*dostaw[aą]\s*zwrotu/i.test(lower)) {
+    return {
+      category: 'ponowna_wysylka',
+      cleanReason: raw || 'Ponowna wysyłka przed dostawą zwrotu',
+    };
+  }
+  return { category: 'inne', cleanReason: raw || 'Wydane bez dokumentu' };
+}
+
+function matchProductByShorthandText(
+  text: string,
+  catalog: ProductCatalogItem[]
+): ProductCatalogItem | null {
+  // Usuń początkową ilość np. "30 op.", "6 szt." z tekstu przed szukaniem nazwy produktu
+  const withoutLeadingQty = (text || '')
+    .replace(/^\s*\d{1,5}\s*(?:op\.?|opak\.?|szt\.?|kpl\.?|kart\.?)\s+/i, '')
+    .replace(/^\s*\d{1,5}\s+(?=[a-ząćęłńóśźż])/i, '')
+    .trim();
+
+  // Jeśli po odjęciu liczby zostały wyłącznie słowa kluczowe uzasadnienia (np. "zamówienie pracownicze...", "niewystawione RW"),
+  // NIE próbuj dopasowywać tego jako nazwy produktu!
+  if (
+    /^(konferenc|targi|zam[oó]wieni|pracownicz|niewystawion|zwrot|wymian|ponown|pr[oó]bk|brak|reklamacj)/i.test(
+      withoutLeadingQty
+    )
+  ) {
+    return null;
+  }
+
+  const direct = matchProductFromCatalog('', withoutLeadingQty, catalog);
+  if (direct) return direct;
+
+  const lower = withoutLeadingQty
+    .toLowerCase()
+    .replace(/omni[\s-]*biotic®?/g, '')
+    .replace(/omni[\s-]*logic®?/g, '')
+    .replace(/[^a-z0-9ąćęłńóśźż\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!lower) return null;
+  const tokens = lower.split(' ').filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  let bestProd: ProductCatalogItem | null = null;
+  let bestScore = 0;
+
+  for (const prod of catalog) {
+    const prodSearch = `${prod.shortName} ${prod.name}`
+      .toLowerCase()
+      .replace(/[^a-z0-9ąćęłńóśźż\s]/g, ' ')
+      .replace(/\s+/g, ' ');
+    const prodWords = prodSearch.split(' ').filter(Boolean);
+
+    let score = 0;
+    let matchedNameWord = false;
+
+    for (const tk of tokens) {
+      if (
+        /^(op|opak|szt|sasz|kaps|konferencja|targi|rw|pw|wz|zamowienie|pracownicze|bez|dokumentu|sprzedazy|niewystawione|zwrot|wymiana|b2b|toku|ponowna|wysylka|przed|dostawa)$/.test(
+          tk
+        )
+      ) {
+        continue;
+      }
+
+      if (prodWords.includes(tk)) {
+        if (/^\d+$/.test(tk)) {
+          score += 3; // Zgodna wielkość opakowania (np. 30, 28, 14, 7, 56)
+        } else {
+          score += 5; // Dokładne słowo nazwy (np. panda, stress, hetox)
+          matchedNameWord = true;
+        }
+      } else if (tk.length >= 3 && prodWords.some((pw) => pw.startsWith(tk) || tk.startsWith(pw))) {
+        score += 3;
+        if (!/^\d+$/.test(tk)) matchedNameWord = true;
+      }
+    }
+
+    if (matchedNameWord && score > bestScore) {
+      bestScore = score;
+      bestProd = prod;
+    }
+  }
+
+  return bestScore >= 3 ? bestProd : null;
+}
+
+/**
+ * Inteligentny parser wklejonych lub wgranych wyjaśnień towarów "W zawieszeniu / Bez dokumentu":
+ * Rozpoznaje zarówno wpisy wielowierszowe, jak i wpisy po przecinku w jednej linii, np.:
+ * "30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW"
+ */
+export function parseSuspendedJustificationsText(
+  rawText: string,
+  catalog: ProductCatalogItem[],
+  fallbackProductId?: string
+): {
+  productId: string;
+  productName: string;
+  quantity: number;
+  reason: string;
+  category: SuspendedReasonCategory;
+}[] {
+  const lines = (rawText || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const fallbackProd = fallbackProductId
+    ? catalog.find((p) => p.id === fallbackProductId) || null
+    : null;
+
+  const results: {
+    productId: string;
+    productName: string;
+    quantity: number;
+    reason: string;
+    category: SuspendedReasonCategory;
+  }[] = [];
+
+  for (const line of lines) {
+    // Podziel po przecinku lub średniku, jeśli w jednej linii wymieniono kilka powodów dla tego samego produktu
+    const segments = line
+      .split(/[;,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    let lastMatchedProduct: ProductCatalogItem | null = fallbackProd;
+
+    for (const seg of segments) {
+      const eanMatch = seg.match(/(?:EAN(?:PL)?)?(\d{11,14})/i);
+      const rawSku = eanMatch ? eanMatch[0] : '';
+
+      // Oddziel część przed myślnikiem i po myślniku (np. "30 op. panda 30 - konferencja")
+      const dashParts = seg.split(/\s+[-–—:]\s+/);
+      const leftPart = dashParts[0] || seg;
+      const rightPart = dashParts.slice(1).join(' - ').trim();
+
+      let matchedProd =
+        (rawSku ? matchProductFromCatalog(rawSku, leftPart, catalog) : null) ||
+        matchProductByShorthandText(leftPart, catalog) ||
+        (rightPart ? matchProductByShorthandText(rightPart, catalog) : null);
+
+      if (matchedProd) {
+        lastMatchedProduct = matchedProd;
+      } else if (lastMatchedProduct) {
+        matchedProd = lastMatchedProduct;
+      }
+
+      if (!matchedProd) continue;
+
+      // Wyciągnij ilość (np. "30 op.", "6 szt.", albo pierwszą liczbę na początku segmentu)
+      let quantity = 1;
+      const qtyAtStart = seg.match(/^\s*(\d{1,5})\s*(?:op\.?|opak\.?|szt\.?|kpl\.?|kart\.?)?\b/i);
+      if (qtyAtStart) {
+        quantity = parseInt(qtyAtStart[1], 10);
+      } else {
+        const qtyWithUnitAnywhere = seg.match(/\b(\d{1,5})\s*(?:op\.?|opak\.?|szt\.?|kpl\.?)\b/i);
+        if (qtyWithUnitAnywhere) {
+          quantity = parseInt(qtyWithUnitAnywhere[1], 10);
+        }
+      }
+
+      // Wyciągnij tekst uzasadnienia
+      let reasonText = rightPart;
+      if (!reasonText) {
+        // Jeśli nie było myślnika (np. "6 zamówienie pracownicze bez dokumentu sprzedaży" albo "zwrot bez PW"),
+        // usuń początkową liczbę i ewentualną nazwę produktu
+        reasonText = seg
+          .replace(/^\s*\d{1,5}\s*(?:op\.?|opak\.?|szt\.?|kpl\.?)?\s*/i, '')
+          .trim();
+      }
+
+      const detected = detectSuspendedReasonCategory(reasonText);
+
+      results.push({
+        productId: matchedProd.id,
+        productName: matchedProd.shortName,
+        quantity: Math.max(1, quantity),
+        reason: detected.cleanReason,
+        category: detected.category,
+      });
+    }
+  }
+
+  return results;
+}
+
+
 

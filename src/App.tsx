@@ -428,6 +428,22 @@ export function App() {
               </div>
             </div>
           </div>
+
+          <div className="mt-2 pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <span className="text-slate-300 font-bold">
+              ✨ Dodatkowe etykiety obramówki (bez zmiany koloru tła — można włączyć jedną lub obie na tym samym miejscu):
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border-2 border-dashed border-cyan-300 text-cyan-200 font-extrabold">
+                <span>🎁 ZESTAW</span>
+                <span className="text-[10px] font-normal text-cyan-100/80">(przerywana jasna obramówka)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border-2 border-dashed border-amber-300 text-amber-200 font-extrabold">
+                <span>🏷️ PROMOCJA</span>
+                <span className="text-[10px] font-normal text-amber-100/80">(przerywana złota obramówka)</span>
+              </span>
+            </div>
+          </div>
         </div>
 
         {activeWarehouseIdForTab && (

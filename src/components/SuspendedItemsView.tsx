@@ -1,6 +1,17 @@
-import React, { useState, useMemo } from 'react';
-import { WMSFullState, SuspendedItemRecord, SuspendedSubItem } from '../types/wms';
+import React, { useState, useMemo, useRef } from 'react';
+import {
+  WMSFullState,
+  SuspendedItemRecord,
+  SuspendedSubItem,
+  SuspendedReasonCategory,
+} from '../types/wms';
 import { computeAllProductsSummary } from '../utils/wmsEngine';
+import {
+  SUSPENDED_REASON_PRESETS,
+  detectSuspendedReasonCategory,
+  parseSuspendedJustificationsText,
+} from '../utils/wfirmaParser';
+import { extractPdfTextViaServer } from '../utils/wmsSyncService';
 import {
   Briefcase,
   Plus,
@@ -8,11 +19,11 @@ import {
   FileCheck2,
   Calendar,
   User,
-  Package,
   Trash2,
   X,
-  CheckCircle2,
-  AlertCircle,
+  Upload,
+  FileText,
+  Sparkles,
 } from 'lucide-react';
 
 interface SuspendedItemsViewProps {
@@ -32,26 +43,107 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
     [state.products]
   );
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [showNewModal, setShowNewModal] = useState(false);
-  const [eventName, setEventName] = useState('Konferencja Medycyny Funkcjonalnej');
+  const [entryTab, setEntryTab] = useState<'manual' | 'paste'>('manual');
+  // Czy wpis ma zdjąć sztuki z półki teraz, czy jest wyjaśnieniem różnicy inwentaryzacyjnej (towar już wcześniej wyszedł z półki)
+  const [deductFromRack, setDeductFromRack] = useState<boolean>(false);
+
+  const [eventName, setEventName] = useState('Wyjaśnienia wydań bez dokumentu / Konferencje');
   const [takenBy, setTakenBy] = useState('');
   const [issuedAt, setIssuedAt] = useState(new Date().toISOString().slice(0, 10));
   const [expectedReturnDate, setExpectedReturnDate] = useState('');
   const [notes, setNotes] = useState('');
+
   const [draftItems, setDraftItems] = useState<
-    { productId: string; quantity: number }[]
-  >([{ productId: state.products[0]?.id || '', quantity: 10 }]);
+    {
+      productId: string;
+      quantity: number;
+      reason: string;
+      category: SuspendedReasonCategory;
+    }[]
+  >([
+    {
+      productId:
+        state.products.find((p) => /panda/i.test(p.shortName))?.id ||
+        state.products[0]?.id ||
+        '',
+      quantity: 30,
+      reason: 'Konferencja',
+      category: 'konferencja',
+    },
+    {
+      productId:
+        state.products.find((p) => /panda/i.test(p.shortName))?.id ||
+        state.products[0]?.id ||
+        '',
+      quantity: 6,
+      reason: 'Zamówienie pracownicze bez dokumentu sprzedaży',
+      category: 'zamowienie_pracownicze',
+    },
+    {
+      productId:
+        state.products.find((p) => /panda/i.test(p.shortName))?.id ||
+        state.products[0]?.id ||
+        '',
+      quantity: 4,
+      reason: 'Niewystawione RW',
+      category: 'niewystawione_rw',
+    },
+  ]);
+
+  // Stan dla zakładki "Wklej tekst / Wgraj plik"
+  const [rawPasteText, setRawPasteText] = useState(
+    '30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW'
+  );
+  const [fallbackPasteProductId, setFallbackPasteProductId] = useState<string>(
+    state.products.find((p) => /panda/i.test(p.shortName))?.id || state.products[0]?.id || ''
+  );
+
+  const parsedPastePreview = useMemo(
+    () =>
+      parseSuspendedJustificationsText(
+        rawPasteText,
+        state.products,
+        fallbackPasteProductId
+      ),
+    [rawPasteText, state.products, fallbackPasteProductId]
+  );
 
   // Modal rozliczenia częściowego (ile wróciło na półkę, a ile poszło w RW/WZ)
   const [settleModalRecord, setSettleModalRecord] = useState<SuspendedItemRecord | null>(null);
   const [settleDocNum, setSettleDocNum] = useState('RW 15/10/2026');
   const [returnQuantities, setReturnQuantities] = useState<Record<string, number>>({});
 
-  // Utworzenie nowego wydania "W zawieszeniu" (zdejmuje sztuki z półki i wrzuca w status "W zawieszeniu")
+  // Wczytanie pliku TXT / CSV / PDF z wyjaśnieniami
+  const handleUploadJustificationsFile = async (file: File) => {
+    try {
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        const text = await extractPdfTextViaServer(file);
+        setRawPasteText(text);
+      } else {
+        const text = await file.text();
+        setRawPasteText(text);
+      }
+      setEntryTab('paste');
+    } catch (err: any) {
+      alert(err?.message || 'Nie udało się odczytać pliku z wyjaśnieniami.');
+    }
+  };
+
+  // Utworzenie nowego wpisu "W zawieszeniu" (z formularza ręcznego lub z wklejonego tekstu/pliku)
   const handleCreateSuspendedIssue = (e: React.FormEvent) => {
     e.preventDefault();
-    const valid = draftItems.filter((it) => it.productId && it.quantity > 0);
-    if (valid.length === 0 || !eventName.trim()) return;
+    const itemsToProcess =
+      entryTab === 'paste'
+        ? parsedPastePreview
+        : draftItems.filter((it) => it.productId && it.quantity > 0);
+
+    if (itemsToProcess.length === 0) {
+      alert('Dodaj lub wklej przynajmniej jedną pozycję z ilością większą od 0.');
+      return;
+    }
 
     const nowIso = new Date().toISOString();
     const nextSlots = state.slots.map((s) => ({
@@ -61,14 +153,55 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
     const nextHistory = [...state.movementsHistory];
     const subItems: SuspendedSubItem[] = [];
 
-    for (const reqItem of valid) {
+    for (const reqItem of itemsToProcess) {
       const prod = productMap.get(reqItem.productId);
       if (!prod) continue;
 
+      const reasonClean = (reqItem.reason || eventName || 'Wydane bez dokumentu').trim();
+      const detectedCat =
+        reqItem.category || detectSuspendedReasonCategory(reasonClean).category;
+
+      if (!deductFromRack) {
+        // Tryb wyjaśnienia różnicy inwentaryzacyjnej (towar już fizycznie opuścił półkę wcześniej — nie odejmujemy go ponownie ze stanu regału)
+        subItems.push({
+          id: `susp-item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          productId: prod.id,
+          productName: prod.shortName,
+          quantityIssued: reqItem.quantity,
+          quantityReturned: 0,
+          quantitySettled: 0,
+          lotNumber: 'WG-STANU',
+          expiryDate: '2027-12-31',
+          sourceSlotId: 'explained-only',
+          sourceSlotCode: 'WYJAŚNIENIE INW.',
+          reason: reasonClean,
+          category: detectedCat,
+        });
+
+        nextHistory.unshift({
+          id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: nowIso,
+          type: 'SUSPEND_OUT',
+          productId: prod.id,
+          productName: prod.shortName,
+          quantity: reqItem.quantity,
+          lotNumber: 'WG-STANU',
+          expiryDate: '-',
+          fromSlotCode: 'POZA PÓŁKĄ (WYJAŚNIENIE)',
+          toSlotCode: 'W ZAWIESZENIU',
+          referenceDoc: reasonClean,
+          performedBy: workstationName,
+          notes: `Dopisano wyjaśnienie różnicy (W zawieszeniu): ${reqItem.quantity} szt. — ${reasonClean}`,
+        });
+        continue;
+      }
+
+      // Tryb fizycznego zdjęcia ze stanu półki teraz
       let remaining = reqItem.quantity;
-      // Szukamy najpierw w Strefie Kompletacji, a potem na paletach
       const candidateSlots = [
-        ...nextSlots.filter((s) => s.slotType === 'picking_standard' || s.slotType === 'shelf_storage'),
+        ...nextSlots.filter(
+          (s) => s.slotType === 'picking_standard' || s.slotType === 'shelf_storage'
+        ),
         ...nextSlots.filter((s) => s.slotType === 'pallet_storage'),
         ...nextSlots.filter((s) => s.slotType === 'picking_partner_12m'),
       ];
@@ -82,7 +215,7 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
 
       if (totalAvail < remaining) {
         alert(
-          `Brak wystarczającej ilości produktu "${prod.shortName}" na magazynie (dostępne: ${totalAvail} szt., wpisano: ${remaining} szt.).`
+          `Brak wystarczającej ilości produktu "${prod.shortName}" na regałach (dostępne: ${totalAvail} szt., wpisano: ${remaining} szt.). Jeśli towar został już zabrany z półki wcześniej, przełącz na tryb „Wyjaśnienie różnicy inwentaryzacyjnej (bez ponownego odejmowania z półki)”.`
         );
         return;
       }
@@ -108,6 +241,8 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
             expiryDate: batch.expiryDate,
             sourceSlotId: slot.id,
             sourceSlotCode: slot.code,
+            reason: reasonClean,
+            category: detectedCat,
           });
 
           nextHistory.unshift({
@@ -120,10 +255,10 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
             lotNumber: batch.lotNumber,
             expiryDate: batch.expiryDate,
             fromSlotCode: slot.code,
-            toSlotCode: 'W ZAWIESZENIU (KONFERENCJA)',
-            referenceDoc: eventName.trim(),
+            toSlotCode: 'W ZAWIESZENIU',
+            referenceDoc: reasonClean,
             performedBy: workstationName,
-            notes: `Wydano bez dokumentu (W zawieszeniu): ${eventName.trim()} (${takenBy || 'Brak osoby'})`,
+            notes: `Wydano bez dokumentu (W zawieszeniu): ${reasonClean} (${takenBy || 'Brak osoby'})`,
           });
         }
       }
@@ -133,10 +268,15 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
       s.allocations = s.allocations.filter((a) => a.quantity > 0);
     }
 
+    const summaryTitle =
+      eventName.trim() ||
+      Array.from(new Set(subItems.map((s) => s.reason).filter(Boolean))).join(', ') ||
+      'Wydania w zawieszeniu bez dokumentu';
+
     const newRec: SuspendedItemRecord = {
       id: `susp-${Date.now()}`,
-      eventName: eventName.trim(),
-      takenBy: takenBy.trim() || 'Przedstawiciel / Konferencja',
+      eventName: summaryTitle,
+      takenBy: takenBy.trim() || 'Wyjaśnienie inwentaryzacyjne / Zespół',
       issuedAt,
       expectedReturnDate: expectedReturnDate || undefined,
       status: 'suspended',
@@ -153,7 +293,10 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
         suspendedRecords: [newRec, ...state.suspendedRecords],
         movementsHistory: nextHistory,
       },
-      `Wydano w zawieszeniu (bez dokumentu): ${newRec.eventName}`
+      `Zapisano pozycje w zawieszeniu: ${newRec.eventName} (${subItems.reduce(
+        (acc, i) => acc + i.quantityIssued,
+        0
+      )} szt.)`
     );
     setShowNewModal(false);
   };
@@ -173,6 +316,11 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
 
       const targetSlot =
         nextSlots.find((s) => s.id === it.sourceSlotId) ||
+        nextSlots.find(
+          (s) =>
+            s.slotType === 'picking_standard' &&
+            s.allocations.some((a) => a.productId === it.productId)
+        ) ||
         nextSlots.find((s) => s.slotType === 'picking_standard') ||
         nextSlots[0];
 
@@ -193,7 +341,7 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
             quantity: activeQty,
             lotNumber: it.lotNumber,
             expiryDate: it.expiryDate,
-            palletLabel: `Zwrot z: ${rec.eventName}`,
+            palletLabel: `Zwrot z: ${it.reason || rec.eventName}`,
             updatedAt: nowIso,
           });
         }
@@ -209,9 +357,9 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
           expiryDate: it.expiryDate,
           fromSlotCode: 'W ZAWIESZENIU',
           toSlotCode: targetSlot.code,
-          referenceDoc: rec.eventName,
+          referenceDoc: it.reason || rec.eventName,
           performedBy: workstationName,
-          notes: `Zwrot towaru z konferencji/zawieszenia na miejsce ${targetSlot.code}`,
+          notes: `Zwrot towaru z zawieszenia (${it.reason || rec.eventName}) na miejsce ${targetSlot.code}`,
         });
       }
 
@@ -280,7 +428,7 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
               quantity: retQty,
               lotNumber: it.lotNumber,
               expiryDate: it.expiryDate,
-              palletLabel: `Zwrot z: ${settleModalRecord.eventName}`,
+              palletLabel: `Zwrot z: ${it.reason || settleModalRecord.eventName}`,
               updatedAt: nowIso,
             });
           }
@@ -296,9 +444,9 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
             expiryDate: it.expiryDate,
             fromSlotCode: 'W ZAWIESZENIU',
             toSlotCode: targetSlot.code,
-            referenceDoc: settleModalRecord.eventName,
+            referenceDoc: it.reason || settleModalRecord.eventName,
             performedBy: workstationName,
-            notes: `Częściowy zwrot z konferencji na ${targetSlot.code}`,
+            notes: `Częściowy zwrot z zawieszenia na ${targetSlot.code}`,
           });
         }
       }
@@ -316,7 +464,7 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
           fromSlotCode: 'W ZAWIESZENIU',
           referenceDoc: settleDocNum.trim() || settleModalRecord.eventName,
           performedBy: workstationName,
-          notes: `Rozliczono dokumentem ${settleDocNum.trim()} (${settleModalRecord.eventName})`,
+          notes: `Rozliczono dokumentem ${settleDocNum.trim()} (${it.reason || settleModalRecord.eventName})`,
         });
       }
 
@@ -380,26 +528,29 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
     <div className="space-y-6">
       {/* Nagłówek */}
       <div className="bg-white rounded-3xl p-6 border-2 border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 font-extrabold text-xs">
-              Wydane bez dokumentu (Konferencje / Targi / Próbki)
+              Wydane bez dokumentu (Konferencje / Zamówienia pracownicze / Niewystawione RW / Zwroty i Wymiany)
             </span>
             <h2 className="text-lg font-extrabold text-slate-900">
-              Rejestr Towarów „W Zawieszeniu”
+              Rejestr Towarów „W Zawieszeniu” i Wyjaśnień Różnic
             </h2>
           </div>
           <p className="text-xs text-slate-600 max-w-3xl">
-            Zapisuj tutaj towary fizycznie zabrane z magazynu (np. na konferencję, targi, dla przedstawiciela), które
-            <strong> nie mają jeszcze wystawionego dokumentu WZ/RW w systemie wFirma</strong>.
-            Podczas inwentaryzacji aplikacja automatycznie doliczy te sztuki do bilansu, abyś od razu wiedziała, skąd wynika różnica między półką a wFirma!
+            Wpisz ręcznie lub wklej / wgraj listę towarów z uzasadnieniem wydania, np.{' '}
+            <code className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 font-mono text-amber-950 font-bold">
+              30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW
+            </code>{' '}
+            albo <strong className="text-slate-800">zwrot bez PW, wymiana B2B w toku, ponowna wysyłka przed dostawą zwrotu</strong>.
+            System automatycznie dolicza te pozycje do bilansu inwentaryzacji vs wFirma!
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="px-4 py-2 rounded-2xl bg-amber-50 border border-amber-300 text-right">
             <span className="text-[11px] font-bold text-amber-900 block">
-              Aktualnie poza magazynem (w zawieszeniu):
+              Łącznie w zawieszeniu (wszystkie powody):
             </span>
             <span className="text-xl font-extrabold font-mono text-amber-950">
               {totalSuspendedUnits} szt.
@@ -408,11 +559,26 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowNewModal(true)}
+            onClick={() => {
+              setEntryTab('manual');
+              setShowNewModal(true);
+            }}
             className="px-4 py-3 rounded-2xl text-xs font-extrabold bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            <span>Wydaj towar w zawieszeniu (np. na Konferencję)</span>
+            <span>Wpisz ręcznie z uzasadnieniem</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEntryTab('paste');
+              setShowNewModal(true);
+            }}
+            className="px-4 py-3 rounded-2xl text-xs font-extrabold bg-slate-900 text-white hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
+          >
+            <FileText className="w-4 h-4 text-amber-400" />
+            <span>Wklej tekst / Wgraj plik wyjaśnień</span>
           </button>
         </div>
       </div>
@@ -425,7 +591,7 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
             Brak aktywnych towarów „W Zawieszeniu”
           </h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Gdy wydasz produkty z magazynu bez dokumentu WZ/RW (np. na konferencję medyczną lub spotkanie), kliknij przycisk powyżej — aplikacja zdejmie je ze stanu półki i zapamięta do inwentaryzacji.
+            Kliknij przycisk powyżej, aby wpisać ręcznie lub wkleić listę wydań z uzasadnieniem (konferencja, zamówienie pracownicze, niewystawione RW, zwrot bez PW, wymiana B2B w toku).
           </p>
         </div>
       ) : (
@@ -442,7 +608,7 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`px-2.5 py-1 rounded-lg text-xs font-extrabold ${
                           isActive
@@ -461,11 +627,11 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
                     <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 mt-1">
                       <span className="flex items-center gap-1">
                         <User className="w-3.5 h-3.5 text-slate-400" />
-                        Pobrał(a): <strong>{rec.takenBy}</strong>
+                        Osoba / Dział: <strong>{rec.takenBy}</strong>
                       </span>
                       <span className="flex items-center gap-1 font-mono">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        Wydano: {rec.issuedAt}
+                        Data wpisu: {rec.issuedAt}
                       </span>
                       {rec.notes && <span>Uwagi: {rec.notes}</span>}
                     </div>
@@ -515,19 +681,24 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
                       0,
                       it.quantityIssued - it.quantityReturned - it.quantitySettled
                     );
+                    const itemReason = it.reason || rec.eventName;
                     return (
                       <div
                         key={it.id}
                         className="p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between gap-2 text-xs"
                       >
-                        <div>
-                          <div className="font-extrabold text-slate-900">{it.productName}</div>
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-extrabold text-slate-900">{it.productName}</span>
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-300 font-bold text-[10px]">
+                              {itemReason}
+                            </span>
+                          </div>
                           <div className="text-[11px] font-mono text-slate-500">
-                            Pobrano z: <strong>{it.sourceSlotCode}</strong> • LOT: {it.lotNumber} (MHD:{' '}
-                            {it.expiryDate})
+                            Źródło: <strong>{it.sourceSlotCode}</strong> • LOT: {it.lotNumber}
                           </div>
                         </div>
-                        <div className="text-right font-mono">
+                        <div className="text-right font-mono shrink-0">
                           <span className="font-extrabold text-sm text-amber-900 block">
                             {isActive ? `${activeQty} szt.` : `${it.quantityIssued} szt.`}
                           </span>
@@ -547,17 +718,22 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
         </div>
       )}
 
-      {/* MODAL WYDANIA TOWARU W ZAWIESZENIU */}
+      {/* MODAL DODAWANIA / WKLEJANIA WYDAŃ W ZAWIESZENIU Z UZASADNIENIEM */}
       {showNewModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <form
             onSubmit={handleCreateSuspendedIssue}
-            className="bg-white rounded-3xl max-w-2xl w-full p-6 border-2 border-slate-200 shadow-2xl space-y-4 my-8"
+            className="bg-white rounded-3xl max-w-3xl w-full p-6 border-2 border-slate-200 shadow-2xl space-y-4 my-8 max-h-[92vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-extrabold text-slate-900">
-                Wydaj towar z magazynu „W Zawieszeniu” (bez dokumentu wFirma)
-              </h3>
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Dodaj towary „W Zawieszeniu” z uzasadnieniem wydania
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Możesz dodać pozycje ręcznie (wiersz po wierszu) lub wkleić / wgrać tekst z kilkoma uzasadnieniami naraz.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowNewModal(false)}
@@ -567,116 +743,354 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Przełącznik zakładki: Ręcznie vs Wklej tekst / Wgraj plik */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-2xl">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setEntryTab('manual')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                    entryTab === 'manual'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ✍️ Wpisz ręcznie (formularz z gotowymi powodami)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEntryTab('paste')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                    entryTab === 'paste'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📋 Wklej tekst lub wgraj plik (np. „30 op. panda 30 - konferencja, 6 zamówienie...”)
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.csv,.pdf"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleUploadJustificationsFile(e.target.files[0]);
+                  }
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer flex items-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Wgraj plik (.txt / .csv / .pdf)</span>
+              </button>
+            </div>
+
+            {/* Ważny wybór: Wyjaśnienie różnicy inwentaryzacyjnej vs Zdjęcie z półki teraz */}
+            <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+              <span className="text-[11px] font-extrabold text-amber-950 block">
+                Jak potraktować stan na półce?
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeductFromRack(false)}
+                  className={`p-2.5 rounded-xl border text-left text-xs cursor-pointer transition-all ${
+                    !deductFromRack
+                      ? 'bg-amber-600 text-white border-amber-700 font-bold shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-extrabold">
+                    📝 Wyjaśnienie różnicy inwentaryzacyjnej (Zalecane)
+                  </div>
+                  <div
+                    className={`text-[10px] mt-0.5 ${
+                      !deductFromRack ? 'text-amber-100' : 'text-slate-500'
+                    }`}
+                  >
+                    Towar został już wcześniej zabrany z półki — dopisz tylko wyjaśnienie do kolumny „W zawieszeniu” bez ponownego odejmowania z regału.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeductFromRack(true)}
+                  className={`p-2.5 rounded-xl border text-left text-xs cursor-pointer transition-all ${
+                    deductFromRack
+                      ? 'bg-slate-900 text-white border-slate-950 font-bold shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-extrabold">
+                    📦 Fizyczne wydanie teraz — zdejmij ze stanu półki
+                  </div>
+                  <div
+                    className={`text-[10px] mt-0.5 ${
+                      deductFromRack ? 'text-slate-300' : 'text-slate-500'
+                    }`}
+                  >
+                    Dopiero teraz wydajesz ten towar z regału — odejmij sztuki ze Strefy Kompletacji i przenieś do „W zawieszeniu”.
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {entryTab === 'manual' ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-extrabold text-slate-800">
+                    Pozycje i uzasadnienia wydania (każdy wiersz może mieć inne uzasadnienie):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftItems([
+                        ...draftItems,
+                        {
+                          productId:
+                            draftItems[draftItems.length - 1]?.productId ||
+                            state.products[0]?.id ||
+                            '',
+                          quantity: 1,
+                          reason: 'Niewystawione RW',
+                          category: 'niewystawione_rw',
+                        },
+                      ])
+                    }
+                    className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-100 text-amber-950 hover:bg-amber-200 cursor-pointer flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Dodaj kolejne wyjaśnienie / wiersz</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {draftItems.map((it, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={it.productId}
+                          onChange={(e) => {
+                            const next = [...draftItems];
+                            next[idx].productId = e.target.value;
+                            setDraftItems(next);
+                          }}
+                          className="flex-1 min-w-[220px] px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-xl"
+                        >
+                          {summaries.map((s) => (
+                            <option key={s.product.id} value={s.product.id}>
+                              {s.product.shortName} (Na półce: {s.totalPhysicalOnRacks} | wFirma:{' '}
+                              {s.wfirmaTotal} | Różnica: {s.inventoryDiff})
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={1}
+                            value={it.quantity}
+                            onChange={(e) => {
+                              const next = [...draftItems];
+                              next[idx].quantity = Number(e.target.value);
+                              setDraftItems(next);
+                            }}
+                            className="w-20 px-2.5 py-1.5 text-xs font-mono font-extrabold bg-white border border-slate-300 rounded-xl text-center"
+                          />
+                          <span className="text-xs font-bold text-slate-600">op./szt.</span>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={it.reason}
+                          onChange={(e) => {
+                            const next = [...draftItems];
+                            const val = e.target.value;
+                            next[idx].reason = val;
+                            next[idx].category = detectSuspendedReasonCategory(val).category;
+                            setDraftItems(next);
+                          }}
+                          placeholder="Wpisz uzasadnienie (np. konferencja, zamówienie pracownicze, niewystawione RW...)"
+                          className="flex-1 min-w-[220px] px-3 py-1.5 text-xs font-bold bg-white border border-amber-300 rounded-xl"
+                        />
+
+                        {draftItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftItems(draftItems.filter((_, i) => i !== idx))
+                            }
+                            className="p-1.5 text-rose-500 hover:text-rose-700 cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Szybkie pigułki z gotowymi uzasadnieniami */}
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 mr-1">
+                          Szybki powód:
+                        </span>
+                        {SUSPENDED_REASON_PRESETS.filter((p) => p.category !== 'inne').map(
+                          (preset) => (
+                            <button
+                              key={preset.category}
+                              type="button"
+                              onClick={() => {
+                                const next = [...draftItems];
+                                next[idx].reason = preset.label;
+                                next[idx].category = preset.category;
+                                setDraftItems(next);
+                              }}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer border transition-colors ${
+                                it.reason.toLowerCase() === preset.label.toLowerCase()
+                                  ? 'bg-amber-600 text-white border-amber-700'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
+                              }`}
+                            >
+                              {preset.badge}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* ZAKŁADKA: WKLEJ TEKST LUB WGRAJ PLIK */
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-extrabold text-slate-800">
+                    Wklej listę wyjaśnień (w jednej linii po przecinku lub w osobnych wierszach):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRawPasteText(
+                        '30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW\n2 op. stress 28 - zwrot bez PW, 3 wymiana b2b w toku, 1 ponowna wysyłka przed dostawą zwrotu'
+                      )
+                    }
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-950 hover:bg-amber-200 cursor-pointer flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Wstaw pełny przykład</span>
+                  </button>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={rawPasteText}
+                  onChange={(e) => setRawPasteText(e.target.value)}
+                  placeholder="np. 30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW, zwrot bez PW, wymiana b2b w toku, ponowna wysyłka przed dostawą zwrotu"
+                  className="w-full p-3 text-xs font-mono bg-slate-50 border-2 border-slate-300 rounded-2xl focus:bg-white focus:border-amber-500 focus:outline-none"
+                />
+
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-slate-600">
+                    Domyślny produkt (gdy w tekście nie podano nazwy produktu, np. samo „4 niewystawione RW”):
+                  </span>
+                  <select
+                    value={fallbackPasteProductId}
+                    onChange={(e) => setFallbackPasteProductId(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-xl"
+                  >
+                    {summaries.map((s) => (
+                      <option key={s.product.id} value={s.product.id}>
+                        {s.product.shortName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Podgląd rozpoznanych pozycji na żywo */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-extrabold text-slate-800">
+                    <span>
+                      Rozpoznane pozycje do zapisania ({parsedPastePreview.length}):
+                    </span>
+                    <span className="font-mono text-amber-900">
+                      Suma:{' '}
+                      {parsedPastePreview.reduce((acc, i) => acc + i.quantity, 0)} szt.
+                    </span>
+                  </div>
+                  {parsedPastePreview.length === 0 ? (
+                    <p className="text-xs text-slate-400">
+                      Wpisz lub wklej tekst powyżej, aby zobaczyć automatycznie rozpoznane produkty, ilości i uzasadnienia.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {parsedPastePreview.map((item, i) => (
+                        <div
+                          key={i}
+                          className="px-3 py-2 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-extrabold text-slate-900">
+                              {item.productName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 font-bold text-[11px]">
+                              {item.reason}
+                            </span>
+                          </div>
+                          <span className="font-mono font-extrabold text-amber-900">
+                            {item.quantity} szt.
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Dodatkowe metadane wpisu */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nazwa konferencji / cel pobrania:
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Nazwa zbiorcza wpisu:
                 </label>
                 <input
                   type="text"
                   value={eventName}
                   onChange={(e) => setEventName(e.target.value)}
-                  placeholder="np. Konferencja Medycyny Funkcjonalnej Warszawa"
-                  className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl"
-                  required
+                  placeholder="np. Wyjaśnienia inwentaryzacji Październik"
+                  className="w-full px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-xl"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Kto pobrał towar:
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Osoba / Dział (opcjonalnie):
                 </label>
                 <input
                   type="text"
                   value={takenBy}
                   onChange={(e) => setTakenBy(e.target.value)}
-                  placeholder="np. Przedstawiciel / Dział Marketingu"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                  placeholder="np. Konferencja / B2B / Magazyn"
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Data wydania:</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Data wpisu:
+                </label>
                 <input
                   type="date"
                   value={issuedAt}
                   onChange={(e) => setIssuedAt(e.target.value)}
-                  className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-xl"
+                  className="w-full px-3 py-1.5 text-xs font-mono border border-slate-300 rounded-xl"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Uwagi:</label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="np. Rozliczenie po powrocie z targów"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-extrabold text-slate-800">
-                  Produkty zabierane z magazynu:
-                </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraftItems([
-                      ...draftItems,
-                      { productId: state.products[0]?.id || '', quantity: 5 },
-                    ])
-                  }
-                  className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-950 cursor-pointer flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Dodaj produkt</span>
-                </button>
-              </div>
-
-              {draftItems.map((it, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200"
-                >
-                  <select
-                    value={it.productId}
-                    onChange={(e) => {
-                      const next = [...draftItems];
-                      next[idx].productId = e.target.value;
-                      setDraftItems(next);
-                    }}
-                    className="flex-1 px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-lg"
-                  >
-                    {summaries.map((s) => (
-                      <option key={s.product.id} value={s.product.id}>
-                        {s.product.shortName} (Na magazynie: {s.totalPhysicalOnRacks} szt.)
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    value={it.quantity}
-                    onChange={(e) => {
-                      const next = [...draftItems];
-                      next[idx].quantity = Number(e.target.value);
-                      setDraftItems(next);
-                    }}
-                    className="w-24 px-2.5 py-1.5 text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg"
-                  />
-                  <span className="text-xs text-slate-500">szt.</span>
-                  {draftItems.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setDraftItems(draftItems.filter((_, i) => i !== idx))}
-                      className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
@@ -689,9 +1103,9 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 cursor-pointer"
+                className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-amber-600 text-white hover:bg-amber-700 cursor-pointer shadow-sm"
               >
-                Zatwierdź wydanie w zawieszeniu
+                Zapisz wyjaśnienia „W zawieszeniu”
               </button>
             </div>
           </form>
@@ -750,9 +1164,14 @@ export const SuspendedItemsView: React.FC<SuspendedItemsViewProps> = ({
                     className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs"
                   >
                     <div>
-                      <div className="font-bold text-slate-900">{it.productName}</div>
+                      <div className="font-bold text-slate-900">
+                        {it.productName}{' '}
+                        {it.reason && (
+                          <span className="text-amber-800 font-normal">({it.reason})</span>
+                        )}
+                      </div>
                       <div className="text-[11px] text-slate-500">
-                        Pobrano: <strong>{activeQty} szt.</strong> (z {it.sourceSlotCode})
+                        W zawieszeniu: <strong>{activeQty} szt.</strong> ({it.sourceSlotCode})
                       </div>
                     </div>
                     <div className="flex items-center gap-3">

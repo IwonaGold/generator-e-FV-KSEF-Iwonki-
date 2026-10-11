@@ -3,27 +3,31 @@ import {
   WMSFullState,
   KitHandlingMode,
   ProductCatalogItem,
+  SuspendedReasonCategory,
+  SuspendedItemRecord,
+  SuspendedSubItem,
 } from '../types/wms';
 import { computeAllProductsSummary } from '../utils/wmsEngine';
 import { extractPdfTextViaServer } from '../utils/wmsSyncService';
 import {
   parseWFirmaInventoryText,
   matchProductFromCatalog,
+  SUSPENDED_REASON_PRESETS,
+  detectSuspendedReasonCategory,
+  parseSuspendedJustificationsText,
 } from '../utils/wfirmaParser';
-import { buildInitialSlotsWithAllocations } from '../utils/defaultWmsData';
 import {
-  ClipboardCheck,
   Upload,
   Search,
   Download,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
-  RefreshCw,
   Loader2,
   Plus,
-  Layers,
   X,
+  FileText,
+  Sparkles,
 } from 'lucide-react';
 
 interface InventoryAndCatalogViewProps {
@@ -40,6 +44,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
   onUpdateState,
 }) => {
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const justifyFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDiff, setFilterDiff] = useState<
@@ -54,9 +59,259 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
   const [newProdEan, setNewProdEan] = useState('');
   const [newProdCategory, setNewProdCategory] =
     useState<ProductCatalogItem['category']>('probiotic');
-  const [newProdMinPick, setNewProdMinPick] = useState(40);
+  const [newProdMinPick] = useState(40);
+
+  // Szybki modal wpisywania / wgrywania wyjaśnień "W zawieszeniu" prosto z tabeli Inwentaryzacji
+  const [showExplainModal, setShowExplainModal] = useState(false);
+  const [explainTab, setExplainTab] = useState<'manual' | 'paste'>('manual');
+  const [explainDeductFromRack, setExplainDeductFromRack] = useState(false);
+  const [explainPasteText, setExplainPasteText] = useState(
+    '30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW'
+  );
+  const [explainFallbackProductId, setExplainFallbackProductId] = useState<string>(
+    state.products.find((p) => /panda/i.test(p.shortName))?.id || state.products[0]?.id || ''
+  );
+  const [explainDraftRows, setExplainDraftRows] = useState<
+    {
+      productId: string;
+      quantity: number;
+      reason: string;
+      category: SuspendedReasonCategory;
+    }[]
+  >([
+    {
+      productId:
+        state.products.find((p) => /panda/i.test(p.shortName))?.id ||
+        state.products[0]?.id ||
+        '',
+      quantity: 30,
+      reason: 'Konferencja',
+      category: 'konferencja',
+    },
+    {
+      productId:
+        state.products.find((p) => /panda/i.test(p.shortName))?.id ||
+        state.products[0]?.id ||
+        '',
+      quantity: 6,
+      reason: 'Zamówienie pracownicze bez dokumentu sprzedaży',
+      category: 'zamowienie_pracownicze',
+    },
+    {
+      productId:
+        state.products.find((p) => /panda/i.test(p.shortName))?.id ||
+        state.products[0]?.id ||
+        '',
+      quantity: 4,
+      reason: 'Niewystawione RW',
+      category: 'niewystawione_rw',
+    },
+  ]);
 
   const summaries = useMemo(() => computeAllProductsSummary(state), [state]);
+  const productMap = useMemo(
+    () => new Map(state.products.map((p) => [p.id, p])),
+    [state.products]
+  );
+
+  const parsedExplainPreview = useMemo(
+    () =>
+      parseSuspendedJustificationsText(
+        explainPasteText,
+        state.products,
+        explainFallbackProductId
+      ),
+    [explainPasteText, state.products, explainFallbackProductId]
+  );
+
+  // Otwarcie modalu wyjaśnień dla konkretnego wiersza produktu z tabeli
+  const openExplainModalForProduct = (productId: string, currentDiff: number) => {
+    const missingQty = currentDiff < 0 ? Math.abs(currentDiff) : 5;
+    const prod = productMap.get(productId);
+    setExplainFallbackProductId(productId);
+    setExplainDraftRows([
+      {
+        productId,
+        quantity: missingQty,
+        reason: 'Konferencja',
+        category: 'konferencja',
+      },
+    ]);
+    if (prod) {
+      setExplainPasteText(
+        `${missingQty} op. ${prod.shortName.replace(/OMNi-BiOTiC®?\s*/i, '')} - konferencja`
+      );
+    }
+    setExplainDeductFromRack(false);
+    setExplainTab('manual');
+    setShowExplainModal(true);
+  };
+
+  const handleUploadExplainFile = async (file: File) => {
+    try {
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        const text = await extractPdfTextViaServer(file);
+        setExplainPasteText(text);
+      } else {
+        const text = await file.text();
+        setExplainPasteText(text);
+      }
+      setExplainTab('paste');
+    } catch (err: any) {
+      setBanner({
+        type: 'err',
+        text: err?.message || 'Nie udało się odczytać pliku z wyjaśnieniami.',
+      });
+    }
+  };
+
+  const handleSaveExplanations = (e: React.FormEvent) => {
+    e.preventDefault();
+    const itemsToSave =
+      explainTab === 'paste'
+        ? parsedExplainPreview
+        : explainDraftRows.filter((r) => r.productId && r.quantity > 0);
+
+    if (itemsToSave.length === 0) {
+      alert('Dodaj lub wklej przynajmniej jedno wyjaśnienie z ilością > 0.');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const nextSlots = state.slots.map((s) => ({
+      ...s,
+      allocations: s.allocations.map((a) => ({ ...a })),
+    }));
+    const nextHistory = [...state.movementsHistory];
+    const subItems: SuspendedSubItem[] = [];
+
+    for (const item of itemsToSave) {
+      const prod = productMap.get(item.productId);
+      if (!prod) continue;
+      const reasonClean = (item.reason || 'Wydane bez dokumentu').trim();
+      const cat = item.category || detectSuspendedReasonCategory(reasonClean).category;
+
+      if (!explainDeductFromRack) {
+        subItems.push({
+          id: `susp-item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          productId: prod.id,
+          productName: prod.shortName,
+          quantityIssued: item.quantity,
+          quantityReturned: 0,
+          quantitySettled: 0,
+          lotNumber: 'WG-STANU',
+          expiryDate: '2027-12-31',
+          sourceSlotId: 'explained-only',
+          sourceSlotCode: 'WYJAŚNIENIE INW.',
+          reason: reasonClean,
+          category: cat,
+        });
+
+        nextHistory.unshift({
+          id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: nowIso,
+          type: 'SUSPEND_OUT',
+          productId: prod.id,
+          productName: prod.shortName,
+          quantity: item.quantity,
+          lotNumber: 'WG-STANU',
+          expiryDate: '-',
+          fromSlotCode: 'POZA PÓŁKĄ (WYJAŚNIENIE)',
+          toSlotCode: 'W ZAWIESZENIU',
+          referenceDoc: reasonClean,
+          performedBy: workstationName,
+          notes: `Wyjaśnienie różnicy inwentaryzacyjnej: ${item.quantity} szt. — ${reasonClean}`,
+        });
+      } else {
+        let remaining = item.quantity;
+        const candidateSlots = [
+          ...nextSlots.filter(
+            (s) => s.slotType === 'picking_standard' || s.slotType === 'shelf_storage'
+          ),
+          ...nextSlots.filter((s) => s.slotType === 'pallet_storage'),
+          ...nextSlots.filter((s) => s.slotType === 'picking_partner_12m'),
+        ];
+
+        for (const slot of candidateSlots) {
+          for (const batch of slot.allocations) {
+            if (remaining <= 0) break;
+            if (batch.productId !== prod.id || batch.quantity <= 0) continue;
+            const take = Math.min(batch.quantity, remaining);
+            batch.quantity -= take;
+            batch.updatedAt = nowIso;
+            remaining -= take;
+
+            subItems.push({
+              id: `susp-item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              productId: prod.id,
+              productName: prod.shortName,
+              quantityIssued: take,
+              quantityReturned: 0,
+              quantitySettled: 0,
+              lotNumber: batch.lotNumber,
+              expiryDate: batch.expiryDate,
+              sourceSlotId: slot.id,
+              sourceSlotCode: slot.code,
+              reason: reasonClean,
+              category: cat,
+            });
+          }
+        }
+
+        if (remaining > 0) {
+          subItems.push({
+            id: `susp-item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            productId: prod.id,
+            productName: prod.shortName,
+            quantityIssued: remaining,
+            quantityReturned: 0,
+            quantitySettled: 0,
+            lotNumber: 'WG-STANU',
+            expiryDate: '2027-12-31',
+            sourceSlotId: 'explained-only',
+            sourceSlotCode: 'WYJAŚNIENIE INW.',
+            reason: reasonClean,
+            category: cat,
+          });
+        }
+      }
+    }
+
+    for (const s of nextSlots) {
+      s.allocations = s.allocations.filter((a) => a.quantity > 0);
+    }
+
+    const totalAdded = subItems.reduce((acc, i) => acc + i.quantityIssued, 0);
+    const uniqueReasons = Array.from(new Set(subItems.map((s) => s.reason))).join(', ');
+
+    const newRec: SuspendedItemRecord = {
+      id: `susp-${Date.now()}`,
+      eventName: uniqueReasons.slice(0, 90) || 'Wyjaśnienia inwentaryzacyjne',
+      takenBy: workstationName || 'Inwentaryzacja',
+      issuedAt: nowIso.slice(0, 10),
+      status: 'suspended',
+      notes: 'Dodano z widoku Inwentaryzacja vs wFirma',
+      items: subItems,
+    };
+
+    onUpdateState(
+      {
+        ...state,
+        revision: state.revision + 1,
+        updatedAt: nowIso,
+        slots: nextSlots,
+        suspendedRecords: [newRec, ...state.suspendedRecords],
+        movementsHistory: nextHistory,
+      },
+      `Dopisano wyjaśnienia w zawieszeniu (${totalAdded} szt.): ${uniqueReasons}`
+    );
+
+    setShowExplainModal(false);
+    setBanner({
+      type: 'ok',
+      text: `Zapisano wyjaśnienia różnicy inwentaryzacyjnej (${subItems.length} poz., łącznie ${totalAdded} szt.): ${uniqueReasons}. Bilans vs wFirma został zaktualizowany!`,
+    });
+  };
 
   // Wgranie nowego pliku PDF "Zestawienie stanów / STANY MAGAZYNOWE" z wFirma
   const handleUploadWFirmaInventoryPdf = async (file: File) => {
@@ -84,7 +339,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
       }));
 
       for (const row of snapshot.rows) {
-        let matched = matchProductFromCatalog(row.ktm, row.name, nextProducts);
+        const matched = matchProductFromCatalog(row.ktm, row.name, nextProducts);
         if (!matched) {
           // Jeśli w nowym zestawieniu wFirma pojawił się zupełnie nowy produkt, dodaj go automatycznie do katalogu!
           const newId = `prod-auto-${Date.now()}-${row.lp}`;
@@ -180,7 +435,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
     }));
 
     // Znajdź miejsce, na którym leży ten produkt (lub pierwsze gniazdo kompletacji)
-    let targetSlot =
+    const targetSlot =
       nextSlots.find((s) => s.allocations.some((a) => a.productId === summary.product.id)) ||
       nextSlots.find((s) => s.slotType === 'picking_standard') ||
       nextSlots[0];
@@ -260,7 +515,8 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
       'Gniazdo PARTNER >12 msc (szt.)',
       'Miejsca Paletowe Zapas (szt.)',
       'Fizycznie na Regalach Razem (szt.)',
-      'W Zawieszeniu / Konferencje (szt.)',
+      'W Zawieszeniu Razem (szt.)',
+      'Wyjasnienia W Zawieszeniu (Szczegoly)',
       'Bilans Kontrolny (Na regalach + W zawieszeniu)',
       'Roznica vs wFirma (szt.)',
       'Sztuki z data >12 msc (dla Partnerow)',
@@ -270,6 +526,9 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
     const rowsCsv = summaries.map((s) => {
       const locsStr = s.locations
         .map((l) => `${l.slotCode}: ${l.quantity}szt (${l.lotNumber} MHD:${l.expiryDate})`)
+        .join(' | ');
+      const reasonsStr = (s.suspendedBreakdown || [])
+        .map((b) => `${b.quantity} szt. - ${b.reason}`)
         .join(' | ');
       return [
         s.product.baseEan || '',
@@ -284,6 +543,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
         s.palletReserveQty,
         s.totalPhysicalOnRacks,
         s.suspendedQty,
+        `"${reasonsStr.replace(/"/g, '""')}"`,
         s.totalControlledStock,
         s.inventoryDiff,
         s.eligibleForPartnerQty,
@@ -346,6 +606,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
           s.product.shortName.toLowerCase().includes(q) ||
           s.product.baseEan.toLowerCase().includes(q) ||
           s.product.skuRegular.toLowerCase().includes(q) ||
+          (s.suspendedBreakdown || []).some((b) => b.reason.toLowerCase().includes(q)) ||
           s.locations.some(
             (l) =>
               l.slotCode.toLowerCase().includes(q) || l.lotNumber.toLowerCase().includes(q)
@@ -404,12 +665,24 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
             </div>
             <p className="text-xs text-slate-600 max-w-3xl">
               System automatycznie <strong>sumuje partie cenowe FIFO z wydruku wFirma</strong> oraz łączy indeksy{' '}
-              <strong>PL + PL PARTNER</strong> (pokazując ich dokładne rozbicie i sprawdzając, czy liczba sztuk z datą{' '}
-              <strong>&gt; 12 miesięcy</strong> pokrywa stan <strong>PARTNER</strong>).
+              <strong>PL + PL PARTNER</strong>. Możesz też bezpośrednio tutaj{' '}
+              <strong>wpisać ręcznie lub wkleić uzasadnienia braków / wydań bez dokumentu</strong> (np. konferencja, zamówienie pracownicze, niewystawione RW, zwrot bez PW, wymiana B2B w toku).
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setExplainTab('paste');
+                setShowExplainModal(true);
+              }}
+              className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Wpisz / Wgraj wyjaśnienia (W zawieszeniu)</span>
+            </button>
+
             <input
               ref={pdfInputRef}
               type="file"
@@ -442,7 +715,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
               className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
             >
               <Download className="w-4 h-4" />
-              <span>Eksportuj Raport Inwentaryzacji (CSV / Excel)</span>
+              <span>Eksportuj Raport Inwentaryzacji (CSV)</span>
             </button>
 
             <button
@@ -493,13 +766,26 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
               {globalMetrics.totalOnRacks.toLocaleString('pl-PL')} szt.
             </span>
           </div>
-          <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200">
-            <span className="text-[11px] font-bold text-amber-900 block">
-              W zawieszeniu (Konferencje bez dok.):
-            </span>
-            <span className="text-xl font-extrabold font-mono text-amber-950">
-              {globalMetrics.totalSuspended.toLocaleString('pl-PL')} szt.
-            </span>
+          <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-center justify-between gap-2">
+            <div>
+              <span className="text-[11px] font-bold text-amber-900 block">
+                W zawieszeniu (Konferencje / RW / Prac.):
+              </span>
+              <span className="text-xl font-extrabold font-mono text-amber-950">
+                {globalMetrics.totalSuspended.toLocaleString('pl-PL')} szt.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setExplainTab('manual');
+                setShowExplainModal(true);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-amber-600 text-white hover:bg-amber-700 text-[10px] font-extrabold cursor-pointer shrink-0"
+              title="Wpisz lub wklej wyjaśnienia wydań bez dokumentu"
+            >
+              + Dopisz
+            </button>
           </div>
           <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200">
             <span className="text-[11px] font-bold text-emerald-900 block">
@@ -527,7 +813,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Szukaj produktu po nazwie, kodzie EAN, indeksie wFirma lub numerze regału..."
+              placeholder="Szukaj produktu po nazwie, kodzie EAN, indeksie wFirma, regale lub uzasadnieniu (np. konferencja, RW)..."
               className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:border-indigo-600 focus:outline-none"
             />
           </div>
@@ -539,7 +825,7 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
                 id: 'discrepancy',
                 label: `🔴 Tylko różnice vs wFirma (${globalMetrics.discrepancyCount})`,
               },
-              { id: 'suspended_match', label: '🎪 Z towarem na konferencji (W zawieszeniu)' },
+              { id: 'suspended_match', label: '🎪 Z wyjaśnieniem (W zawieszeniu)' },
               { id: 'partner_12m_warn', label: '🟣 Kontrola >12 msc dla PARTNER' },
             ].map((f) => (
               <button
@@ -584,10 +870,10 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
                     Zapas na regałach
                   </span>
                 </th>
-                <th className="py-3.5 px-3 text-right">
-                  W Zawieszeniu
+                <th className="py-3.5 px-3 text-left bg-amber-950">
+                  W Zawieszeniu (Uzasadnienia)
                   <span className="block text-[9px] text-amber-300 font-normal">
-                    Konferencje (bez dok.)
+                    Konferencje / Pracownicze / RW / Zwroty
                   </span>
                 </th>
                 <th className="py-3.5 px-3 text-center">
@@ -664,15 +950,44 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
                       </div>
                     </td>
 
-                    {/* W Zawieszeniu (Konferencje) */}
-                    <td className="py-3 px-3 text-right font-mono">
-                      {s.suspendedQty > 0 ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-950 border border-amber-300 font-extrabold text-xs inline-block">
-                          🎪 {s.suspendedQty} szt.
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">0 szt.</span>
-                      )}
+                    {/* W Zawieszeniu (z rozbiciem na każde uzasadnienie!) */}
+                    <td className="py-3 px-3 bg-amber-50/25 min-w-[210px]">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          {s.suspendedQty > 0 ? (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-950 border border-amber-300 font-mono font-extrabold text-xs">
+                              🎪 Razem: {s.suspendedQty} szt.
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-mono text-[11px]">0 szt.</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openExplainModalForProduct(s.product.id, s.inventoryDiff)}
+                            className="px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold cursor-pointer"
+                          >
+                            + Wyjaśnij
+                          </button>
+                        </div>
+
+                        {s.suspendedBreakdown && s.suspendedBreakdown.length > 0 && (
+                          <div className="space-y-1 pt-0.5">
+                            {s.suspendedBreakdown.map((item) => (
+                              <div
+                                key={item.subItemId}
+                                className="px-2 py-1 rounded-lg bg-white border border-amber-200 text-[10px] flex items-center justify-between gap-1.5"
+                              >
+                                <span className="font-bold text-slate-800 leading-tight">
+                                  {item.reason}
+                                </span>
+                                <span className="font-mono font-extrabold text-amber-900 shrink-0">
+                                  {item.quantity} szt.
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </td>
 
                     {/* Bilans Inwentaryzacyjny vs wFirma */}
@@ -680,10 +995,10 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
                       {isExplainedBySuspended ? (
                         <div className="inline-flex flex-col items-center px-2.5 py-1 rounded-xl bg-amber-100 border border-amber-300 text-amber-950">
                           <span className="font-extrabold text-xs">
-                            Zgodny z uwzględnieniem konferencji (0)
+                            Zgodny z wyjaśnieniami (0)
                           </span>
                           <span className="text-[10px]">
-                            Na półce: {s.totalPhysicalOnRacks} + Konferencja: {s.suspendedQty}
+                            Półka: {s.totalPhysicalOnRacks} + W zawieszeniu: {s.suspendedQty}
                           </span>
                         </div>
                       ) : isExactMatch ? (
@@ -707,13 +1022,24 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
                                 : `Brak ${s.inventoryDiff} szt.`}
                             </span>
                           </span>
-                          <div>
+                          <div className="flex flex-col items-center gap-0.5">
+                            {s.inventoryDiff < 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openExplainModalForProduct(s.product.id, s.inventoryDiff)
+                                }
+                                className="text-[10px] font-extrabold text-amber-800 hover:underline cursor-pointer"
+                              >
+                                Dopisz uzasadnienie (np. RW / Konferencja)
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleSyncSingleProductToWFirma(s)}
                               className="text-[10px] font-bold text-indigo-700 hover:underline cursor-pointer"
                             >
-                              Wyrównaj do wFirma
+                              Wyrównaj półkę do wFirma
                             </button>
                           </div>
                         </div>
@@ -791,6 +1117,330 @@ export const InventoryAndCatalogView: React.FC<InventoryAndCatalogViewProps> = (
           </table>
         </div>
       </div>
+
+      {/* MODAL WPISYWANIA / WKLEJANIA WYJAŚNIEŃ W ZAWIESZENIU PROSTO Z INWENTARYZACJI */}
+      {showExplainModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={handleSaveExplanations}
+            className="bg-white rounded-3xl max-w-3xl w-full p-6 border-2 border-slate-200 shadow-2xl space-y-4 my-8 max-h-[92vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Wpisz lub wgraj wyjaśnienia różnic („W zawieszeniu”)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Np.{' '}
+                  <code className="px-1 py-0.5 rounded bg-amber-50 text-amber-950 font-mono">
+                    30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW
+                  </code>{' '}
+                  albo zwrot bez PW, wymiana B2B w toku, ponowna wysyłka przed dostawą zwrotu.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExplainModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-2xl">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setExplainTab('manual')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                    explainTab === 'manual'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ✍️ Wpisz ręcznie (wiersz po wierszu)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExplainTab('paste')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                    explainTab === 'paste'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📋 Wklej tekst po przecinku / Wgraj plik
+                </button>
+              </div>
+
+              <input
+                ref={justifyFileInputRef}
+                type="file"
+                accept=".txt,.csv,.pdf"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleUploadExplainFile(e.target.files[0]);
+                  }
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => justifyFileInputRef.current?.click()}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer flex items-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Wgraj plik (.txt / .csv / .pdf)</span>
+              </button>
+            </div>
+
+            {/* Tryb: czy zdejmować ze stanu półki czy tylko dopisać wyjaśnienie */}
+            <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div>
+                <span className="font-extrabold text-amber-950 block">
+                  Tryb księgowania na półce:
+                </span>
+                <span className="text-[11px] text-amber-900">
+                  {!explainDeductFromRack
+                    ? 'Towar już wcześniej opuścił półkę — dopisz tylko wyjaśnienie do kolumny „W zawieszeniu” (stan półki bez zmian).'
+                    : 'Zdejmij teraz wpisaną ilość ze stanu regałów i przenieś do „W zawieszeniu”.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExplainDeductFromRack((v) => !v)}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold cursor-pointer border ${
+                  !explainDeductFromRack
+                    ? 'bg-amber-600 text-white border-amber-700'
+                    : 'bg-slate-900 text-white border-slate-950'
+                }`}
+              >
+                {!explainDeductFromRack
+                  ? '📝 Tylko wyjaśnienie różnicy (Nie odejmuj z półki)'
+                  : '📦 Odejmij teraz ze stanu półki'}
+              </button>
+            </div>
+
+            {explainTab === 'manual' ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800">
+                    Pozycje i uzasadnienia:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExplainDraftRows([
+                        ...explainDraftRows,
+                        {
+                          productId:
+                            explainDraftRows[explainDraftRows.length - 1]?.productId ||
+                            state.products[0]?.id ||
+                            '',
+                          quantity: 1,
+                          reason: 'Niewystawione RW',
+                          category: 'niewystawione_rw',
+                        },
+                      ])
+                    }
+                    className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-100 text-amber-950 hover:bg-amber-200 cursor-pointer flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Dodaj kolejny powód</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {explainDraftRows.map((row, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={row.productId}
+                          onChange={(e) => {
+                            const next = [...explainDraftRows];
+                            next[idx].productId = e.target.value;
+                            setExplainDraftRows(next);
+                          }}
+                          className="flex-1 min-w-[200px] px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-xl"
+                        >
+                          {summaries.map((s) => (
+                            <option key={s.product.id} value={s.product.id}>
+                              {s.product.shortName} (Półka: {s.totalPhysicalOnRacks} | wFirma:{' '}
+                              {s.wfirmaTotal} | Bilans: {s.inventoryDiff})
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="number"
+                          min={1}
+                          value={row.quantity}
+                          onChange={(e) => {
+                            const next = [...explainDraftRows];
+                            next[idx].quantity = Number(e.target.value);
+                            setExplainDraftRows(next);
+                          }}
+                          className="w-20 px-2.5 py-1.5 text-xs font-mono font-extrabold bg-white border border-slate-300 rounded-xl text-center"
+                        />
+                        <span className="text-xs font-bold text-slate-600">op./szt.</span>
+
+                        <input
+                          type="text"
+                          value={row.reason}
+                          onChange={(e) => {
+                            const next = [...explainDraftRows];
+                            const val = e.target.value;
+                            next[idx].reason = val;
+                            next[idx].category = detectSuspendedReasonCategory(val).category;
+                            setExplainDraftRows(next);
+                          }}
+                          placeholder="Uzasadnienie (np. konferencja, zamówienie pracownicze, niewystawione RW...)"
+                          className="flex-1 min-w-[210px] px-3 py-1.5 text-xs font-bold bg-white border border-amber-300 rounded-xl"
+                        />
+
+                        {explainDraftRows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExplainDraftRows(
+                                explainDraftRows.filter((_, i) => i !== idx)
+                              )
+                            }
+                            className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 mr-1">
+                          Wybierz powód:
+                        </span>
+                        {SUSPENDED_REASON_PRESETS.filter((p) => p.category !== 'inne').map(
+                          (preset) => (
+                            <button
+                              key={preset.category}
+                              type="button"
+                              onClick={() => {
+                                const next = [...explainDraftRows];
+                                next[idx].reason = preset.label;
+                                next[idx].category = preset.category;
+                                setExplainDraftRows(next);
+                              }}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer border transition-colors ${
+                                row.reason.toLowerCase() === preset.label.toLowerCase()
+                                  ? 'bg-amber-600 text-white border-amber-700'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
+                              }`}
+                            >
+                              {preset.badge}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-extrabold text-slate-800">
+                    Wklej tekst z uzasadnieniami (rozpoznaje skróty np. „panda 30”, ilości i powody po przecinku):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExplainPasteText(
+                        '30 op. panda 30 - konferencja, 6 zamówienie pracownicze bez dokumentu sprzedaży, 4 niewystawione RW\n2 op. stress 28 - zwrot bez PW, 3 wymiana b2b w toku, 1 ponowna wysyłka przed dostawą zwrotu'
+                      )
+                    }
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-950 hover:bg-amber-200 cursor-pointer flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Wstaw przykład</span>
+                  </button>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={explainPasteText}
+                  onChange={(e) => setExplainPasteText(e.target.value)}
+                  className="w-full p-3 text-xs font-mono bg-slate-50 border-2 border-slate-300 rounded-2xl focus:bg-white focus:border-amber-500 focus:outline-none"
+                />
+
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-slate-600">
+                    Domyślny produkt (gdy w tekście podano tylko powód i ilość):
+                  </span>
+                  <select
+                    value={explainFallbackProductId}
+                    onChange={(e) => setExplainFallbackProductId(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-xl"
+                  >
+                    {summaries.map((s) => (
+                      <option key={s.product.id} value={s.product.id}>
+                        {s.product.shortName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-extrabold text-slate-800">
+                    <span>
+                      Rozpoznane wyjaśnienia ({parsedExplainPreview.length}):
+                    </span>
+                    <span className="font-mono text-amber-900">
+                      Łącznie:{' '}
+                      {parsedExplainPreview.reduce((acc, i) => acc + i.quantity, 0)} szt.
+                    </span>
+                  </div>
+                  {parsedExplainPreview.map((p, idx) => (
+                    <div
+                      key={idx}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-slate-900">
+                          {p.productName}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 font-bold text-[10px]">
+                          {p.reason}
+                        </span>
+                      </div>
+                      <span className="font-mono font-extrabold text-amber-900">
+                        {p.quantity} szt.
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowExplainModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 cursor-pointer"
+              >
+                Anuluj
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-amber-600 text-white hover:bg-amber-700 cursor-pointer shadow-sm"
+              >
+                Zapisz wyjaśnienia do bilansu
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* MODAL DODAWANIA NOWEGO PRODUKTU */}
       {showAddProductModal && (
