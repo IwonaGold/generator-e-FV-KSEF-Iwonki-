@@ -6,6 +6,7 @@ import {
   ProductCatalogItem,
 } from '../types/wms';
 import { isEligibleForPartner12Months } from '../utils/wfirmaParser';
+import { getBatchCartonBreakdown } from '../utils/wmsEngine';
 import { Compass, ArrowRight, GripVertical } from 'lucide-react';
 
 interface Warehouse3DVisualizerProps {
@@ -203,6 +204,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
                     const firstAlloc = activeAllocs[0];
                     const firstProd = firstAlloc ? productMap.get(firstAlloc.productId) : undefined;
+                    const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
                     const rawShortLabel = hasCustom
                       ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
                       : (firstProd?.shortName || 'Wolne')
@@ -230,9 +232,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         title={
                           isEmpty
                             ? `${slot.code}: Wolne miejsce (Upuść tutaj paletę lub kliknij, aby dodać)`
-                            : `${slot.code}: ${rawShortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'}) — Złap myszką i przeciągnij na inne miejsce!`
+                            : `${slot.code}: ${rawShortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'})${
+                                cartonInfo?.hasCartons ? ` | ${cartonInfo.fullDescription}` : ''
+                              } — Złap myszką i przeciągnij na inne miejsce!`
                         }
-                        className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[64px] select-none ${
+                        className={`group rounded-lg p-2 border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[68px] select-none ${
                           !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                         } ${
                           isDropTarget
@@ -280,6 +284,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               {variantLabel && (
                                 <div className="text-[10px] font-mono font-bold opacity-90 leading-tight mt-0.5">
                                   {variantLabel}
+                                </div>
+                              )}
+                              {cartonInfo?.hasCartons && (
+                                <div className="text-[9px] font-mono font-extrabold opacity-95 mt-0.5 bg-slate-950/35 px-1 py-0.5 rounded inline-block">
+                                  {cartonInfo.shortBadge}
                                 </div>
                               )}
                             </>
@@ -526,6 +535,7 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                           const firstProd = firstAlloc
                             ? productMap.get(firstAlloc.productId)
                             : undefined;
+                          const cartonInfo = firstAlloc ? getBatchCartonBreakdown(firstAlloc) : null;
                           const rawShortLabel = hasCustom
                             ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
                             : (firstProd?.shortName || 'Wolne pole na podłodze')
@@ -550,6 +560,13 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                               onDragLeave={() => handleSlotDragLeave(slot)}
                               onDrop={(e) => handleSlotDrop(e, slot)}
                               onClick={() => onSelectSlot(slot)}
+                              title={
+                                isEmpty
+                                  ? `${slot.code}: Wolne miejsce na podłodze`
+                                  : `${slot.code}: ${rawShortLabel} (${totalQty} ${
+                                      firstAlloc?.customUnit || 'szt.'
+                                    })${cartonInfo?.hasCartons ? ` | ${cartonInfo.fullDescription}` : ''}`
+                              }
                               className={`rounded-xl p-2 border-2 text-left transition-all select-none ${
                                 !isEmpty ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                               } ${
@@ -589,6 +606,11 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                                   {variantLabel && (
                                     <div className="text-[10px] font-mono font-bold opacity-90">
                                       {variantLabel}
+                                    </div>
+                                  )}
+                                  {cartonInfo?.hasCartons && (
+                                    <div className="text-[10px] font-mono font-extrabold text-amber-200 mt-0.5 bg-slate-950/40 px-1.5 py-0.5 rounded inline-block">
+                                      {cartonInfo.shortBadge}
                                     </div>
                                   )}
                                 </div>

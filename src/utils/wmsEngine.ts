@@ -8,6 +8,77 @@ import {
 } from '../types/wms';
 import { getMonthsUntilExpiry, isEligibleForPartner12Months } from './wfirmaParser';
 
+/**
+ * Automatycznie przelicza liczbę pełnych kartonów i ilość w otwartym kartonie na podstawie łącznej ilości (quantity)
+ * oraz zdefiniowanego pakowania (unitsPerCarton), jeśli pakowanie w kartonie zostało określone (> 0).
+ */
+export function syncBatchCartonBreakdown(batch: StockAllocationBatch): StockAllocationBatch {
+  const upc = Number(batch.unitsPerCarton) || 0;
+  if (upc > 0) {
+    const qty = Math.max(0, Number(batch.quantity) || 0);
+    batch.fullCartonsCount = Math.floor(qty / upc);
+    batch.looseUnitsInOpenCarton = qty % upc;
+  }
+  return batch;
+}
+
+/**
+ * Zwraca czytelne podsumowanie kartonów i sztuk w otwartym kartonie dla partii towaru (do weryfikacji na kafelku i w modalu).
+ */
+export function getBatchCartonBreakdown(batch: StockAllocationBatch): {
+  hasCartons: boolean;
+  fullCartons: number;
+  unitsPerCarton: number;
+  openCartonUnits: number;
+  totalCartonBoxes: number;
+  shortBadge: string;
+  fullDescription: string;
+} {
+  const upc = Number(batch.unitsPerCarton) || 0;
+  if (upc <= 0 && (batch.fullCartonsCount === undefined || batch.fullCartonsCount === 0)) {
+    return {
+      hasCartons: false,
+      fullCartons: 0,
+      unitsPerCarton: 0,
+      openCartonUnits: 0,
+      totalCartonBoxes: 0,
+      shortBadge: '',
+      fullDescription: '',
+    };
+  }
+
+  const effectiveUpc = upc > 0 ? upc : 1;
+  const fullCartons =
+    batch.fullCartonsCount !== undefined
+      ? batch.fullCartonsCount
+      : Math.floor(batch.quantity / effectiveUpc);
+  const openCartonUnits =
+    batch.looseUnitsInOpenCarton !== undefined
+      ? batch.looseUnitsInOpenCarton
+      : batch.quantity % effectiveUpc;
+  const totalCartonBoxes = fullCartons + (openCartonUnits > 0 ? 1 : 0);
+
+  const shortBadge =
+    openCartonUnits > 0
+      ? `📦 ${fullCartons}×${effectiveUpc} + ${openCartonUnits} otw.`
+      : `📦 ${fullCartons} kart.×${effectiveUpc}`;
+
+  const fullDescription =
+    openCartonUnits > 0
+      ? `${fullCartons} pełnych kart. (po ${effectiveUpc} szt.) + ${openCartonUnits} szt. w kartonie otwartym = ${batch.quantity} szt. (fizycznie ${totalCartonBoxes} kart.)`
+      : `${fullCartons} pełnych kart. (po ${effectiveUpc} szt.) = ${batch.quantity} szt. (brak otwartego kartonu)`;
+
+  return {
+    hasCartons: true,
+    fullCartons,
+    unitsPerCarton: effectiveUpc,
+    openCartonUnits,
+    totalCartonBoxes,
+    shortBadge,
+    fullDescription,
+  };
+}
+
 export interface ProductSlotLocationInfo {
   slotId: string;
   slotCode: string;
@@ -229,6 +300,7 @@ export function executeStockTransfer(
   // Odejmij z miejsca źródłowego
   sourceBatch.quantity -= quantity;
   sourceBatch.updatedAt = nowIso;
+  syncBatchCartonBreakdown(sourceBatch);
   if (sourceBatch.quantity <= 0) {
     fromSlot.allocations.splice(sourceBatchIdx, 1);
   }
@@ -247,18 +319,23 @@ export function executeStockTransfer(
 
   if (existingTargetBatch) {
     existingTargetBatch.quantity += quantity;
+    if (!existingTargetBatch.unitsPerCarton && sourceBatch.unitsPerCarton) {
+      existingTargetBatch.unitsPerCarton = sourceBatch.unitsPerCarton;
+    }
+    syncBatchCartonBreakdown(existingTargetBatch);
     existingTargetBatch.updatedAt = nowIso;
     if (dedicatedForPartnerOnly !== undefined) {
       existingTargetBatch.dedicatedForPartnerOnly = dedicatedForPartnerOnly;
     }
   } else {
-    const newBatch: StockAllocationBatch = {
+    const newBatch: StockAllocationBatch = syncBatchCartonBreakdown({
       id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       productId: sourceBatch.productId,
       isCustomItem: sourceBatch.isCustomItem,
       customName: sourceBatch.customName,
       customUnit: sourceBatch.customUnit,
       quantity,
+      unitsPerCarton: sourceBatch.unitsPerCarton,
       lotNumber: sourceBatch.lotNumber,
       expiryDate: sourceBatch.expiryDate,
       dedicatedForPartnerOnly:
@@ -271,7 +348,7 @@ export function executeStockTransfer(
           : sourceBatch.palletLabel,
       notes: notes || sourceBatch.notes,
       updatedAt: nowIso,
-    };
+    });
     toSlot.allocations.push(newBatch);
   }
 
@@ -446,6 +523,7 @@ export function executeWarehouseDocument(
           if (remainingToDeduct <= 0) break;
           const take = Math.min(cand.batch.quantity, remainingToDeduct);
           cand.batch.quantity -= take;
+          syncBatchCartonBreakdown(cand.batch);
           cand.batch.updatedAt = nowIso;
           remainingToDeduct -= take;
 
@@ -517,6 +595,7 @@ export function executeWarehouseDocument(
 
           if (existingBatch) {
             existingBatch.quantity += alloc.quantity;
+            syncBatchCartonBreakdown(existingBatch);
             existingBatch.updatedAt = nowIso;
           } else {
             targetSlot.allocations.push({
@@ -801,15 +880,21 @@ export function executeSlotDragAndDrop(
 
     if (existingTarget) {
       existingTarget.quantity += sourceBatch.quantity;
+      if (!existingTarget.unitsPerCarton && sourceBatch.unitsPerCarton) {
+        existingTarget.unitsPerCarton = sourceBatch.unitsPerCarton;
+      }
+      syncBatchCartonBreakdown(existingTarget);
       existingTarget.updatedAt = nowIso;
     } else {
-      toSlot.allocations.push({
-        ...sourceBatch,
-        id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        dedicatedForPartnerOnly:
-          toSlot.slotType === 'picking_partner_12m' ? true : sourceBatch.dedicatedForPartnerOnly,
-        updatedAt: nowIso,
-      });
+      toSlot.allocations.push(
+        syncBatchCartonBreakdown({
+          ...sourceBatch,
+          id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          dedicatedForPartnerOnly:
+            toSlot.slotType === 'picking_partner_12m' ? true : sourceBatch.dedicatedForPartnerOnly,
+          updatedAt: nowIso,
+        })
+      );
     }
   }
 

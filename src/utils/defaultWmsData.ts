@@ -1538,6 +1538,24 @@ export function buildInitialSlotsWithAllocations(products: ProductCatalogItem[])
     });
   }
 
+  // Uzupełnij domyślne przeliczenie na pełne kartony + otwarty karton dla pozycji katalogowych
+  const prodById = new Map(products.map((p) => [p.id, p]));
+  for (const slot of slots) {
+    for (const batch of slot.allocations) {
+      if (batch.isCustomItem || batch.productId === 'CUSTOM') continue;
+      const p = prodById.get(batch.productId);
+      const defaultUpc =
+        p?.category === 'mikrosan'
+          ? 12
+          : p?.category === 'sample'
+          ? 100
+          : 24;
+      batch.unitsPerCarton = defaultUpc;
+      batch.fullCartonsCount = Math.floor(batch.quantity / defaultUpc);
+      batch.looseUnitsInOpenCarton = batch.quantity % defaultUpc;
+    }
+  }
+
   return slots;
 }
 

@@ -7,7 +7,12 @@ import {
   StockAllocationBatch,
 } from '../types/wms';
 import { getMonthsUntilExpiry, isEligibleForPartner12Months } from '../utils/wfirmaParser';
-import { executeStockTransfer, executeSlotDragAndDrop } from '../utils/wmsEngine';
+import {
+  executeStockTransfer,
+  executeSlotDragAndDrop,
+  getBatchCartonBreakdown,
+  syncBatchCartonBreakdown,
+} from '../utils/wmsEngine';
 import { Warehouse3DVisualizer } from './Warehouse3DVisualizer';
 import {
   MapPin,
@@ -90,6 +95,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
   const [allocCustomName, setAllocCustomName] = useState<string>('');
   const [allocCustomUnit, setAllocCustomUnit] = useState<string>('szt.');
   const [allocCustomNotes, setAllocCustomNotes] = useState<string>('');
+  const [allocFullCartons, setAllocFullCartons] = useState<number>(2);
+  const [allocUnitsPerCarton, setAllocUnitsPerCarton] = useState<number>(24);
+  const [allocLooseUnits, setAllocLooseUnits] = useState<number>(2);
   const [allocQty, setAllocQty] = useState<number>(50);
   const [allocLot, setAllocLot] = useState<string>('LOT-2026');
   const [allocExpiry, setAllocExpiry] = useState<string>('2028-06-30');
@@ -102,6 +110,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
   // Formularz przesunięcia partii z wybranego miejsca na inne
   const [transferBatch, setTransferBatch] = useState<StockAllocationBatch | null>(null);
   const [transferTargetSlotId, setTransferTargetSlotId] = useState<string>('');
+  const [transferFullCartons, setTransferFullCartons] = useState<number>(0);
+  const [transferLooseUnits, setTransferLooseUnits] = useState<number>(10);
   const [transferQty, setTransferQty] = useState<number>(10);
   const [transferError, setTransferError] = useState<string | null>(null);
 
@@ -109,6 +119,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
   const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
   const [editCustomName, setEditCustomName] = useState<string>('');
   const [editCustomUnit, setEditCustomUnit] = useState<string>('szt.');
+  const [editFullCartons, setEditFullCartons] = useState<number>(0);
+  const [editUnitsPerCarton, setEditUnitsPerCarton] = useState<number>(24);
+  const [editLooseUnits, setEditLooseUnits] = useState<number>(0);
   const [editQty, setEditQty] = useState<number>(0);
   const [editLot, setEditLot] = useState<string>('');
   const [editExpiry, setEditExpiry] = useState<string>('');
@@ -329,6 +342,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
 
       const customDesc = allocCustomName.trim();
       const unit = allocCustomUnit.trim() || 'szt.';
+      const upcCustom = Math.max(0, Number(allocUnitsPerCarton) || 0);
 
       const nextSlots = state.slots.map((s) => {
         if (s.id !== selectedSlot.id) return s;
@@ -343,6 +357,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
               customName: customDesc,
               customUnit: unit,
               quantity: allocQty,
+              fullCartonsCount: upcCustom > 0 ? Math.max(0, Number(allocFullCartons) || 0) : undefined,
+              unitsPerCarton: upcCustom > 0 ? upcCustom : undefined,
+              looseUnitsInOpenCarton: upcCustom > 0 ? Math.max(0, Number(allocLooseUnits) || 0) : undefined,
               lotNumber: '-',
               expiryDate: '',
               palletLabel: allocPalletLabel.trim() || 'Inne rzeczy / Opis ręczny',
@@ -396,6 +413,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     }
 
     const prod = productMap.get(allocProductId);
+    const upcCatalog = Math.max(0, Number(allocUnitsPerCarton) || 0);
 
     const nextSlots = state.slots.map((s) => {
       if (s.id !== selectedSlot.id) return s;
@@ -408,16 +426,21 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
       );
       const nextAllocs = [...s.allocations];
       if (existingIdx !== -1) {
-        nextAllocs[existingIdx] = {
+        const merged = {
           ...nextAllocs[existingIdx],
           quantity: nextAllocs[existingIdx].quantity + allocQty,
+          unitsPerCarton: upcCatalog > 0 ? upcCatalog : nextAllocs[existingIdx].unitsPerCarton,
           updatedAt: nowIso,
         };
+        nextAllocs[existingIdx] = syncBatchCartonBreakdown(merged);
       } else {
         nextAllocs.push({
           id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           productId: allocProductId,
           quantity: allocQty,
+          fullCartonsCount: upcCatalog > 0 ? Math.max(0, Number(allocFullCartons) || 0) : undefined,
+          unitsPerCarton: upcCatalog > 0 ? upcCatalog : undefined,
+          looseUnitsInOpenCarton: upcCatalog > 0 ? Math.max(0, Number(allocLooseUnits) || 0) : undefined,
           lotNumber: allocLot.trim() || 'LOT-2026',
           expiryDate: allocExpiry || '2028-06-30',
           dedicatedForPartnerOnly: s.slotType === 'picking_partner_12m',
@@ -550,6 +573,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     if (firstBatch) {
       setTransferBatch(firstBatch);
       setTransferTargetSlotId(pendingDrop.toSlotId);
+      const upc = Number(firstBatch.unitsPerCarton) || 0;
+      setTransferFullCartons(upc > 0 ? Math.floor(firstBatch.quantity / upc) : 0);
+      setTransferLooseUnits(upc > 0 ? firstBatch.quantity % upc : firstBatch.quantity);
       setTransferQty(firstBatch.quantity);
       setTransferError(null);
     }
@@ -557,7 +583,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     setDropError(null);
   };
 
-  // Zapis edycji ilości / LOT / MHD / opisu ręcznego na gnieździe
+  // Zapis edycji ilości / kartonów / LOT / MHD / opisu ręcznego na gnieździe
   const handleSaveBatchEdit = (batch: StockAllocationBatch) => {
     if (!selectedSlot) return;
     const isCustom = Boolean(batch.isCustomItem || batch.productId === 'CUSTOM');
@@ -574,6 +600,11 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
     }
 
     const nowIso = new Date().toISOString();
+    const upcEdit = Math.max(0, Number(editUnitsPerCarton) || 0);
+    const fullEdit = Math.max(0, Number(editFullCartons) || 0);
+    const looseEdit = Math.max(0, Number(editLooseUnits) || 0);
+    const finalQty = Math.max(0, Number(editQty) || 0);
+
     const nextSlots = state.slots.map((s) => {
       if (s.id !== selectedSlot.id) return s;
       return {
@@ -585,7 +616,10 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                   ...b,
                   customName: isCustom ? editCustomName.trim() || b.customName : b.customName,
                   customUnit: isCustom ? editCustomUnit.trim() || 'szt.' : b.customUnit,
-                  quantity: Math.max(0, Number(editQty) || 0),
+                  quantity: finalQty,
+                  fullCartonsCount: upcEdit > 0 ? fullEdit : undefined,
+                  unitsPerCarton: upcEdit > 0 ? upcEdit : undefined,
+                  looseUnitsInOpenCarton: upcEdit > 0 ? looseEdit : undefined,
                   lotNumber: isCustom ? '-' : editLot.trim(),
                   expiryDate: isCustom ? '' : editExpiry,
                   palletLabel: editPalletLabel.trim(),
@@ -604,7 +638,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
         updatedAt: nowIso,
         slots: nextSlots,
       },
-      `Zaktualizowano pozycję na miejscu ${selectedSlot.code}`
+      `Zaktualizowano pozycję i kartony na miejscu ${selectedSlot.code}`
     );
     setEditingBatchId(null);
   };
@@ -1166,6 +1200,10 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     type="button"
                     onClick={() => {
                       setAllocMode('catalog');
+                      setAllocFullCartons(2);
+                      setAllocUnitsPerCarton(24);
+                      setAllocLooseUnits(2);
+                      setAllocQty(2 * 24 + 2);
                       setShowAddBatchForm(true);
                       setTransferBatch(null);
                     }}
@@ -1178,6 +1216,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     type="button"
                     onClick={() => {
                       setAllocMode('custom');
+                      setAllocFullCartons(0);
+                      setAllocUnitsPerCarton(0);
+                      setAllocLooseUnits(0);
                       setAllocQty(1);
                       setAllocCustomUnit('paleta');
                       setShowAddBatchForm(true);
@@ -1212,6 +1253,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         type="button"
                         onClick={() => {
                           setAllocMode('catalog');
+                          setAllocFullCartons(2);
+                          setAllocUnitsPerCarton(24);
+                          setAllocLooseUnits(2);
                           setAllocQty(50);
                         }}
                         className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
@@ -1226,6 +1270,9 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         type="button"
                         onClick={() => {
                           setAllocMode('custom');
+                          setAllocFullCartons(0);
+                          setAllocUnitsPerCarton(0);
+                          setAllocLooseUnits(0);
                           setAllocQty(1);
                         }}
                         className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
@@ -1237,6 +1284,145 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         ✍️ Inna rzecz (Ręczny opis)
                       </button>
                     </div>
+                  </div>
+
+                  {/* NARZĘDZIE DLA MAGAZYNIERA: SZYBKI KALKULATOR KARTONÓW + OTWARTEGO KARTONU */}
+                  <div className="bg-white/95 border-2 border-teal-400/80 rounded-2xl p-3.5 space-y-2.5 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-extrabold text-teal-950 flex items-center gap-1.5">
+                        <Package className="w-4 h-4 text-teal-600" />
+                        <span>
+                          Kalkulator Kartonów i Sztuk (wpisz kartony, a system sam wyliczy łączną ilość):
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] font-bold text-slate-500 mr-1">
+                          Szybkie pakowanie:
+                        </span>
+                        {[12, 20, 24, 30, 48, 100].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => {
+                              setAllocUnitsPerCarton(preset);
+                              const nextTotal =
+                                Math.max(0, allocFullCartons) * preset +
+                                Math.max(0, allocLooseUnits);
+                              if (nextTotal > 0) setAllocQty(nextTotal);
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer border ${
+                              allocUnitsPerCarton === preset
+                                ? 'bg-teal-600 text-white border-teal-700'
+                                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-teal-50'
+                            }`}
+                          >
+                            po {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                          1. Ilość pełnych kartonów:
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={allocFullCartons}
+                          onChange={(e) => {
+                            const fc = Math.max(0, Number(e.target.value) || 0);
+                            setAllocFullCartons(fc);
+                            if (allocUnitsPerCarton > 0) {
+                              setAllocQty(fc * allocUnitsPerCarton + allocLooseUnits);
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-xs font-mono font-extrabold bg-teal-50/50 border border-teal-300 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                          2. Ilość w każdym kartonie:
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={allocUnitsPerCarton}
+                          onChange={(e) => {
+                            const upc = Math.max(0, Number(e.target.value) || 0);
+                            setAllocUnitsPerCarton(upc);
+                            if (upc > 0) {
+                              setAllocQty(allocFullCartons * upc + allocLooseUnits);
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-xs font-mono font-extrabold bg-teal-50/50 border border-teal-300 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                          3. W otwartym kartonie (szt.):
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={allocLooseUnits}
+                          onChange={(e) => {
+                            const loose = Math.max(0, Number(e.target.value) || 0);
+                            setAllocLooseUnits(loose);
+                            if (allocUnitsPerCarton > 0) {
+                              setAllocQty(allocFullCartons * allocUnitsPerCarton + loose);
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-xs font-mono font-extrabold bg-amber-50/70 border border-amber-300 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-teal-900 mb-1">
+                          = Łączna ilość ({allocMode === 'custom' ? allocCustomUnit : 'szt.'}):
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={allocQty}
+                          onChange={(e) => {
+                            const total = Math.max(1, Number(e.target.value) || 1);
+                            setAllocQty(total);
+                            if (allocUnitsPerCarton > 0) {
+                              setAllocFullCartons(Math.floor(total / allocUnitsPerCarton));
+                              setAllocLooseUnits(total % allocUnitsPerCarton);
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-sm font-mono font-black bg-emerald-50 border-2 border-emerald-500 text-emerald-950 rounded-xl"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {allocUnitsPerCarton > 0 && (
+                      <div className="text-[11px] font-mono font-bold text-teal-900 bg-teal-50 px-3 py-1.5 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          🧮 Równanie magazyniera:{' '}
+                          <strong>
+                            {allocFullCartons} pełnych kart. × {allocUnitsPerCarton} szt.
+                          </strong>{' '}
+                          ({allocFullCartons * allocUnitsPerCarton} szt.) +{' '}
+                          <strong>{allocLooseUnits} szt. w otwartym</strong> ={' '}
+                          <strong className="text-emerald-700 underline">{allocQty} szt.</strong>
+                        </span>
+                        <span className="text-slate-600">
+                          Fizycznie na miejscu:{' '}
+                          <strong>
+                            {allocFullCartons + (allocLooseUnits > 0 ? 1 : 0)} kart.
+                          </strong>{' '}
+                          ({allocFullCartons} zamkn.
+                          {allocLooseUnits > 0 ? ' + 1 otwarty' : ''})
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {allocMode === 'custom' ? (
@@ -1256,19 +1442,6 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Ilość:
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={allocQty}
-                          onChange={(e) => setAllocQty(Number(e.target.value))}
-                          className="w-full px-3 py-2 text-xs font-mono font-bold bg-white border border-slate-300 rounded-xl"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Jednostka (np. paleta, szt., karton):
                         </label>
                         <select
@@ -1283,7 +1456,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                           <option value="kpl.">kpl.</option>
                         </select>
                       </div>
-                      <div>
+                      <div className="sm:col-span-2">
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Dodatkowa notatka (opcjonalnie):
                         </label>
@@ -1297,8 +1470,8 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="sm:col-span-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-3">
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Produkt z katalogu Eubiosis:
                         </label>
@@ -1313,19 +1486,6 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                             </option>
                           ))}
                         </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Ilość (szt.):
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={allocQty}
-                          onChange={(e) => setAllocQty(Number(e.target.value))}
-                          className="w-full px-3 py-2 text-xs font-mono font-bold bg-white border border-slate-300 rounded-xl"
-                          required
-                        />
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -1423,6 +1583,53 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     </div>
                   )}
 
+                  {/* Jeśli partia ma zdefiniowane pakowanie w kartonie, ułatwiamy przeliczenie ile kartonów przesunąć */}
+                  {(transferBatch.unitsPerCarton || 0) > 0 && (
+                    <div className="bg-white/90 border border-indigo-200 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
+                      <div>
+                        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+                          Przesuń pełnych kartonów (po {transferBatch.unitsPerCarton} szt.):
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={transferFullCartons}
+                          onChange={(e) => {
+                            const fc = Math.max(0, Number(e.target.value) || 0);
+                            const upc = Number(transferBatch.unitsPerCarton) || 1;
+                            setTransferFullCartons(fc);
+                            setTransferQty(
+                              Math.min(transferBatch.quantity, fc * upc + transferLooseUnits)
+                            );
+                          }}
+                          className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-indigo-50/50 border border-indigo-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+                          + Sztuk z otwartego kartonu:
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={transferLooseUnits}
+                          onChange={(e) => {
+                            const loose = Math.max(0, Number(e.target.value) || 0);
+                            const upc = Number(transferBatch.unitsPerCarton) || 1;
+                            setTransferLooseUnits(loose);
+                            setTransferQty(
+                              Math.min(transferBatch.quantity, transferFullCartons * upc + loose)
+                            );
+                          }}
+                          className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-amber-50/50 border border-amber-300 rounded-lg"
+                        />
+                      </div>
+                      <div className="text-[11px] font-mono text-indigo-950 font-bold pb-1">
+                        = Wyliczona ilość: <strong>{transferQty} szt.</strong>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -1447,7 +1654,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        Ilość do przesunięcia (max {transferBatch.quantity}{' '}
+                        Łączna ilość do przesunięcia (max {transferBatch.quantity}{' '}
                         {transferBatch.customUnit || 'szt.'}):
                       </label>
                       <div className="flex items-center gap-2">
@@ -1456,13 +1663,28 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                           min={1}
                           max={transferBatch.quantity}
                           value={transferQty}
-                          onChange={(e) => setTransferQty(Number(e.target.value))}
+                          onChange={(e) => {
+                            const val = Math.max(0, Number(e.target.value) || 0);
+                            setTransferQty(val);
+                            const upc = Number(transferBatch.unitsPerCarton) || 0;
+                            if (upc > 0) {
+                              setTransferFullCartons(Math.floor(val / upc));
+                              setTransferLooseUnits(val % upc);
+                            }
+                          }}
                           className="flex-1 px-3 py-2 text-xs font-mono font-bold bg-white border border-slate-300 rounded-xl"
                           required
                         />
                         <button
                           type="button"
-                          onClick={() => setTransferQty(transferBatch.quantity)}
+                          onClick={() => {
+                            setTransferQty(transferBatch.quantity);
+                            const upc = Number(transferBatch.unitsPerCarton) || 0;
+                            if (upc > 0) {
+                              setTransferFullCartons(Math.floor(transferBatch.quantity / upc));
+                              setTransferLooseUnits(transferBatch.quantity % upc);
+                            }
+                          }}
                           className="px-2.5 py-2 rounded-xl text-[11px] font-bold bg-indigo-100 text-indigo-900 hover:bg-indigo-200 cursor-pointer"
                         >
                           Całość ({transferBatch.quantity})
@@ -1497,6 +1719,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                     const monthsLeft = isCustom ? 99 : getMonthsUntilExpiry(batch.expiryDate);
                     const eligible12m = isCustom ? true : isEligibleForPartner12Months(batch.expiryDate);
                     const isEditing = editingBatchId === batch.id;
+                    const cartonBreakdown = getBatchCartonBreakdown(batch);
 
                     return (
                       <div
@@ -1508,7 +1731,7 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
+                          <div className="flex-1 min-w-[240px]">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-sm font-extrabold text-slate-900">
                                 {isCustom
@@ -1563,6 +1786,36 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                 )}
                               </div>
                             )}
+
+                            {/* PASEK WERYFIKACJI PO LICZBIE KARTONÓW I ILOŚCI W KARTONIE OTWARTYM */}
+                            {cartonBreakdown.hasCartons && (
+                              <div className="mt-2.5 p-2.5 rounded-xl bg-white border border-teal-200 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-950 font-mono font-extrabold">
+                                    📦 Pełne kartony: {cartonBreakdown.fullCartons} szt. ×{' '}
+                                    {cartonBreakdown.unitsPerCarton} (=
+                                    {cartonBreakdown.fullCartons * cartonBreakdown.unitsPerCarton})
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md font-mono font-extrabold ${
+                                      cartonBreakdown.openCartonUnits > 0
+                                        ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                        : 'bg-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    📂 Karton otwarty: {cartonBreakdown.openCartonUnits} szt.
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-mono font-bold text-slate-700">
+                                  Fizycznie na miejscu:{' '}
+                                  <strong className="text-teal-900">
+                                    {cartonBreakdown.totalCartonBoxes} kart.
+                                  </strong>{' '}
+                                  ({cartonBreakdown.fullCartons} pełnych
+                                  {cartonBreakdown.openCartonUnits > 0 ? ' + 1 otwarty' : ''})
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -1573,7 +1826,18 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                               type="button"
                               onClick={() => {
                                 setTransferBatch(batch);
-                                setTransferQty(Math.min(50, batch.quantity));
+                                const defaultMove = Math.min(
+                                  batch.unitsPerCarton || 50,
+                                  batch.quantity
+                                );
+                                const upc = Number(batch.unitsPerCarton) || 0;
+                                setTransferFullCartons(
+                                  upc > 0 ? Math.floor(defaultMove / upc) : 0
+                                );
+                                setTransferLooseUnits(
+                                  upc > 0 ? defaultMove % upc : defaultMove
+                                );
+                                setTransferQty(defaultMove);
                                 setTransferTargetSlotId('');
                                 setTransferError(null);
                                 setShowAddBatchForm(false);
@@ -1587,16 +1851,37 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                             <button
                               type="button"
                               onClick={() => {
+                                const upc =
+                                  batch.unitsPerCarton !== undefined
+                                    ? batch.unitsPerCarton
+                                    : isCustom
+                                    ? 0
+                                    : 24;
+                                const fc =
+                                  batch.fullCartonsCount !== undefined
+                                    ? batch.fullCartonsCount
+                                    : upc > 0
+                                    ? Math.floor(batch.quantity / upc)
+                                    : 0;
+                                const loose =
+                                  batch.looseUnitsInOpenCarton !== undefined
+                                    ? batch.looseUnitsInOpenCarton
+                                    : upc > 0
+                                    ? batch.quantity % upc
+                                    : 0;
                                 setEditingBatchId(isEditing ? null : batch.id);
                                 setEditCustomName(batch.customName || '');
                                 setEditCustomUnit(batch.customUnit || 'szt.');
+                                setEditUnitsPerCarton(upc);
+                                setEditFullCartons(fc);
+                                setEditLooseUnits(loose);
                                 setEditQty(batch.quantity);
                                 setEditLot(batch.lotNumber);
                                 setEditExpiry(batch.expiryDate);
                                 setEditPalletLabel(batch.palletLabel || '');
                               }}
                               className="p-2 rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 cursor-pointer"
-                              title="Edytuj opis, ilość, serię LOT lub datę ważności"
+                              title="Edytuj kartony, ilość w otwartym kartonie, serię LOT lub datę ważności"
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
@@ -1612,9 +1897,116 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                         </div>
 
                         {isEditing && (
-                          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
-                            {isCustom ? (
-                              <>
+                          <div className="pt-3 border-t border-slate-200 space-y-3">
+                            {/* Sekcja szybkiego przeliczania kartonów w edycji */}
+                            <div className="bg-white border-2 border-teal-400 rounded-xl p-3 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-extrabold text-teal-950">
+                                  📦 Weryfikacja i przelicznik kartonów na miejscu:
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-slate-500">
+                                    Szybkie pakowanie:
+                                  </span>
+                                  {[12, 20, 24, 30, 48, 100].map((preset) => (
+                                    <button
+                                      key={preset}
+                                      type="button"
+                                      onClick={() => {
+                                        setEditUnitsPerCarton(preset);
+                                        setEditQty(editFullCartons * preset + editLooseUnits);
+                                      }}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer border ${
+                                        editUnitsPerCarton === preset
+                                          ? 'bg-teal-600 text-white border-teal-700'
+                                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-teal-50'
+                                      }`}
+                                    >
+                                      po {preset}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                                    Ilość pełnych kartonów:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={editFullCartons}
+                                    onChange={(e) => {
+                                      const fc = Math.max(0, Number(e.target.value) || 0);
+                                      setEditFullCartons(fc);
+                                      if (editUnitsPerCarton > 0) {
+                                        setEditQty(fc * editUnitsPerCarton + editLooseUnits);
+                                      }
+                                    }}
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold bg-teal-50/60 border border-teal-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                                    Ilość w każdym kartonie:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={editUnitsPerCarton}
+                                    onChange={(e) => {
+                                      const upc = Math.max(0, Number(e.target.value) || 0);
+                                      setEditUnitsPerCarton(upc);
+                                      if (upc > 0) {
+                                        setEditQty(editFullCartons * upc + editLooseUnits);
+                                      }
+                                    }}
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold bg-teal-50/60 border border-teal-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                                    Ilość w kartonie otwartym:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={editLooseUnits}
+                                    onChange={(e) => {
+                                      const loose = Math.max(0, Number(e.target.value) || 0);
+                                      setEditLooseUnits(loose);
+                                      if (editUnitsPerCarton > 0) {
+                                        setEditQty(editFullCartons * editUnitsPerCarton + loose);
+                                      }
+                                    }}
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold bg-amber-50/70 border border-amber-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-extrabold text-emerald-900 mb-0.5">
+                                    = Łączna ilość ({isCustom ? editCustomUnit : 'szt.'}):
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={editQty}
+                                    onChange={(e) => {
+                                      const total = Math.max(0, Number(e.target.value) || 0);
+                                      setEditQty(total);
+                                      if (editUnitsPerCarton > 0) {
+                                        setEditFullCartons(Math.floor(total / editUnitsPerCarton));
+                                        setEditLooseUnits(total % editUnitsPerCarton);
+                                      }
+                                    }}
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-black bg-emerald-50 border-2 border-emerald-500 text-emerald-950 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+                              {isCustom ? (
                                 <div className="sm:col-span-2">
                                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
                                     Ręczny opis pozycji:
@@ -1626,72 +2018,48 @@ export const SpatialWarehouseView: React.FC<SpatialWarehouseViewProps> = ({
                                     className="w-full px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-lg"
                                   />
                                 </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                                    Ilość ({editCustomUnit}):
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={editQty}
-                                    onChange={(e) => setEditQty(Number(e.target.value))}
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg"
-                                  />
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                                    Ilość (szt.):
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={editQty}
-                                    onChange={(e) => setEditQty(Number(e.target.value))}
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                                    Seria LOT:
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={editLot}
-                                    onChange={(e) => setEditLot(e.target.value)}
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                                    Data ważności MHD:
-                                  </label>
-                                  <input
-                                    type="date"
-                                    value={editExpiry}
-                                    onChange={(e) => setEditExpiry(e.target.value)}
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg"
-                                  />
-                                </div>
-                              </>
-                            )}
-                            <div className="flex gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleSaveBatchEdit(batch)}
-                                className="flex-1 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
-                              >
-                                Zapisz
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingBatchId(null)}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-600 cursor-pointer"
-                              >
-                                Anuluj
-                              </button>
+                              ) : (
+                                <>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                                      Seria LOT:
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editLot}
+                                      onChange={(e) => setEditLot(e.target.value)}
+                                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                                      Data ważności MHD:
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={editExpiry}
+                                      onChange={(e) => setEditExpiry(e.target.value)}
+                                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                </>
+                              )}
+                              <div className="flex gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveBatchEdit(batch)}
+                                  className="flex-1 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                                >
+                                  Zapisz zmiany
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingBatchId(null)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-600 cursor-pointer"
+                                >
+                                  Anuluj
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}

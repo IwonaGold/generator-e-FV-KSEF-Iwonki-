@@ -9,19 +9,46 @@ const BROADCAST_CHANNEL_NAME = 'eubiosis_wms_realtime_channel_v2';
 function applyCleanProductNames(state: WMSFullState): WMSFullState {
   if (!Array.isArray(state.products)) return state;
   const defaultMap = new Map(DEFAULT_PRODUCTS_CATALOG.map((p) => [p.id, p]));
+  const updatedProducts = state.products.map((prod) => {
+    const def = defaultMap.get(prod.id);
+    if (def) {
+      return {
+        ...prod,
+        name: def.name,
+        shortName: def.shortName,
+      };
+    }
+    return prod;
+  });
+
+  const prodById = new Map(updatedProducts.map((p) => [p.id, p]));
+  const updatedSlots = Array.isArray(state.slots)
+    ? state.slots.map((slot) => ({
+        ...slot,
+        allocations: (slot.allocations || []).map((batch) => {
+          if (batch.isCustomItem || batch.productId === 'CUSTOM') return batch;
+          if (batch.unitsPerCarton && batch.unitsPerCarton > 0) return batch;
+          const p = prodById.get(batch.productId);
+          const defaultUpc =
+            p?.category === 'mikrosan'
+              ? 12
+              : p?.category === 'sample'
+              ? 100
+              : 24;
+          return {
+            ...batch,
+            unitsPerCarton: defaultUpc,
+            fullCartonsCount: Math.floor(batch.quantity / defaultUpc),
+            looseUnitsInOpenCarton: batch.quantity % defaultUpc,
+          };
+        }),
+      }))
+    : state.slots;
+
   return {
     ...state,
-    products: state.products.map((prod) => {
-      const def = defaultMap.get(prod.id);
-      if (def) {
-        return {
-          ...prod,
-          name: def.name,
-          shortName: def.shortName,
-        };
-      }
-      return prod;
-    }),
+    products: updatedProducts,
+    slots: updatedSlots,
   };
 }
 

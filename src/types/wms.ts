@@ -49,7 +49,10 @@ export interface StockAllocationBatch {
   isCustomItem?: boolean;             // Czy to pozycja opisana ręcznie (spoza katalogu produktów wFirma)
   customName?: string;                // Ręczny opis pozycji (np. "Kartony wysyłkowe", "Roll-up konferencyjny")
   customUnit?: string;                // Jednostka dla pozycji ręcznej (np. "szt.", "paleta", "karton", "kpl.")
-  quantity: number;
+  quantity: number;                   // Łączna ilość (wyliczana z kartonów lub wpisana ręcznie)
+  fullCartonsCount?: number;          // Ilość pełnych kartonów (np. 8)
+  unitsPerCarton?: number;            // Ilość sztuk w każdym pełnym kartonie (np. 24)
+  looseUnitsInOpenCarton?: number;    // Ilość sztuk w kartonie otwartym / luzem (np. 5)
   lotNumber: string;                  // Numer serii LOT (np. 25E3475 lub '-' dla innych rzeczy)
   expiryDate: string;                 // Data ważności MHD w formacie YYYY-MM-DD (lub '' dla innych rzeczy)
   dedicatedForPartnerOnly?: boolean;  // Czy partia odłożona specjalnie dla Partnerów (> 12 msc)
