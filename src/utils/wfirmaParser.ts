@@ -51,11 +51,17 @@ export function matchProductFromCatalog(
 ): ProductCatalogItem | null {
   const cleanSku = (rawSku || '').replace(/\s+/g, '').toUpperCase();
   const baseEan = extractBaseEan(cleanSku) || extractBaseEan(rawName);
-  const normName = (rawName || '')
-    .toLowerCase()
-    .replace(/PARTNER/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const stripBrand = (s: string) =>
+    (s || '')
+      .toLowerCase()
+      .replace(/omni[\s-]*biotic®?/gi, '')
+      .replace(/omni[\s-]*logic®?/gi, '')
+      .replace(/PARTNER/gi, '')
+      .replace(/[—–-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const normName = stripBrand(rawName);
 
   // 1. Dokładne dopasowanie po indeksie SKU (zwykłym lub partnerskim)
   if (cleanSku) {
@@ -73,24 +79,19 @@ export function matchProductFromCatalog(
     if (byExactBaseEan) return byExactBaseEan;
   }
 
-  // 3. Dopasowanie po nazwie (dla pozycji bez kodu EAN, np. "PRÓBKA Z ULOTKĄ PRO-VI", "Torba termiczna MikroSan")
+  // 3. Dopasowanie po nazwie (dla pozycji bez kodu EAN)
   if (normName) {
-    // Sprawdź czy w katalogu jest próbka odpowiadająca tej samej linii produktowej
     for (const p of catalog) {
-      const pNorm = p.name
-        .toLowerCase()
-        .replace(/PARTNER/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (pNorm === normName || p.shortName.toLowerCase() === normName) {
+      const pNorm = stripBrand(p.name);
+      const pShort = stripBrand(p.shortName);
+      if (pNorm === normName || pShort === normName) {
         return p;
       }
     }
 
-    // Dopasowanie próbek (np. "SKLEP B2C - PRÓBKA Z ULOTKĄ - OMNi BiOTiC® PRO-VI" <-> "PRÓBKA Z ULOTKĄ PRO-VI")
     for (const p of catalog) {
-      const pNorm = p.name.toLowerCase().replace(/\s+/g, ' ').trim();
-      if (normName.includes(pNorm) || pNorm.includes(normName)) {
+      const pNorm = stripBrand(p.name);
+      if (pNorm && (normName.includes(pNorm) || pNorm.includes(normName))) {
         return p;
       }
     }

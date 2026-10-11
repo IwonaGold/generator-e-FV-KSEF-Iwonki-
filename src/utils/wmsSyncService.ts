@@ -1,10 +1,29 @@
 import { WMSFullState, WorkstationRole } from '../types/wms';
-import { createInitialWMSState } from './defaultWmsData';
+import { createInitialWMSState, DEFAULT_PRODUCTS_CATALOG } from './defaultWmsData';
 
-const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v4';
+const LOCAL_STORAGE_STATE_KEY = 'eubiosis_wms_state_v5';
 const WORKSTATION_ROLE_KEY = 'eubiosis_wms_workstation_role_v1';
 const WORKSTATION_NAME_KEY = 'eubiosis_wms_workstation_name_v1';
 const BROADCAST_CHANNEL_NAME = 'eubiosis_wms_realtime_channel_v2';
+
+function applyCleanProductNames(state: WMSFullState): WMSFullState {
+  if (!Array.isArray(state.products)) return state;
+  const defaultMap = new Map(DEFAULT_PRODUCTS_CATALOG.map((p) => [p.id, p]));
+  return {
+    ...state,
+    products: state.products.map((prod) => {
+      const def = defaultMap.get(prod.id);
+      if (def) {
+        return {
+          ...prod,
+          name: def.name,
+          shortName: def.shortName,
+        };
+      }
+      return prod;
+    }),
+  };
+}
 
 export function getWorkstationRole(): WorkstationRole {
   try {
@@ -48,7 +67,7 @@ export function loadLocalWMSState(): WMSFullState {
         parsed.warehouses.some((w: any) => w.id === 'wh-mag-4') &&
         parsed.racks.some((r: any) => r.id === 'rack-m5-r1')
       ) {
-        return parsed;
+        return applyCleanProductNames(parsed);
       }
     }
   } catch (e) {
@@ -82,12 +101,13 @@ export async function fetchServerWMSState(): Promise<WMSFullState | null> {
         upgraded.revision = (data.state.revision || 1) + 1;
         await pushServerWMSState(
           upgraded,
-          'Aktualizacja układu hal: po 3 regały 12-paletowe na stronę (Regał 1, 2, 3 oraz Regał 4, 5, 6 od lewej) + miejsca na podłodze'
+          'Aktualizacja układu hal i nazw produktów (od razu rodzaj i wariant)'
         );
         return upgraded;
       }
-      saveLocalWMSState(data.state);
-      return data.state;
+      const cleaned = applyCleanProductNames(data.state);
+      saveLocalWMSState(cleaned);
+      return cleaned;
     }
   } catch {}
   return null;

@@ -159,17 +159,23 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
 
                     const firstAlloc = activeAllocs[0];
                     const firstProd = firstAlloc ? productMap.get(firstAlloc.productId) : undefined;
-                    const shortLabel = hasCustom
+                    const rawShortLabel = hasCustom
                       ? firstAlloc?.customName || slot.customDescription || 'Opis ręczny'
-                      : firstProd?.shortName || 'Wolne';
+                      : (firstProd?.shortName || 'Wolne')
+                          .replace(/omni[\s-]*biotic®?\s*/gi, '')
+                          .replace(/omni[\s-]*logic®?\s*/gi, '');
+
+                    const parts = rawShortLabel.split('•').map((s) => s.trim());
+                    const primaryType = parts[0] || rawShortLabel;
+                    const variantLabel = parts[1] || '';
 
                     return (
                       <button
                         key={slot.id}
                         type="button"
                         onClick={() => onSelectSlot(slot)}
-                        title={`${slot.code}: ${shortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'})`}
-                        className={`group rounded-lg p-2 border text-left transition-all cursor-pointer relative overflow-hidden ${
+                        title={`${slot.code}: ${rawShortLabel} (${totalQty} ${firstAlloc?.customUnit || 'szt.'})`}
+                        className={`group rounded-lg p-2 border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[64px] ${
                           isMatched
                             ? 'bg-amber-400 text-slate-950 border-white ring-2 ring-amber-300 scale-105 z-10'
                             : isSelected
@@ -186,15 +192,28 @@ export const Warehouse3DVisualizer: React.FC<Warehouse3DVisualizerProps> = ({
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1 text-[9px] font-mono font-extrabold">
-                          <span>M.{String(slot.position).padStart(2, '0')}</span>
+                          <span className="opacity-80">M.{String(slot.position).padStart(2, '0')}</span>
                           {!isEmpty && (
                             <span className="font-black">
-                              {totalQty.toLocaleString('pl-PL')} {firstAlloc?.customUnit || 'szt.'}
+                              {totalQty.toLocaleString('pl-PL')}
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] font-bold truncate mt-0.5">
-                          {isEmpty ? 'Wolne' : shortLabel}
+                        <div className="mt-0.5 leading-tight">
+                          {isEmpty ? (
+                            <div className="text-[10px] font-semibold opacity-60">Wolne</div>
+                          ) : (
+                            <>
+                              <div className="text-[11px] font-extrabold leading-tight break-words">
+                                {primaryType}
+                              </div>
+                              {variantLabel && (
+                                <div className="text-[10px] font-mono font-bold opacity-90 leading-tight mt-0.5">
+                                  {variantLabel}
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                         {!isEmpty && (
                           <div className="h-1 w-full bg-amber-500/90 rounded-full mt-1" />
