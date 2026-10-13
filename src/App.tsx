@@ -2,15 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   WMSFullState,
   NavigationTab,
-  WorkstationRole,
 } from './types/wms';
 import {
   loadLocalWMSState,
   fetchServerWMSState,
   pushServerWMSState,
   subscribeToWMSSync,
-  getWorkstationRole,
-  setWorkstationRoleStorage,
   getWorkstationName,
   fetchLocalNetworkInfo,
   LocalNetworkInfo,
@@ -41,7 +38,6 @@ import {
 export function App() {
   const [wmsState, setWmsState] = useState<WMSFullState>(() => loadLocalWMSState());
   const [activeTab, setActiveTab] = useState<NavigationTab>('magazyn_4');
-  const [role, setRole] = useState<WorkstationRole>(() => getWorkstationRole());
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
   const [liveToast, setLiveToast] = useState<string | null>(null);
   const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
@@ -58,8 +54,7 @@ export function App() {
     }, 4500);
   }, []);
 
-  const workstationName =
-    role === 'warehouse' ? 'Stanowisko 2: Magazyn' : 'Stanowisko 1: Koordynator';
+  const workstationName = 'Magazyn WMS';
 
   // Inicjalne pobranie najnowszego stanu z lokalnego serwera Node.js
   useEffect(() => {
@@ -103,18 +98,6 @@ export function App() {
     [showToast]
   );
 
-  const handleSwitchRole = (nextRole: WorkstationRole) => {
-    setRole(nextRole);
-    setWorkstationRoleStorage(nextRole);
-    if (nextRole === 'warehouse' && activeTab === 'inventory_wfirma') {
-      setActiveTab('magazyn_4');
-    }
-    showToast(
-      nextRole === 'warehouse'
-        ? '📦 Przełączono na Stanowisko 2: Magazyn (Wizualizacja Magazynu 4, 5, 6, Przesunięcia FEFO, Alokacja Dostaw)'
-        : '👩‍💼 Przełączono na Stanowisko 1: Koordynator (Pełny dostęp do Dokumentów wFirma i Inwentaryzacji)'
-    );
-  };
 
   // Eksport całej bazy WMS do pliku JSON (Transfer danych między komputerami / Backup)
   const handleExportFullBackup = () => {
@@ -269,31 +252,6 @@ export function App() {
 
           {/* Przełącznik Stanowisk + Synchronizacja Wi-Fi + Transfer Danych */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Przełącznik Roli: Koordynator vs Magazyn */}
-            <div className="bg-slate-800 p-1 rounded-xl flex items-center gap-1 border border-slate-700">
-              <button
-                type="button"
-                onClick={() => handleSwitchRole('coordinator')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  role === 'coordinator'
-                    ? 'bg-teal-600 text-white shadow-2xs'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                👩‍💼 Stanowisko 1: Koordynator
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSwitchRole('warehouse')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  role === 'warehouse'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                📦 Stanowisko 2: Magazyn
-              </button>
-            </div>
 
             {/* Przycisk Synchronizacji Wi-Fi i Transferu Danych */}
             <button
