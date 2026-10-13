@@ -1,12 +1,15 @@
 import React from 'react';
 import { FileText, FileEdit, History, ArrowRight, Sparkles, Truck, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { AppModule } from '../types/navigation';
+import wmsLogo from '../assets/wms-logo.png';
 
 interface HomePortalViewProps {
   onSelectModule: (module: AppModule) => void;
   ordersCount: number;
   onOpenEdiPrototype?: () => void;
   onSelectOrderTab?: (tab: 'new' | 'in_progress' | 'completed') => void;
+  onSwitchToWarehouse?: () => void;
+  warehouseTasksCount?: number;
 }
 
 export const HomePortalView: React.FC<HomePortalViewProps> = ({
@@ -14,14 +17,34 @@ export const HomePortalView: React.FC<HomePortalViewProps> = ({
   ordersCount,
   onOpenEdiPrototype,
   onSelectOrderTab,
+  onSwitchToWarehouse,
+  warehouseTasksCount = 0,
 }) => {
   return (
     <div className="max-w-7xl mx-auto py-6 sm:py-10 animate-in fade-in zoom-in-95 duration-200">
       {/* NAGŁÓWEK POWITALNY */}
       <div className="text-center mb-8 sm:mb-12">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-bold mb-3 shadow-2xs">
-          <span>🌸</span>
-          <span>Dzień dobry, Iwonko! Wybierz obszar roboczy:</span>
+        <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-bold shadow-2xs">
+            <span>🌸</span>
+            <span>Dzień dobry, Iwonko! Wybierz obszar roboczy:</span>
+          </div>
+          {onSwitchToWarehouse && (
+            <button
+              type="button"
+              onClick={onSwitchToWarehouse}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer group"
+              title="Przełącz na Stanowisko 2: Magazyn WMS (Zadania od Koordynatora)"
+            >
+              <img src={wmsLogo} alt="" className="w-4 h-4 object-contain rounded-xs shrink-0 group-hover:scale-110 transition-transform" />
+              <span>Magazyn WMS — Zadania</span>
+              {warehouseTasksCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-emerald-600 text-white">
+                  {warehouseTasksCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
         <h1 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-tight">
           Centrum Obsługi Zamówień Sieciowych

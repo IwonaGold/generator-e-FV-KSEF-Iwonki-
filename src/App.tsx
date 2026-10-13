@@ -8,7 +8,6 @@ import { PriceListSection } from './components/PriceListSection';
 import { ItemsPreviewTable } from './components/ItemsPreviewTable';
 import { KSeFXMLModal } from './components/KSeFXMLModal';
 import { WZDocumentModal } from './components/WZDocumentModal';
-import { downloadOrderCSVFile } from './utils/orderCsvGenerator';
 import { VisionLLMGuideModal } from './components/VisionLLMGuideModal';
 import { EdiDozPrototypeModal } from './components/EdiDozPrototypeModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
@@ -202,10 +201,39 @@ export default function App() {
   const [preloadedOrderForCorrection, setPreloadedOrderForCorrection] = useState<ArchivedOrder | null>(null);
   const [pendingOrderSourceId, setPendingOrderSourceId] = useState<string | null>(null);
   const [currentOrderPackagingPhotos, setCurrentOrderPackagingPhotos] = useState<OrderPackagingPhoto[]>([]);
-  const [photoSectionResetKey, setPhotoSectionResetKey] = useState<number>(0);
-  const [workstationRole, setWorkstationRoleState] = useState<WorkstationRole>(() =>
-    getWorkstationRole()
-  );
+  const [workstationRole, setWorkstationRoleState] = useState<WorkstationRole>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const roleParam = (urlParams.get('role') || urlParams.get('stanowisko') || '').toLowerCase();
+        if (roleParam === 'warehouse' || roleParam === 'magazyn') {
+          setWorkstationRole('warehouse');
+          return 'warehouse';
+        }
+      }
+    } catch (e) {
+      console.warn('URL param parse error:', e);
+    }
+    return getWorkstationRole();
+  });
+
+  // Dynamiczna zmiana tytułu karty i ikonki (favicon) zależnie od aktywnego stanowiska (Magazyn WMS vs Koordynator)
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const isWarehouse = workstationRole === 'warehouse';
+    document.title = isWarehouse
+      ? 'Magazyn WMS – Zadania Magazynowe'
+      : 'Centrum Obsługi Zamówień Sieciowych';
+
+    const favLink = document.getElementById('app-favicon') as HTMLLinkElement | null;
+    if (favLink) {
+      favLink.href = isWarehouse ? '/wms-logo.png' : '/app-logo.png';
+    }
+    const appleLink = document.getElementById('app-apple-icon') as HTMLLinkElement | null;
+    if (appleLink) {
+      appleLink.href = isWarehouse ? '/wms-logo.png' : '/app-logo.png';
+    }
+  }, [workstationRole]);
 
   const toastTimeoutRef = useRef<number | null>(null);
 
@@ -298,106 +326,43 @@ export default function App() {
     setArchivedOrders((prev) => [savedOrder, ...prev.filter((o) => o.id !== savedOrder.id)]);
   }, []);
 
-  const deletedPackagingPhotoIdsRef = useRef<Set<string>>(new Set());
-
-  // Dopasowanie bieżącego zamówienia na Karcie Zamówienia (po pendingOrderSourceId lub po numerze zamówienia na karcie)
+  // Dopasowanie bieżącego zamówienia na Karcie Zamówienia (wyłącznie dla jawnie aktywnego zamówienia przed wyczyszczeniem)
   const activeMatchedArchivedOrder = useMemo(() => {
-    if (pendingOrderSourceId) {
-      const byId = archivedOrders.find((o) => o.id === pendingOrderSourceId);
-      if (byId) return byId;
-    }
-    const ordNum = (meta.orderNumber || '').trim();
-    if (ordNum) {
-      return archivedOrders.find((o) => (o.orderNumber || '').trim() === ordNum) || null;
-    }
-    return null;
-  }, [archivedOrders, pendingOrderSourceId, meta.orderNumber]);
+    if (!pendingOrderSourceId) return null;
+    return archivedOrders.find((o) => o.id === pendingOrderSourceId) || null;
+  }, [archivedOrders, pendingOrderSourceId]);
 
   // Synchronizuj zdjęcia opakowań z dopasowanego zamówienia (np. gdy Magazyn doda nowe zdjęcia do tego zamówienia)
   useEffect(() => {
     if (!activeMatchedArchivedOrder) return;
-    const rawOrderPhotos = Array.isArray(activeMatchedArchivedOrder.packagingPhotos)
+    const orderPhotos = Array.isArray(activeMatchedArchivedOrder.packagingPhotos)
       ? activeMatchedArchivedOrder.packagingPhotos
       : [];
-    const orderPhotos = rawOrderPhotos.filter(
-      (p) => p?.id && !deletedPackagingPhotoIdsRef.current.has(p.id)
-    );
-    const serverIds = new Set(orderPhotos.map((p) => p.id));
-
+    if (orderPhotos.length === 0) return;
     setCurrentOrderPackagingPhotos((prev) => {
-      const filteredPrev = prev.filter((p) => {
-        if (!p?.id || deletedPackagingPhotoIdsRef.current.has(p.id)) return false;
-        if (p.id.startsWith('pkg-') && !serverIds.has(p.id)) return false;
-        return true;
-      });
-      const existingIds = new Set(filteredPrev.map((p) => p.id));
+      const existingIds = new Set(prev.map((p) => p.id));
       const newOnes = orderPhotos.filter((p) => p?.id && !existingIds.has(p.id));
-      if (newOnes.length === 0 && filteredPrev.length === prev.length) return prev;
-      return [...filteredPrev, ...newOnes];
+      if (newOnes.length === 0) return prev;
+      return [...prev, ...newOnes];
     });
   }, [activeMatchedArchivedOrder]);
 
   // Aktualizacja zdjęć opakowań przypisanych do bieżącego zamówienia na karcie
   const handleUpdateCurrentOrderPackagingPhotos = useCallback(
     async (nextPhotos: OrderPackagingPhoto[]) => {
-      const nextIds = new Set(nextPhotos.map((p) => p?.id).filter(Boolean));
-      const removedIds = new Set<string>();
-
-      for (const p of currentOrderPackagingPhotos) {
-        if (p?.id && !nextIds.has(p.id)) {
-          removedIds.add(p.id);
-          deletedPackagingPhotoIdsRef.current.add(p.id);
-        }
-      }
-      if (activeMatchedArchivedOrder?.packagingPhotos) {
-        for (const p of activeMatchedArchivedOrder.packagingPhotos) {
-          if (p?.id && !nextIds.has(p.id)) {
-            removedIds.add(p.id);
-            deletedPackagingPhotoIdsRef.current.add(p.id);
-          }
-        }
-      }
-
       setCurrentOrderPackagingPhotos(nextPhotos);
-
-      const targetOrderId = pendingOrderSourceId || activeMatchedArchivedOrder?.id || null;
-      const orderIdsToUpdate = new Map<string, OrderPackagingPhoto[]>();
-
-      if (targetOrderId) {
-        orderIdsToUpdate.set(targetOrderId, nextPhotos);
-      }
-
-      if (removedIds.size > 0) {
-        for (const o of archivedOrders) {
-          if (!o?.id || orderIdsToUpdate.has(o.id)) continue;
-          if (Array.isArray(o.packagingPhotos) && o.packagingPhotos.some((p) => p?.id && removedIds.has(p.id))) {
-            orderIdsToUpdate.set(
-              o.id,
-              o.packagingPhotos.filter((p) => p?.id && !removedIds.has(p.id))
-            );
-          }
-        }
-      }
-
-      if (orderIdsToUpdate.size > 0) {
+      if (pendingOrderSourceId) {
+        await updateArchivedOrderFields(pendingOrderSourceId, {
+          packagingPhotos: nextPhotos,
+        });
         setArchivedOrders((prev) =>
           prev.map((o) =>
-            orderIdsToUpdate.has(o.id)
-              ? { ...o, packagingPhotos: orderIdsToUpdate.get(o.id)! }
-              : o
-          )
-        );
-
-        await Promise.all(
-          Array.from(orderIdsToUpdate.entries()).map(([ordId, photos]) =>
-            updateArchivedOrderFields(ordId, {
-              packagingPhotos: photos,
-            })
+            o.id === pendingOrderSourceId ? { ...o, packagingPhotos: nextPhotos } : o
           )
         );
       }
     },
-    [pendingOrderSourceId, activeMatchedArchivedOrder, currentOrderPackagingPhotos, archivedOrders]
+    [pendingOrderSourceId]
   );
 
   const activeWarehouseTasksCount = useMemo(() => {
@@ -489,14 +454,14 @@ export default function App() {
       notes:
         existing?.notes ||
         (orderFile
-          ? `Zlecono Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu) z pliku: ${orderFile.name}`
-          : 'Zlecono Zadanie 1 (Uzupełnij zdjęcia etykiet kartonu) przez Koordynatora'),
+          ? `Zlecono Zadanie 1 (Uzupełnij zdjęcia produktów) z pliku: ${orderFile.name}`
+          : 'Zlecono Zadanie 1 (Uzupełnij zdjęcia produktów) przez Koordynatora'),
       originalFileName: orderFile?.name || existing?.originalFileName,
       createdAt: existing?.createdAt || nowIso,
       updatedAt: nowIso,
       parcelPhotos: existing?.parcelPhotos || [],
       packagingPhotos: mergedPackagingPhotos,
-      // Zadanie 1 (Z karty zamówienia): Uzupełnij zdjęcia etykiet kartonu
+      // Zadanie 1 (Z karty zamówienia): Uzupełnij zdjęcia produktów
       warehouseProductTaskStatus: 'assigned',
       warehouseProductTaskAssignedAt: nowIso,
       warehouseProductTaskNote: finalTaskNote,
@@ -517,9 +482,9 @@ export default function App() {
     setCurrentOrderPackagingPhotos(saved.packagingPhotos || []);
     setArchivedOrders((prev) => [saved, ...prev.filter((o) => o.id !== saved.id)]);
     setPriceNotice(
-      `📸 Wysłano do Magazynu zadanie: „Uzupełnij zdjęcia etykiet kartonu” dla zamówienia ${
+      `📸 Wysłano do Magazynu Zadanie 1: „Uzupełnij zdjęcia produktów” dla zamówienia ${
         saved.orderNumber ? `nr ${saved.orderNumber}` : saved.invoiceNumber
-      } (${saved.chain})!`
+      } (${saved.chain})! Zadanie 2 („Uzupełnij zdjęcia gotowej przesyłki”) wyślesz z folderu W REALIZACJI.`
     );
     setTimeout(() => setPriceNotice(null), 6500);
   };
@@ -654,16 +619,7 @@ export default function App() {
 
     const resolvedChain = detectPharmacyChain(buyer, thirdParty, selectedChain);
     const xmlInvoiceNum = extractInvoiceNumberFromXml(xmlPayload);
-    const rawMetaOrdNo = (meta.orderNumber || '').trim();
-    const existingOrder =
-      activeMatchedArchivedOrder ||
-      (rawMetaOrdNo
-        ? archivedOrders.find(
-            (o) =>
-              !o.isDelivered &&
-              (o.orderNumber || '').trim().toLowerCase() === rawMetaOrdNo.toLowerCase()
-          ) || null
-        : null);
+    const existingOrder = activeMatchedArchivedOrder;
     const preservedShippingStatus =
       existingOrder &&
       !existingOrder.isDelivered &&
@@ -718,24 +674,10 @@ export default function App() {
         'Zapisano bez wystawiania FV XML — wpisz ręcznie numer dokumentu na karcie zamówienia w folderze W REALIZACJI';
     }
 
-    const allItemsHaveLotAndExp =
-      items.length > 0 &&
-      items.every(
-        (it) =>
-          Boolean(String(it.batchNumber || '').trim()) &&
-          Boolean(String(it.expiryDate || '').trim())
-      );
-
-    // Po zapisaniu informacji o dacie ważności (MHD/EXP) i serii (LOT) lub wystawieniu FV XML
-    // usuwamy zdjęcia opakowań produktów (w historii zostają wyłącznie zdjęcia gotowych przesyłek parcelPhotos)
-    const shouldPurgeProductPhotos = mode === 'with_fv_xml' || allItemsHaveLotAndExp;
-
-    const mergedPackagingPhotos = shouldPurgeProductPhotos
-      ? []
-      : currentOrderPackagingPhotos.length > 0
-      ? currentOrderPackagingPhotos
-      : existingOrder?.packagingPhotos || [];
-
+    const mergedPackagingPhotos =
+      currentOrderPackagingPhotos.length > 0
+        ? currentOrderPackagingPhotos
+        : existingOrder?.packagingPhotos || [];
 
     const nowIso = new Date().toISOString();
     const savedOrder: ArchivedOrder = {
@@ -1578,12 +1520,6 @@ export default function App() {
         onUpdateItem={handleUpdateItem}
         orderPackagingPhotos={currentOrderPackagingPhotos}
         onOrderPackagingPhotosChange={handleUpdateCurrentOrderPackagingPhotos}
-        onSendTaskToWarehouse={() => handleSendCurrentOrderToWarehouse()}
-        warehouseTaskStatus={
-          activeMatchedArchivedOrder?.warehouseProductTaskStatus ||
-          activeMatchedArchivedOrder?.warehouseTaskStatus ||
-          'none'
-        }
       />
 
       {/* KROK 4: Automatyczna Weryfikacja Ceny Netto i Kodu EAN wg Cennika z Centrum Wiedzy (lub XLSX) */}
@@ -1628,16 +1564,6 @@ export default function App() {
         onApplySingleGtin={handleApplySingleGtin}
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
-        onDownloadOrderCsv={() =>
-          downloadOrderCSVFile({
-            seller,
-            buyer,
-            thirdParty,
-            meta,
-            items,
-            selectedChain,
-          })
-        }
         onSaveToHistory={handleSaveInvoiceToHistory}
         onSaveOrderWithMode={handleSaveOrderFromCard}
       />
@@ -1655,16 +1581,6 @@ export default function App() {
       <Header
         onOpenXmlModal={() => setIsXmlModalOpen(true)}
         onOpenWzModal={() => setIsWzModalOpen(true)}
-        onDownloadOrderCsv={() =>
-          downloadOrderCSVFile({
-            seller,
-            buyer,
-            thirdParty,
-            meta,
-            items,
-            selectedChain,
-          })
-        }
         onOpenAiGuide={() => setIsAiGuideOpen(true)}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
         activeUsersCount={activeUsersCount}
@@ -1700,6 +1616,8 @@ export default function App() {
                 ordersCount={archivedOrders.length}
                 onOpenEdiPrototype={() => setIsEdiModalOpen(true)}
                 onSelectOrderTab={setOrderHistoryTab}
+                onSwitchToWarehouse={() => handleSwitchWorkstationRole('warehouse')}
+                warehouseTasksCount={activeWarehouseTasksCount}
               />
             ) : (
               /* ==================================================================== */
@@ -1772,16 +1690,6 @@ export default function App() {
         onSchemaVersionChange={setSchemaVersion}
         onSaveToHistory={handleSaveInvoiceToHistory}
         onOpenWzModal={() => setIsWzModalOpen(true)}
-        onDownloadOrderCsv={() =>
-          downloadOrderCSVFile({
-            seller,
-            buyer,
-            thirdParty,
-            meta,
-            items,
-            selectedChain,
-          })
-        }
         onOpenEdiModal={() => setIsEdiModalOpen(true)}
       />
 
