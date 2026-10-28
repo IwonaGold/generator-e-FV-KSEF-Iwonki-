@@ -827,4 +827,113 @@ export const INITIAL_KEY_CLIENTS: KeyClientProfile[] = [
     ],
     updatedAt: '2026-10-03T18:00:00.000Z',
   },
+
+  // ==========================================================================
+  // 6. NABEA
+  // ==========================================================================
+  {
+    id: 'client-nabea',
+    shortName: 'Nabea',
+    fullName: 'NABEA',
+    nip: 'Brak / wg zamówienia',
+    colorTheme: 'rose',
+    priceListType: 'Q3_STANDARD',
+    priceListTitle: 'Cennik Standardowy Q3 (bez specyfikacji — ceny netto po rabacie 5%)',
+    priceListRule:
+      'WAŻNE: FV w-Firma — ceny netto po rabacie, cennik standardowy Q3 (bez specyfikacji)! 🚨 UWAGA: Kolejne zamówienie tylko 100% PRZEDPŁATA!',
+    correctionRulesSummary:
+      'Dla NABEA faktury i korekty wystawiamy w w-Firma (ceny netto po rabacie z cennika standardowego Q3, bez osobnej specyfikacji). Wysyłka faktury/korekty (PDF, XML) na Fh@nabea.pl.',
+    correctionCodes: [
+      {
+        code: 'NABEA • CENNIK Q3 (-5%)',
+        label: 'Korekta cenowa wg Cennika Standardowego Q3 (rabat 5% netto)',
+        reasonText:
+          'Korekta cenowa – dostosowanie cen jednostkowych netto do cennika standardowego Q3 (rabat 5%)',
+        categoryLabel: 'Korekta błędnej ceny jednostkowej na fakturze pierwotnej',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+      {
+        code: 'NABEA • ILOŚCIOWA',
+        label: 'Korekta ilościowa / zwrot towaru',
+        reasonText: 'Korekta ilościowa – rozbieżność ilościowa / zwrot części towaru przez odbiorcę',
+        categoryLabel: 'Korekta ilościowa (niedobór towaru w dostawie)',
+        defaultTypKorekty: '1',
+        mode: 'value',
+        isOfficialClientCode: false,
+      },
+    ],
+    invoiceSystem: 'ZEWNETRZNY_SYSTEM',
+    invoiceSystemLabel:
+      'FV w-Firma (ceny netto po rabacie, cennik standardowy Q3, bez specyfikacji) – wysyłka PDF i XML na Fh@nabea.pl',
+    paymentDays: 21,
+    ksefLogisticsFormat:
+      'FV w-Firma (ceny netto po rabacie, bez specyfikacji) – wysyłka PDF oraz XML na Fh@nabea.pl',
+    invoiceRequirements:
+      '• 💰 CENNIK STANDARDOWY Q3 (bez specyfikacji): Na fakturze (FV w-Firma) obowiązują CENY NETTO PO RABACIE (rabat 5% netto z cennika standardowego Q3) — BEZ osobnej specyfikacji!\n' +
+      '• Termin płatności: 21 dni.\n' +
+      '• 🚨 UWAGA HANDLOWA: Kolejne zamówienie tylko 100% PRZEDPŁATA!\n' +
+      '• Faktura (format PDF oraz XML) wysyłana na adres: Fh@nabea.pl.\n' +
+      '• Potwierdzenie zamówienia, numery listów przewozowych oraz awizacja: e.tracz@nabea.pl DW b.gielecinska@nabea.pl.\n' +
+      '• Zamówienia przesyłane są do nas w formacie CSV (eksport IAI: Kod IAI; Ilość towarów; Kod producenta/EAN; Nazwa towaru).',
+    minExpiryRequirement:
+      'Zgodnie ze standardem handlowym (minimum 12 miesięcy od daty dostawy)',
+    shortExpiryPolicy:
+      'Krótsza data ważności wyłącznie po wcześniejszym uzgodnieniu mailowym (e.tracz@nabea.pl DW b.gielecinska@nabea.pl).',
+    avisoMethod:
+      'Awizacja w 2-dniowym przedziale na: e.tracz@nabea.pl DW b.gielecinska@nabea.pl',
+    avisoDetails:
+      '• Awizacja dostawy w 2-dniowym przedziale czasowym.\n' +
+      '• Potwierdzenie zamówienia, numery listów przewozowych oraz awizację wysyłać na: e.tracz@nabea.pl DW b.gielecinska@nabea.pl.\n' +
+      '• 📦 WYMÓG OZNACZENIA KARTONÓW: Na kartonach MUSI być nr zamówienia i opis numeryczny (np. 444111 1/3, 444111 2/3, 444111 3/3 itd.)!\n' +
+      '• 🚨 UWAGA: Kolejne zamówienie tylko 100% PRZEDPŁATA!',
+    headquartersAddress: 'Zgodnie z zamówieniem Nabea',
+    shippingWarehouseName: 'Magazyn NABEA',
+    shippingAddress: 'Zgodnie z zamówieniem Nabea',
+    shippingRemarks:
+      '📦 Na kartonach MUSI być nr zamówienia i opis numeryczny (np. 444111 1/3 itd.)! · Awizacja w 2-dniowym przedziale · 🚨 UWAGA: kolejne zamówienie tylko 100% PRZEDPŁATA!',
+    contacts: [
+      {
+        id: 'nab-c1',
+        role: 'Potwierdzenie, numery listów przewozowych, awizacja',
+        name: 'E. Tracz (Nabea)',
+        email: 'e.tracz@nabea.pl',
+        phone: '',
+      },
+      {
+        id: 'nab-c2',
+        role: 'DW: Potwierdzenie, numery listów przewozowych, awizacja',
+        name: 'B. Gielecińska (Nabea)',
+        email: 'b.gielecinska@nabea.pl',
+        phone: '',
+      },
+      {
+        id: 'nab-c3',
+        role: 'Faktura (PDF, XML)',
+        name: 'Faktury Nabea',
+        email: 'Fh@nabea.pl',
+        phone: '',
+      },
+    ],
+    notes: [
+      {
+        id: 'nab-n1',
+        createdAt: '2026-10-28 13:30',
+        category: 'ustalenia',
+        isPinned: true,
+        content:
+          'ŚCIĄGA OPERACYJNA NABEA:\n• 🚨 UWAGA: Kolejne zamówienie tylko 100% PRZEDPŁATA!\n• Termin płatności: 21 dni\n• Faktura: FV w-Firma, ceny netto po rabacie, cennik standardowy Q3 (BEZ specyfikacji)\n• Awizacja: w 2-dniowym przedziale\n• e.tracz@nabea.pl DW b.gielecinska@nabea.pl – potwierdzenie, numery listów przewozowych, awizacja\n• Fh@nabea.pl – faktura (PDF, XML)\n• 📦 Na kartonach MUSI być nr zamówienia i opis numeryczny (np. 444111 1/3 itd.)\n• Zamówienia przesyłane w formacie CSV (Kod IAI; Ilość towarów; Kod producenta/EAN; Nazwa towaru)',
+      },
+      {
+        id: 'nab-n2',
+        createdAt: '2026-10-28 13:31',
+        category: 'logistyka',
+        isPinned: true,
+        content:
+          'WYMÓG PAKOWANIA I KARTONÓW NABEA:\nNa każdym kartonie musi być wyraźnie napisany numer zamówienia oraz opis numeryczny kartonu, np.:\n444111 1/3\n444111 2/3\n444111 3/3 itd.\nAwizacja dostawy w 2-dniowym przedziale na e.tracz@nabea.pl DW b.gielecinska@nabea.pl.',
+      },
+    ],
+    updatedAt: '2026-10-28T13:35:00.000Z',
+  },
 ];

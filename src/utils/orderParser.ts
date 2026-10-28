@@ -11,6 +11,7 @@ import {
 import { decodeArrayBufferText, decodeTextFile, fixPolishMojibake } from './textEncoding';
 import { cleanProductName } from './ksefGenerator';
 import { PHARMACY_CHAINS } from './sampleData';
+import { STANDARD_Q3_PRICE_LIST } from '../types/knowledgeBase';
 
 export interface ParsedOrderResult {
   items: Partial<InvoiceItem>[];
@@ -938,6 +939,42 @@ export function matchOrBuildBuyerFromOrder(
 
   // Sprawdzenie Modum Pharma (Centrum Wiedzy: 60 dni)
   const cleanCustomNip = (customBuyer.nip || '').replace(/\D/g, '');
+  const rawSearchText = typeof rawTextOrFallbackChain === 'string' ? rawTextOrFallbackChain.toLowerCase() : '';
+  const isNabeaOrder =
+    (customBuyer.name || '').toLowerCase().includes('nabea') ||
+    (customBuyer.email || '').toLowerCase().includes('nabea') ||
+    rawSearchText.includes('nabea') ||
+    (rawSearchText.includes('kod iai') && rawSearchText.includes('ilość towarów'));
+
+  if (isNabeaOrder) {
+    if (!headerData.buyerName || customBuyer.name === 'APTEKA / NABYWCA Z ZAMÓWIENIA') {
+      customBuyer.name = 'NABEA';
+    }
+    if (!customBuyer.email) {
+      customBuyer.email = 'Fh@nabea.pl';
+    }
+    metaUpdates.paymentDays = 21;
+    const baseDateStr = metaUpdates.deliveryDate || metaUpdates.orderDate;
+    const base = baseDateStr ? new Date(baseDateStr) : new Date();
+    base.setDate(base.getDate() + 21);
+    metaUpdates.dueDate = base.toISOString().slice(0, 10);
+
+    return {
+      chain: 'Custom',
+      buyer: customBuyer,
+      thirdParty: null,
+      metaUpdates,
+      isRecognizedChain: true,
+      chainProfileName: 'NABEA (FV w-Firma · Cennik Q3 bez specyfikacji · 21 dni)',
+      extractedSummary: {
+        buyerName: customBuyer.name,
+        buyerNip: customBuyer.nip,
+        buyerAddress: `${customBuyer.addressLine1}, ${customBuyer.postalCode} ${customBuyer.city}`,
+        datesFound,
+      },
+    };
+  }
+
   if (cleanCustomNip === '7010955110' || (customBuyer.name || '').toLowerCase().includes('modum')) {
     metaUpdates.paymentDays = 60;
     const baseDateStr = metaUpdates.deliveryDate || metaUpdates.orderDate;
@@ -1188,7 +1225,7 @@ function evaluateGridHeaderRow(
 
     if (!isExcludedFromQty) {
       if (
-        /^(?:ilo[śs\?]*[ćc\?]*|qty|quantity)(?:\s*[\/\(]?\s*(?:szt\.?|op\.?|opak\.?|j\.?m\.?)[\)\.]?)?$/i.test(
+        /^(?:ilo[śs\?]*[ćc\?]*(?:\s*towar[óo\?]*w)?|qty|quantity)(?:\s*[\/\(]?\s*(?:szt\.?|op\.?|opak\.?|j\.?m\.?)[\)\.]?)?$/i.test(
           val
         ) ||
         isGeminiWarehouseQtyCol
@@ -1196,7 +1233,7 @@ function evaluateGridHeaderRow(
         if (qtyPriority < 2) {
           qtyColIdx = cIdx;
           qtyPriority = 2;
-          score += isGeminiWarehouseQtyCol ? 3 : 2;
+          score += isGeminiWarehouseQtyCol ? 3 : 3;
         }
         continue;
       } else if (
@@ -1210,8 +1247,12 @@ function evaluateGridHeaderRow(
       }
     }
 
-    // 2. KOLUMNA EAN / GTIN / KOD KRESKOWY
-    if (/\bean\b|\bgtin\b|kod\s*kreskowy|barkod|barcode/i.test(val)) {
+    // 2. KOLUMNA EAN / GTIN / KOD KRESKOWY (oraz "Kod producenta" / "Kod zewnętrznego systemu" / "Symbol wyświetlany..." w CSV Nabea / IAI)
+    if (
+      /\bean\b|\bgtin\b|kod\s*kreskowy|barkod|barcode|^kod\s*producenta$|^kod\s*zewn[ęe]trznego\s*systemu$|^symbol\s*wy[śs]wietlany\s*w\s*karcie\s*towaru/i.test(
+        val
+      )
+    ) {
       if (eanColIdx === -1) {
         eanColIdx = cIdx;
         score += 3;
@@ -1228,9 +1269,9 @@ function evaluateGridHeaderRow(
       continue;
     }
 
-    // 4. KOLUMNA SKU / INDEKS / KOD PRODUKTU / NAV ID
+    // 4. KOLUMNA SKU / INDEKS / KOD PRODUKTU / NAV ID / KOD IAI
     if (
-      /^(?:sku|indeks|nav\s*id|kod\s*wewn[ęe]trzny(?:\s*producenta)?|kod\s*produktu(?:\s*wg\s*nabywcy)?|kod\s*towaru|id\s*produktu|nr\s*art\.?)$/i.test(
+      /^(?:sku|indeks|nav\s*id|kod\s*iai|kod\s*wewn[ęe]trzny(?:\s*producenta)?|kod\s*produktu(?:\s*wg\s*nabywcy)?|kod\s*towaru|id\s*produktu|nr\s*art\.?)$/i.test(
         val
       )
     ) {
@@ -1256,7 +1297,7 @@ function evaluateGridHeaderRow(
 
     // 6. KOLUMNA NAZWY PRODUKTU / TOWARU
     const isExcludedFromName =
-      /kod\s*produktu|kod\s*wewn|indeks|kategoria|rejestracja|grupa|typ|obj[ęe]to|dostawca|nabywca|producent|zamawiana|ilo[śs\?]*[ćc\?]*|cena|warto/i.test(
+      /kod\s*produktu|kod\s*wewn|kod\s*iai|kod\s*producenta|kod\s*zewn|symbol\s*wy[śs]wietlany|uwagi\s*klienta|rozmiar|indeks|kategoria|rejestracja|grupa|typ|obj[ęe]to|dostawca|nabywca|producent|zamawiana|ilo[śs\?]*[ćc\?]*|cena|warto/i.test(
         val
       );
     if (!isExcludedFromName) {
@@ -1563,6 +1604,22 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
         headerData.buyerNip = '5252801825';
         if (!headerData.buyerName) headerData.buyerName = 'GEMINI APPS SP. Z O.O.';
       }
+
+      // H) Rozpoznanie Nabea z komórki lub nagłówka CSV IAI ("Kod IAI" + "Ilość towarów")
+      if (/nabea|@nabea\.pl/i.test(cellStr)) {
+        if (!headerData.buyerName) headerData.buyerName = 'NABEA';
+        if (!headerData.buyerEmail) headerData.buyerEmail = 'Fh@nabea.pl';
+        headerData.paymentDays = 21;
+      }
+    }
+
+    if (
+      /kod\s*iai/i.test(rowStr) &&
+      /ilo[śs\?]*[ćc\?]*\s*towar[óo\?]*w/i.test(rowStr)
+    ) {
+      if (!headerData.buyerName) headerData.buyerName = 'NABEA';
+      if (!headerData.buyerEmail) headerData.buyerEmail = 'Fh@nabea.pl';
+      headerData.paymentDays = 21;
     }
 
     // Uzupełniające dopasowania na poziomie wiersza
@@ -1593,17 +1650,23 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
     }
   }
 
-  // Jeśli nazwa pliku wskazuje na Gemini lub zawiera numer zamówienia (jako fallback)
+  // Jeśli nazwa pliku wskazuje na Gemini, Nabea lub zawiera numer zamówienia (jako fallback)
   if (fileName) {
     if (!headerData.buyerNip && /gemini/i.test(fileName)) {
       headerData.buyerNip = '5252801825';
       if (!headerData.buyerName) headerData.buyerName = 'GEMINI APPS SP. Z O.O.';
     }
+    if (/nabea/i.test(fileName)) {
+      if (!headerData.buyerName) headerData.buyerName = 'NABEA';
+      if (!headerData.buyerEmail) headerData.buyerEmail = 'Fh@nabea.pl';
+      headerData.paymentDays = 21;
+    }
     if (!headerData.orderNumber) {
       const baseName = fileName.replace(/\.[^/.]+$/, '');
       const fnOrderMatch =
-        baseName.match(/(?:zam[óo]?wienie|zam|order|gem)[_\-\s]+([A-Za-z0-9\-\_\/]{3,})/i) ||
-        baseName.match(/\b([A-Z]{1,4}[-_\/]\d{2,}[A-Za-z0-9\-_\/]*)\b/i);
+        baseName.match(/(?:zam[óo]?wienie|zam|order|gem|nabea)[_\-\s]+([A-Za-z0-9\-\_\/]{3,})/i) ||
+        baseName.match(/\b([A-Z]{1,4}[-_\/]\d{2,}[A-Za-z0-9\-_\/]*)\b/i) ||
+        baseName.match(/^\s*(\d{5,10})\s*$/);
       if (fnOrderMatch) {
         const cand = cleanOrderNumberCandidate(fnOrderMatch[1]);
         if (cand) headerData.orderNumber = cand;
@@ -1678,9 +1741,10 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
     headerRowCells.forEach((cell: any, cIdx: number) => {
       const hVal = fixPolishMojibake(String(cell ?? '')).toLowerCase().trim();
       if (
-        /nav\s*id|kod\s*wewn|nazwa|produkt|towar|\bean\b|\bgtin\b|\bbloz\b|op\.?\s*zbiorcz|zbiorcz|rabat|wielokrotno|pakiet|gratis|cena|warto[śs\?]*[ćc\?]*|kwota|data\s*wa[żz]no|\bmhd\b|\bexp\b|\blot\b|\bseria\b|\bvat\b|^lp\.?$|^l\.p\.?$/i.test(
+        /nav\s*id|kod\s*wewn|kod\s*iai|kod\s*producenta|kod\s*zewn|symbol\s*wy[śs]wietlany|uwagi\s*klienta|rozmiar|nazwa|produkt|towar(?!\w)|\bean\b|\bgtin\b|\bbloz\b|op\.?\s*zbiorcz|zbiorcz|rabat|wielokrotno|pakiet|gratis|cena|warto[śs\?]*[ćc\?]*|kwota|data\s*wa[żz]no|\bmhd\b|\bexp\b|\blot\b|\bseria\b|\bvat\b|^lp\.?$|^l\.p\.?$/i.test(
           hVal
-        )
+        ) &&
+        !/ilo[śs\?]*[ćc\?]*\s*towar[óo\?]*w/i.test(hVal)
       ) {
         forbiddenQtyCols.add(cIdx);
       }
@@ -1838,10 +1902,22 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
         ? fixPolishMojibake(String(row[volumeColIdx])).replace(/&nbsp;?/gi, ' ').trim()
         : '';
 
-    const rawEan =
+    let rawEan =
       eanColIdx !== -1 && row[eanColIdx] !== undefined
         ? String(row[eanColIdx]).replace(/\D/g, '')
         : '';
+
+    // Fallback: jeśli kolumna EAN była pusta lub zawierała prefiks (np. """EAN-9120117911370""" w innej kolumnie CSV Nabea), przeszukaj komórki wiersza pod kątem 13-cyfrowego kodu EAN
+    if (rawEan.length < 8 || rawEan.length > 14) {
+      for (let c = 0; c < row.length; c++) {
+        if (c === qtyColIdx || c === priceColIdx || c === skuColIdx || c === nameColIdx) continue;
+        const cellDigits = String(row[c] ?? '').replace(/\D/g, '');
+        if (/^(?:912|590)\d{10}$/.test(cellDigits) || /^\d{13}$/.test(cellDigits)) {
+          rawEan = cellDigits;
+          break;
+        }
+      }
+    }
 
     const rawBloz =
       blozColIdx !== -1 && row[blozColIdx] !== undefined
@@ -1910,15 +1986,33 @@ export function parseOrderGrid(rawGrid: any[][], fileName?: string): ParsedOrder
     if (!hasValidEan && (!rawName || rawName.length < 3)) continue;
     if (!hasValidEan && parsedPrice === null && explicitQty === null) continue;
 
+    // Automatyczne dopasowanie ceny netto po rabacie i kodu BLOZ z Cennika Standardowego Q3,
+    // gdy w pliku zamówienia (np. eksport CSV z Nabea / IAI) nie podano kolumny z ceną jednostkową
+    const matchedQ3Product = hasValidEan
+      ? STANDARD_Q3_PRICE_LIST.find((p) => p.ean === rawEan)
+      : undefined;
+    const effectiveNetPrice =
+      parsedPrice !== null
+        ? Math.round(parsedPrice * 100) / 100
+        : matchedQ3Product
+        ? matchedQ3Product.invoiceNetPrice
+        : 100.0;
+    const effectiveBloz7 =
+      rawBloz.length === 7
+        ? rawBloz
+        : matchedQ3Product && matchedQ3Product.bloz.length === 7
+        ? matchedQ3Product.bloz
+        : undefined;
+
     candidateRows.push({
       explicitQty,
       item: {
-        name: cleanProductName(rawName) || rawName || `Produkt EAN ${rawEan}`,
+        name: cleanProductName(rawName) || rawName || matchedQ3Product?.name || `Produkt EAN ${rawEan}`,
         gtin: hasValidEan ? rawEan : '9120000000000',
-        bloz7: rawBloz.length === 7 ? rawBloz : undefined,
+        bloz7: effectiveBloz7,
         quantity: explicitQty !== null && explicitQty > 0 ? Math.round(explicitQty) : 1,
         unit: 'SZT.',
-        netPrice: parsedPrice !== null ? Math.round(parsedPrice * 100) / 100 : 100.0,
+        netPrice: effectiveNetPrice,
         vatRate: parsedVat,
         batchNumber: rawBatch,
         expiryDate: rawExp,
@@ -2032,8 +2126,15 @@ export function parseOrderHtml(htmlText: string, fileName?: string): ParsedOrder
  * Dzieli wiersz tabeli rozdzielany separatorem (;, \t, |, ,) z obsługą cudzysłowów CSV (np. "Omnibiotic 10 AAD Kids 2,5g x 20sasz")
  */
 function splitDelimitedLine(line: string, sep: string): string[] {
-  if (sep !== ',') {
-    return line.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, '$1').trim());
+  const cleanCsvToken = (cell: string): string =>
+    cell
+      .trim()
+      .replace(/^"+|"+$/g, '')
+      .replace(/""/g, '"')
+      .trim();
+
+  if (sep !== ',' && sep !== ';') {
+    return line.split(sep).map(cleanCsvToken);
   }
   const result: string[] = [];
   let current = '';
@@ -2047,14 +2148,14 @@ function splitDelimitedLine(line: string, sep: string): string[] {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current.trim());
+    } else if (ch === sep && !inQuotes) {
+      result.push(cleanCsvToken(current));
       current = '';
     } else {
       current += ch;
     }
   }
-  result.push(current.trim());
+  result.push(cleanCsvToken(current));
   return result;
 }
 
@@ -2206,12 +2307,12 @@ function extractQtyAndPriceFromNumbers(
 /**
  * Parsuje treść tekstową zamówienia (PDF, TXT, CSV, HTML, wklejony tekst ze schowka)
  */
-export function parseOrderText(text: string): ParsedOrderResult {
+export function parseOrderText(text: string, fileName?: string): ParsedOrderResult {
   const cleanedText = fixPolishMojibake(text);
 
   // 0. Jeśli tekst zawiera strukturę tabeli HTML (<table ... <td), użyj dedykowanego parsera HTML
   if (/<table[\s>]/i.test(cleanedText) && /<t[dh][\s>]/i.test(cleanedText)) {
-    return parseOrderHtml(cleanedText);
+    return parseOrderHtml(cleanedText, fileName);
   }
 
   const headerData = extractOrderHeaderFromText(cleanedText);
@@ -2287,7 +2388,7 @@ export function parseOrderText(text: string): ParsedOrderResult {
     const grid = rawLines
       .map((l) => splitDelimitedLine(l, detectedSep!))
       .filter((r) => r.some(Boolean));
-    const gridEval = parseOrderGrid(grid);
+    const gridEval = parseOrderGrid(grid, fileName);
     const allGridItemsHaveRealNames =
       gridEval.items.length > 0 &&
       gridEval.items.every((it) => it.name && !/^Produkt EAN \d+$/i.test(it.name));
@@ -2303,6 +2404,9 @@ export function parseOrderText(text: string): ParsedOrderResult {
           ...gridEval.headerData,
           orderNumber: gridEval.headerData?.orderNumber || headerData.orderNumber,
           buyerNip: gridEval.headerData?.buyerNip || headerData.buyerNip,
+          buyerName: gridEval.headerData?.buyerName || headerData.buyerName,
+          buyerEmail: gridEval.headerData?.buyerEmail || headerData.buyerEmail,
+          paymentDays: gridEval.headerData?.paymentDays ?? headerData.paymentDays,
         },
         rawText: cleanedText,
         hasBatchesOrExpiry: gridEval.hasBatchesOrExpiry,
@@ -2839,10 +2943,15 @@ export async function parseOrderFromFile(file: File): Promise<ParsedOrderResult>
   }
 
   const text = await decodeTextFile(file);
-  const parsed = parseOrderText(text);
+  const parsed = parseOrderText(text, file.name);
   if (parsed.headerData && !parsed.headerData.buyerNip && /gemini/i.test(file.name)) {
     parsed.headerData.buyerNip = '5252801825';
     if (!parsed.headerData.buyerName) parsed.headerData.buyerName = 'GEMINI APPS SP. Z O.O.';
+  }
+  if (parsed.headerData && /nabea/i.test(file.name)) {
+    if (!parsed.headerData.buyerName) parsed.headerData.buyerName = 'NABEA';
+    if (!parsed.headerData.buyerEmail) parsed.headerData.buyerEmail = 'Fh@nabea.pl';
+    parsed.headerData.paymentDays = 21;
   }
   return parsed;
 }
