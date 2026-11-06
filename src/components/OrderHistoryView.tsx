@@ -44,8 +44,6 @@ import {
   ShippingStatus,
 } from '../types/ordersHistory';
 import { downloadKSeFXMLFile } from '../utils/ksefGenerator';
-import { downloadOrderCSVFile } from '../utils/orderCsvGenerator';
-import { DEFAULT_SELLER } from '../utils/sampleData';
 import { updateArchivedOrderFields, deleteArchivedOrder, saveArchivedOrder } from '../utils/ordersStorage';
 import { parseKSeFXMLString, extractInvoiceNumberFromXml } from '../utils/ksefXmlParser';
 import { detectPharmacyChain } from '../utils/orderParser';
@@ -64,8 +62,8 @@ import {
   getOrderEffectiveShippingStatus,
 } from '../utils/shippingTracking';
 import { compressImageToDataUrl, downloadImageDataUrl } from '../utils/imageUtils';
-import { deleteSharedPackagingPhoto } from '../utils/cloudSyncService';
 import { ImportOrderModal } from './ImportOrderModal';
+import { AvisoPdfModal } from './AvisoPdfModal';
 
 interface OrderHistoryViewProps {
   orders: ArchivedOrder[];
@@ -147,7 +145,11 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const [editIssueDate, setEditIssueDate] = useState<string>('');
   const [editOrderDate, setEditOrderDate] = useState<string>('');
   const [editAvisoDate, setEditAvisoDate] = useState<string>('');
+  const [editAvisoTime, setEditAvisoTime] = useState<string>('');
   const [isSavingDates, setIsSavingDates] = useState(false);
+
+  // Stan modalu generowania i pobierania pliku PDF Awizacji Dostawy
+  const [avisoPdfOrder, setAvisoPdfOrder] = useState<ArchivedOrder | null>(null);
 
   // Stan dodawania i podglądu zdjęć przesyłki (dowodu spakowania)
   const [uploadingPhotosOrderId, setUploadingPhotosOrderId] = useState<string | null>(null);
@@ -500,13 +502,10 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
   const handleDeleteOrderPackagingPhoto = async (order: ArchivedOrder, photoId: string) => {
     const existingPkg = Array.isArray(order.packagingPhotos) ? order.packagingPhotos : [];
     const updatedPkg = existingPkg.filter((p) => p.id !== photoId);
+    await updateArchivedOrderFields(order.id, { packagingPhotos: updatedPkg });
     order.packagingPhotos = updatedPkg;
-    await Promise.all([
-      updateArchivedOrderFields(order.id, { packagingPhotos: updatedPkg }),
-      photoId ? deleteSharedPackagingPhoto(photoId) : Promise.resolve(false),
-    ]);
     onRefreshOrders();
-    setInvoiceNotice('Usunięto zdjęcie etykiety kartonu.');
+    setInvoiceNotice('Usunięto zdjęcie opakowania.');
     setTimeout(() => setInvoiceNotice(null), 2500);
   };
 
@@ -823,10 +822,12 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
     setEditIssueDate(ord.issueDate || '');
     setEditOrderDate(ord.orderDate || '');
     setEditAvisoDate(ord.avisoDate || ord.deliveryDate || '');
+    setEditAvisoTime(ord.avisoTime || '');
   };
 
   const handleCancelEditDates = () => {
     setEditingDatesOrderId(null);
+    setEditAvisoTime('');
   };
 
   const handleSaveDates = async (ord: ArchivedOrder) => {
@@ -836,12 +837,23 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
       orderDate: editOrderDate ? editOrderDate : null as any,
       avisoDate: editAvisoDate ? editAvisoDate : null as any,
       deliveryDate: editAvisoDate ? editAvisoDate : ord.deliveryDate,
+      avisoTime: editAvisoTime ? editAvisoTime : null as any,
     };
     await updateArchivedOrderFields(ord.id, updates);
     setIsSavingDates(false);
     setEditingDatesOrderId(null);
     setInvoiceNotice(`Zaktualizowano daty dla faktury ${ord.invoiceNumber}.`);
     setTimeout(() => setInvoiceNotice(null), 3000);
+    onRefreshOrders();
+  };
+
+  // Zapisanie daty i godziny awizacji bezpośrednio z modalu Awizacji PDF
+  const handleSaveOrderAvisoDateTime = async (orderId: string, newDate: string, newTime: string) => {
+    await updateArchivedOrderFields(orderId, {
+      avisoDate: newDate,
+      deliveryDate: newDate,
+      avisoTime: newTime,
+    });
     onRefreshOrders();
   };
 
@@ -2213,15 +2225,15 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                                 ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                                 : 'bg-fuchsia-100 text-fuchsia-950 border-fuchsia-300'
                             }`}
-                            title="Status Zadania 1 (Zdjęcia etykiet kartonu) zleconego na karcie zamówienia"
+                            title="Status Zadania 1 (Zdjęcia produktów) zleconego na karcie zamówienia"
                           >
                             <Camera className="w-3 h-3" />
                             <span>
                               {ord.warehouseProductTaskStatus === 'completed'
-                                ? '✅ Zadanie 1: Zdjęcia etykiet kartonu gotowe'
+                                ? '✅ Zadanie 1: Zdjęcia produktów gotowe'
                                 : ord.warehouseProductTaskStatus === 'in_progress'
-                                ? '📸 Zadanie 1: Zdjęcia etykiet kartonu w trakcie'
-                                : '📸 Zadanie 1: Zdjęcia etykiet kartonu wysłane'}
+                                ? '📸 Zadanie 1: Zdjęcia produktów w trakcie'
+                                : '📸 Zadanie 1: Zdjęcia produktów wysłane'}
                             </span>
                           </span>
                         )}
@@ -2416,7 +2428,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                               </span>
                               <span className="text-[10px] text-slate-500 font-normal">KSeF FA(3)</span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                               <div>
                                 <label className="text-[10px] font-bold text-slate-700 block mb-0.5">
                                   📅 Data wystawienia (&lt;P_1&gt;):
@@ -2447,6 +2459,17 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                                   type="date"
                                   value={editAvisoDate}
                                   onChange={(e) => setEditAvisoDate(e.target.value)}
+                                  className="w-full text-xs font-mono bg-white border border-amber-300 focus:border-amber-500 rounded-lg px-2 py-1 text-amber-950 font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                                  🕒 Godzina awizacji:
+                                </label>
+                                <input
+                                  type="time"
+                                  value={editAvisoTime}
+                                  onChange={(e) => setEditAvisoTime(e.target.value)}
                                   className="w-full text-xs font-mono bg-white border border-amber-300 focus:border-amber-500 rounded-lg px-2 py-1 text-amber-950 font-bold"
                                 />
                               </div>
@@ -2495,25 +2518,41 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                               <span>Zamówiono: <strong className="font-bold font-mono">{ord.orderDate || '—'}</strong></span>
                             </div>
 
-                            {/* 3. DATA AWIZACJI DOSTAWY */}
+                            {/* 3. DATA I GODZINA AWIZACJI DOSTAWY */}
                             <div
                               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors ${
                                 (ord.avisoDate || ord.deliveryDate)
                                   ? 'bg-amber-50/80 text-amber-950 border-amber-200 hover:bg-amber-100/80'
                                   : 'bg-slate-50 text-slate-400 border-slate-200'
                               }`}
-                              title="Data planowanej awizacji dostawy do magazynu apteki / centrum dystrybucyjnego (<P_6>)"
+                              title="Data i godzina planowanej awizacji dostawy do magazynu apteki / centrum dystrybucyjnego (<P_6>)"
                             >
                               <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span>Awizacja: <strong className="font-bold font-mono">{ord.avisoDate || ord.deliveryDate || '—'}</strong></span>
+                              <span>
+                                Awizacja: <strong className="font-bold font-mono">{ord.avisoDate || ord.deliveryDate || '—'}</strong>
+                                {ord.avisoTime && (
+                                  <strong className="ml-1 text-amber-900 font-mono font-bold">({ord.avisoTime})</strong>
+                                )}
+                              </span>
                             </div>
+
+                            {/* PRZYCISK: GENERUJ PLIK PDF AWIZACJI */}
+                            <button
+                              type="button"
+                              onClick={() => setAvisoPdfOrder(ord)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-100/90 hover:bg-amber-200 border border-amber-300 rounded-lg transition-all hover:scale-[1.02] cursor-pointer shadow-2xs"
+                              title="Wygeneruj plik PDF z datą i godziną awizacji (dostawy) na przesyłkę"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-amber-700" />
+                              <span>PDF Awizacja</span>
+                            </button>
 
                             {/* PRZYCISK SZYBKIEJ EDYCJI DAT */}
                             <button
                               type="button"
                               onClick={() => handleStartEditDates(ord)}
                               className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-fuchsia-700 hover:bg-fuchsia-50 rounded-lg border border-transparent hover:border-fuchsia-200 transition-colors cursor-pointer"
-                              title="Kliknij, aby edytować datę wystawienia, datę złożenia zamówienia lub datę awizacji"
+                              title="Kliknij, aby edytować datę wystawienia, datę złożenia zamówienia lub datę i godzinę awizacji"
                             >
                               <Edit3 className="w-3 h-3 text-slate-400 hover:text-fuchsia-600" />
                               <span>Zmień daty</span>
@@ -3034,7 +3073,7 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         </span>
                         <div className="text-[11px] flex-1">
                           <div className="font-bold text-slate-800 flex flex-wrap items-center justify-between gap-1">
-                            <span>📸 Etap 1 (Karta zamówienia): Uzupełnij zdjęcia etykiet kartonu</span>
+                            <span>📸 Etap 1 (Karta zamówienia): Uzupełnij zdjęcia produktów</span>
                             <span
                               className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                                 ord.packagingPhotos && ord.packagingPhotos.length > 0
@@ -3042,11 +3081,11 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                                   : 'bg-slate-100 text-slate-500'
                               }`}
                             >
-                              {ord.packagingPhotos?.length || 0} zdjęć etykiet kartonu
+                              {ord.packagingPhotos?.length || 0} zdjęć produktów
                             </span>
                           </div>
                           <p className="text-slate-500 mt-0.5">
-                            Zadanie wysyłane z karty zamówienia (zdjęcia etykiet kartonu z serią LOT i datą ważności MHD).
+                            Zadanie wysyłane z karty zamówienia (zdjęcia opakowań produktów z serią LOT i datą ważności MHD).
                           </p>
                         </div>
                       </div>
@@ -3333,6 +3372,17 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                         </button>
                       )}
 
+                      {/* WYGENERUJ PLIK PDF AWIZACJI DOSTAWY */}
+                      <button
+                        type="button"
+                        onClick={() => setAvisoPdfOrder(ord)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-950 bg-gradient-to-r from-amber-200 via-amber-300 to-yellow-300 hover:from-amber-300 hover:to-yellow-400 border border-amber-400 rounded-xl shadow-xs transition-all hover:scale-[1.02] cursor-pointer"
+                        title="Wygeneruj i pobierz plik PDF z datą i godziną awizacji (dostawy) na przesyłkę"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-amber-800" />
+                        <span>PDF Awizacja</span>
+                      </button>
+
                       {/* WGRAJ XML DLA ZAMÓWIENIA */}
                       <label
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
@@ -3347,35 +3397,6 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
                           onChange={(e) => handleUploadXmlForOrder(ord, e)}
                         />
                       </label>
-
-                      {/* POBIERZ CSV ZAMÓWIENIA */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          downloadOrderCSVFile({
-                            seller: ord.seller || DEFAULT_SELLER,
-                            buyer: ord.buyer,
-                            thirdParty: ord.thirdParty,
-                            meta: {
-                              invoiceNumber: effectiveInvoiceNumber,
-                              orderNumber: ord.orderNumber,
-                              issueDate: ord.issueDate,
-                              orderDate: ord.orderDate,
-                              deliveryDate: ord.avisoDate || ord.deliveryDate,
-                              dueDate: ord.paymentDueDate || ord.dueDate || undefined,
-                              paymentDays: ord.paymentTermDays,
-                              currency: ord.currency || 'PLN',
-                            },
-                            items: ord.items || [],
-                            selectedChain: ord.chain,
-                          })
-                        }
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-colors cursor-pointer"
-                        title="Pobierz płaski plik CSV z zamówieniem gotowy do importu do systemu e-commerce / ERP (Sellrocket)"
-                      >
-                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Pobierz CSV</span>
-                      </button>
 
                       {/* PODGLĄD XML I POBIERZ XML (jeśli plik XML istnieje) */}
                       {ord.xmlContent ? (
@@ -3870,6 +3891,14 @@ export const OrderHistoryView: React.FC<OrderHistoryViewProps> = ({
           );
           setTimeout(() => setInvoiceNotice(null), 4000);
         }}
+      />
+
+      {/* MODAL GENEROWANIA I PODGLĄDU AWIZACJI PDF */}
+      <AvisoPdfModal
+        isOpen={Boolean(avisoPdfOrder)}
+        onClose={() => setAvisoPdfOrder(null)}
+        order={avisoPdfOrder}
+        onSaveAvisoDateTime={handleSaveOrderAvisoDateTime}
       />
     </div>
   );

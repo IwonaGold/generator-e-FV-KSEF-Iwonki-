@@ -28,6 +28,7 @@ export interface ArchivedOrder {
   orderDate?: string;
   issueDate: string;
   avisoDate?: string;
+  avisoTime?: string | null;
   deliveryDate?: string;
   dueDate?: string;
   seller: EntityDetails;

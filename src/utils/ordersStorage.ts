@@ -84,16 +84,6 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
     const effectiveParcelTaskStatus =
       rawParcelStatus === 'completed' ? 'none' : rawParcelStatus;
 
-    const itemsList = Array.isArray(ord.items) ? ord.items : [];
-    const allItemsHaveLotAndExp =
-      itemsList.length > 0 &&
-      itemsList.every(
-        (it) =>
-          Boolean(String(it?.batchNumber || '').trim()) &&
-          Boolean(String(it?.expiryDate || '').trim())
-      );
-    const shouldPurgeProductPhotos = isActuallyDelivered || allItemsHaveLotAndExp;
-
     return {
       ...ord,
       documentType: ord.documentType || 'FV',
@@ -103,15 +93,12 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
       invoiceNumber,
       orderDate: effectiveOrderDate,
       avisoDate: effectiveAvisoDate,
+      avisoTime: ord.avisoTime || null,
       deliveryDate: ord.deliveryDate || effectiveAvisoDate,
       paymentDueDate: effectiveDueDate,
       paymentStatus: effectivePaymentStatus,
       parcelPhotos: Array.isArray(ord.parcelPhotos) ? ord.parcelPhotos : [],
-      packagingPhotos: shouldPurgeProductPhotos
-        ? []
-        : Array.isArray(ord.packagingPhotos)
-        ? ord.packagingPhotos
-        : [],
+      packagingPhotos: Array.isArray(ord.packagingPhotos) ? ord.packagingPhotos : [],
       warehouseProductTaskStatus: effectiveProductTaskStatus,
       warehouseParcelTaskStatus: effectiveParcelTaskStatus,
       warehouseTaskStatus: legacyStatus,
@@ -122,32 +109,21 @@ function normalizeOrdersList(list: ArchivedOrder[]): ArchivedOrder[] {
 }
 
 const DELETED_IDS_KEY = 'iwonka_ksef_deleted_order_ids_v1';
-const PERMANENTLY_DELETED_IDS = [
-  'ord-1791370137779',
-  'ord-1791369888459',
-  'ord-1791369877206',
-  'ord-1791369875920',
-];
 const IDB_NAME = 'iwonka_ksef_db_v1';
 const IDB_STORE = 'orders_store';
 const IDB_KEY = 'archived_orders_list';
 
 function getDeletedIds(): Set<string> {
-  const set = new Set<string>(PERMANENTLY_DELETED_IDS);
   try {
     const raw = localStorage.getItem(DELETED_IDS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        for (const id of parsed) {
-          if (typeof id === 'string' && id) set.add(id);
-        }
-      }
+      if (Array.isArray(parsed)) return new Set(parsed);
     }
   } catch {
     // ignore
   }
-  return set;
+  return new Set();
 }
 
 function addDeletedId(id: string): void {
@@ -250,7 +226,7 @@ function mergeParcelPhotosLightweight(
 ): string[] {
   const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
   const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
-  if (nArr.length === 0) return [];
+  if (nArr.length === 0) return oArr;
   if (oArr.length === 0) return nArr;
   if (nArr.length === oArr.length) {
     return nArr.map((np, idx) => {
@@ -270,7 +246,7 @@ function mergePackagingPhotosLightweight(
 ): NonNullable<ArchivedOrder['packagingPhotos']> {
   const nArr = Array.isArray(newerPhotos) ? newerPhotos : [];
   const oArr = Array.isArray(olderPhotos) ? olderPhotos : [];
-  if (nArr.length === 0) return [];
+  if (nArr.length === 0) return oArr;
   if (oArr.length === 0) return nArr;
 
   const olderById = new Map<string, NonNullable<ArchivedOrder['packagingPhotos']>[number]>();
@@ -357,109 +333,42 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
     try {
       const deletedIds = getDeletedIds();
       const localOrders = await readOrdersFromBrowserStorage();
-      const localMap = new Map(localOrders.map((o) => [o.id, o]));
       let serverOrders: ArchivedOrder[] = [];
 
-      const serverDeletedSet = new Set<string>();
       try {
-        const useLightEndpoint = localOrders.length > 0;
         const headers: Record<string, string> = {};
         if (lastServerOrdersEtag && lastServerOrdersCache) {
           headers['If-None-Match'] = lastServerOrdersEtag;
         }
-        const res = await fetch(
-          useLightEndpoint ? '/api/orders-history?light=1' : '/api/orders-history',
-          { headers }
-        );
-        const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
-        if (deletedHeader) {
-          try {
-            const srvDeleted: string[] = JSON.parse(deletedHeader);
-            if (Array.isArray(srvDeleted)) {
-              for (const dId of srvDeleted) {
-                serverDeletedSet.add(dId);
-                deletedIds.add(dId);
-                addDeletedId(dId);
-              }
-            }
-          } catch {}
-        }
+        const res = await fetch('/api/orders-history', { headers });
         if (res.status === 304 && lastServerOrdersCache) {
-          serverOrders = lastServerOrdersCache.filter((o) => o && o.id && !deletedIds.has(o.id));
+          serverOrders = lastServerOrdersCache;
         } else if (res.ok) {
           const etag = res.headers.get('ETag');
           if (etag) {
             lastServerOrdersEtag = etag;
           }
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            if (useLightEndpoint) {
-              const idsNeedingPhotos: string[] = [];
-              for (const srv of data as any[]) {
-                if (!srv?.id || deletedIds.has(srv.id)) continue;
-                const loc = localMap.get(srv.id);
-                const srvParcelCount = Number(srv.parcelPhotosCount || 0);
-                const srvPkgCount = Number(srv.packagingPhotosCount || 0);
-                const locParcelCount = loc?.parcelPhotos?.length || 0;
-                const locPkgCount = loc?.packagingPhotos?.length || 0;
-                if (
-                  (srvParcelCount > 0 && srvParcelCount !== locParcelCount) ||
-                  (srvPkgCount > 0 && srvPkgCount !== locPkgCount)
-                ) {
-                  idsNeedingPhotos.push(srv.id);
+          const deletedHeader = res.headers.get('X-Deleted-Order-Ids');
+          if (deletedHeader) {
+            try {
+              const srvDeleted: string[] = JSON.parse(deletedHeader);
+              if (Array.isArray(srvDeleted)) {
+                for (const dId of srvDeleted) {
+                  deletedIds.add(dId);
+                  addDeletedId(dId);
                 }
               }
-
-              let fetchedPhotosMap: Record<
-                string,
-                { parcelPhotos?: string[]; packagingPhotos?: any[] }
-              > = {};
-              if (idsNeedingPhotos.length > 0) {
-                try {
-                  const pRes = await fetch('/api/orders-history/photos-by-ids', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids: idsNeedingPhotos }),
-                  });
-                  if (pRes.ok) {
-                    const pJson = await pRes.json();
-                    if (pJson?.photosByOrderId) {
-                      fetchedPhotosMap = pJson.photosByOrderId;
-                    }
-                  }
-                } catch {}
-              }
-
-              const hydratedOrders: ArchivedOrder[] = (data as any[])
-                .filter((srv) => srv && srv.id && !deletedIds.has(srv.id))
-                .map((srv) => {
-                  const loc = localMap.get(srv.id);
-                  const fetched = fetchedPhotosMap[srv.id];
-                  const srvParcelCount = Number(srv.parcelPhotosCount || 0);
-                  const srvPkgCount = Number(srv.packagingPhotosCount || 0);
-                  return {
-                    ...srv,
-                    parcelPhotos:
-                      fetched?.parcelPhotos ??
-                      (srvParcelCount > 0 ? loc?.parcelPhotos || [] : []),
-                    packagingPhotos:
-                      fetched?.packagingPhotos ??
-                      (srvPkgCount > 0 ? loc?.packagingPhotos || [] : []),
-                  };
-                });
-
-              serverOrders = hydratedOrders;
-              lastServerOrdersCache = hydratedOrders;
-            } else {
-              const filteredData = data.filter((o: any) => o && o.id && !deletedIds.has(o.id));
-              serverOrders = filteredData;
-              lastServerOrdersCache = filteredData;
-            }
+            } catch {}
+          }
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            serverOrders = data;
+            lastServerOrdersCache = data;
           }
         }
       } catch (err) {
         if (lastServerOrdersCache) {
-          serverOrders = lastServerOrdersCache.filter((o) => o && o.id && !deletedIds.has(o.id));
+          serverOrders = lastServerOrdersCache;
         } else {
           console.warn('Serwer API niedostępny, używam bazy lokalnej:', err);
         }
@@ -471,8 +380,7 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
         );
         await writeOrdersToBrowserStorage(merged);
 
-        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarkce,
-        // oraz ewentualne usunięte ID (deletedIds), których serwer jeszcze nie znał
+        // Wyślij w tle WYŁĄCZNIE te zamówienia z przeglądarki, których brakuje na serwerze lub które są nowsze w przeglądarce
         if (serverOrders.length > 0) {
           const serverMap = new Map(serverOrders.map((o) => [o.id, o]));
           const ordersToPush = merged.filter((m) => {
@@ -480,21 +388,19 @@ export async function getArchivedOrders(): Promise<ArchivedOrder[]> {
             if (!s) return true;
             const mTime = m.updatedAt ? new Date(m.updatedAt).getTime() : 0;
             const sTime = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
-            return mTime > sTime + 500;
+            if (mTime > sTime + 500) return true;
+            const mPhotos = m.parcelPhotos?.length || 0;
+            const sPhotos = s.parcelPhotos?.length || 0;
+            const mPkgPhotos = m.packagingPhotos?.length || 0;
+            const sPkgPhotos = s.packagingPhotos?.length || 0;
+            return mPhotos > sPhotos || mPkgPhotos > sPkgPhotos;
           });
 
-          const missingDeletedOnServer = Array.from(deletedIds).filter(
-            (dId) => !serverDeletedSet.has(dId)
-          );
-
-          if (ordersToPush.length > 0 || missingDeletedOnServer.length > 0) {
+          if (ordersToPush.length > 0) {
             fetch('/api/orders-history/sync', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                orders: ordersToPush,
-                deletedIds: missingDeletedOnServer,
-              }),
+              body: JSON.stringify({ orders: ordersToPush }),
             }).catch(() => {});
           }
         }
@@ -567,62 +473,37 @@ export async function updateArchivedOrderFields(
   id: string,
   fields: Partial<ArchivedOrder>
 ): Promise<boolean> {
-  let serverUpdatedAt: string | null = null;
-  const fallbackIso = new Date().toISOString();
-
-  // Najpierw natychmiast aktualizujemy pamięć podręczną i IndexedDB, aby równoległe zdarzenia SSE nie przywróciły starego stanu
-  try {
-    const existing = await readOrdersFromBrowserStorage();
-    const updated = normalizeOrdersList(
-      existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: fallbackIso } : o))
-    );
-    await writeOrdersToBrowserStorage(updated);
-    if (lastServerOrdersCache) {
-      lastServerOrdersCache = normalizeOrdersList(
-        lastServerOrdersCache.map((o) =>
-          o.id === id ? { ...o, ...fields, updatedAt: fallbackIso } : o
-        )
-      );
-    }
-  } catch (e) {
-    console.warn('Błąd wstępnej aktualizacji w pamięci przeglądarki:', e);
-  }
+  const nowIso = new Date().toISOString();
 
   try {
-    const res = await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
+    await fetch(`/api/orders-history/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),
     });
-    if (res.ok) {
-      const json = await res.json().catch(() => null);
-      if (json?.order?.updatedAt) {
-        serverUpdatedAt = json.order.updatedAt;
-      }
-    }
     lastServerOrdersEtag = null;
   } catch (err) {
     console.warn('Błąd PATCH na serwerze:', err);
   }
 
-  if (serverUpdatedAt) {
-    try {
-      const existing = await readOrdersFromBrowserStorage();
-      const updated = normalizeOrdersList(
-        existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: serverUpdatedAt! } : o))
+  try {
+    const existing = await readOrdersFromBrowserStorage();
+    const updated = normalizeOrdersList(
+      existing.map((o) => (o.id === id ? { ...o, ...fields, updatedAt: nowIso } : o))
+    );
+    await writeOrdersToBrowserStorage(updated);
+    if (lastServerOrdersCache) {
+      lastServerOrdersCache = normalizeOrdersList(
+        lastServerOrdersCache.map((o) =>
+          o.id === id ? { ...o, ...fields, updatedAt: nowIso } : o
+        )
       );
-      await writeOrdersToBrowserStorage(updated);
-      if (lastServerOrdersCache) {
-        lastServerOrdersCache = normalizeOrdersList(
-          lastServerOrdersCache.map((o) =>
-            o.id === id ? { ...o, ...fields, updatedAt: serverUpdatedAt! } : o
-          )
-        );
-      }
-    } catch {}
+    }
+    return true;
+  } catch (e) {
+    console.warn('Błąd aktualizacji w pamięci przeglądarki:', e);
+    return false;
   }
-
-  return true;
 }
 
 /**
